@@ -43,7 +43,8 @@ export async function PATCH(
       return NextResponse.json({ error: 'User not found' }, { status: 404 })
     }
 
-    const newCredits = (targetProfile.credits as number) + amount
+    // @ts-ignore - Supabase type inference issue
+    const newCredits = targetProfile.credits + amount
 
     // @ts-ignore - Supabase type inference issue
     await supabase
@@ -51,8 +52,9 @@ export async function PATCH(
       .update({ credits: newCredits })
       .eq('id', id)
 
+    // @ts-ignore - Supabase type inference issue
     await supabase.from('credit_transactions').insert({
-      user_id: targetProfile.user_id as string,
+      user_id: targetProfile.user_id,
       amount,
       type: amount > 0 ? 'grant' : 'deduction',
       description: reason || 'Manual adjustment by admin',
