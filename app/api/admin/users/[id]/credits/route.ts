@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import type { Database } from '@/types/database'
 
 export async function PATCH(
   request: NextRequest,
@@ -42,9 +43,12 @@ export async function PATCH(
       return NextResponse.json({ error: 'User not found' }, { status: 404 })
     }
 
+    const newCredits = (targetProfile.credits as number) + amount
+
+    // @ts-ignore - Supabase type inference issue
     await supabase
       .from('profiles')
-      .update({ credits: (targetProfile.credits as number) + amount })
+      .update({ credits: newCredits })
       .eq('id', id)
 
     await supabase.from('credit_transactions').insert({
