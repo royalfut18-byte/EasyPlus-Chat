@@ -42,10 +42,12 @@ export async function PATCH(
       return NextResponse.json({ error: 'User not found' }, { status: 404 })
     }
 
-    await supabase
+    const { error: updateError } = await supabase
       .from('profiles')
       .update({ credits: targetProfile.credits + amount })
       .eq('id', id)
+
+    if (updateError) throw updateError
 
     const { data: targetUser } = await supabase
       .from('profiles')
