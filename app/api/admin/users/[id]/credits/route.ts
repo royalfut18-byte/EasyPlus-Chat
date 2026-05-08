@@ -54,12 +54,14 @@ export async function PATCH(
       .eq('id', id)
 
     // @ts-ignore - Supabase type inference issue
-    await supabase.from('credit_transactions').insert({
-      user_id: targetProfile.user_id,
-      amount,
-      type: amount > 0 ? 'grant' : 'deduction',
-      description: reason || 'Manual adjustment by admin',
-    })
+    const transactionResult = await supabase.from('credit_transactions')
+      // @ts-ignore
+      .insert({
+        user_id: targetProfile.user_id,
+        amount,
+        type: amount > 0 ? 'grant' : 'deduction',
+        description: reason || 'Manual adjustment by admin',
+      })
 
     return NextResponse.json({ success: true })
   } catch (error: any) {
