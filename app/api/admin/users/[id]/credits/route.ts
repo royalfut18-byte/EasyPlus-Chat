@@ -36,7 +36,7 @@ export async function PATCH(
       .from('profiles')
       .select('credits')
       .eq('id', id)
-      .single()
+      .single<{ credits: number }>()
 
     if (!targetProfile) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 })
@@ -51,7 +51,7 @@ export async function PATCH(
       .from('profiles')
       .select('user_id')
       .eq('id', id)
-      .single()
+      .single<{ user_id: string }>()
 
     if (targetUser) {
       await supabase.from('credit_transactions').insert({
