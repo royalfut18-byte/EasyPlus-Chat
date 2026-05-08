@@ -34,35 +34,25 @@ export async function PATCH(
 
     const { data: targetProfile } = await supabase
       .from('profiles')
-      .select('credits')
+      .select('credits, user_id')
       .eq('id', id)
-      .single<{ credits: number }>()
+      .single()
 
     if (!targetProfile) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 })
     }
 
-    const { error: updateError } = await supabase
+    await supabase
       .from('profiles')
-      .update({ credits: targetProfile.credits + amount })
+      .update({ credits: (targetProfile.credits as number) + amount })
       .eq('id', id)
 
-    if (updateError) throw updateError
-
-    const { data: targetUser } = await supabase
-      .from('profiles')
-      .select('user_id')
-      .eq('id', id)
-      .single<{ user_id: string }>()
-
-    if (targetUser) {
-      await supabase.from('credit_transactions').insert({
-        user_id: targetUser.user_id,
-        amount,
-        type: amount > 0 ? 'grant' : 'deduction',
-        description: reason || 'Manual adjustment by admin',
-      })
-    }
+    await supabase.from('credit_transactions').insert({
+      user_id: targetProfile.user_id as string,
+      amount,
+      type: amount > 0 ? 'grant' : 'deduction',
+      description: reason || 'Manual adjustment by admin',
+    })
 
     return NextResponse.json({ success: true })
   } catch (error: any) {
