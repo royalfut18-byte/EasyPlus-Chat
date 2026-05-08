@@ -44,11 +44,12 @@ export async function PATCH(
     }
 
     // @ts-ignore - Supabase type inference issue
-    const newCredits = targetProfile.credits + amount
+    const newCredits: number = targetProfile.credits + amount
 
     // @ts-ignore - Supabase type inference issue
-    await supabase
+    const updateResult = await supabase
       .from('profiles')
+      // @ts-ignore
       .update({ credits: newCredits })
       .eq('id', id)
 
