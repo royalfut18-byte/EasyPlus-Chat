@@ -1,0 +1,39 @@
+
+> easyplus-ai@1.0.0 build
+> next build
+
+   ▲ Next.js 15.5.16
+   - Environments: .env.local
+
+   Creating an optimized production build ...
+
+<--- Last few GCs --->
+
+[37012:000001948EEF0080]     3872 ms: Scavenge 530.8 (565.9) -> 530.8 (565.9) MB, 77.82 / 0.00 ms  (average mu = 0.964, current mu = 0.877) allocation failure; 
+[37012:000001948EEF0080]     6353 ms: Mark-Compact 914.8 (949.9) -> 692.6 (727.4) MB, 316.80 / 0.01 ms  (+ 0.1 ms in 2 steps since start of marking, biggest step 0.1 ms, walltime since start of marking 3763 ms) (average mu = 0.939, current mu = 0.937) all
+
+<--- JS stacktrace --->
+
+FATAL ERROR: invalid table size Allocation failed - JavaScript heap out of memory
+ 1: 00007FF7DA71BC8F node_api_throw_syntax_error+203199
+ 2: 00007FF7DA6981D6 v8::base::CPU::num_virtual_address_bits+74438
+ 3: 00007FF7DA699FF1 v8::base::CPU::num_virtual_address_bits+82145
+ 4: 00007FF7DB101751 v8::Isolate::ReportExternalAllocationLimitReached+65
+ 5: 00007FF7DB0EAEE8 v8::Function::Experimental_IsNopFunction+1336
+ 6: 00007FF7DAF4C870 v8::Platform::SystemClockTimeMillis+659552
+ 7: 00007FF7DAD1DD99 v8::base::Thread::StartSynchronously+540121
+ 8: 00007FF7DAD1089F v8::base::Thread::StartSynchronously+485599
+ 9: 00007FF7DAD0DFB1 v8::base::Thread::StartSynchronously+475121
+10: 00007FF7DADF63B2 v8::base::Thread::StartSynchronously+1426418
+11: 00007FF7DADF01E2 v8::base::Thread::StartSynchronously+1401378
+12: 00007FF7DAD8E84E v8::base::Thread::StartSynchronously+1001614
+13: 00007FF7DAD185C3 v8::base::Thread::StartSynchronously+517635
+14: 00007FF7DAD90081 v8::base::Thread::StartSynchronously+1007809
+15: 00007FF7DAD8F7C4 v8::base::Thread::StartSynchronously+1005572
+16: 00007FF7DAD8F982 v8::base::Thread::StartSynchronously+1006018
+17: 00007FF7DAC25119 v8::CodeEvent::GetFunctionName+79321
+18: 00007FF7DB1B238E v8::PropertyDescriptor::writable+674542
+19: 00007FF7DB1EC40C v8::PropertyDescriptor::writable+912236
+20: 00007FF7DB1CDD7E v8::PropertyDescriptor::writable+787678
+21: 00007FF75B660DD3 
+Next.js build worker exited with code: 134 and signal: null

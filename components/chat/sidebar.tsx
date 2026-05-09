@@ -124,7 +124,7 @@ export function Sidebar({
                     </DropdownMenuItem>
                     <DropdownMenuItem onClick={() => router.push('/billing')}>
                       <CreditCard className="mr-2 h-4 w-4" />
-                      Billing
+                      Credits
                     </DropdownMenuItem>
                     {userProfile.role === 'admin' && (
                       <DropdownMenuItem onClick={() => router.push('/admin')}>

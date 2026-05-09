@@ -5,14 +5,21 @@ import type { ChatMessage } from '@/types/models'
 
 export const runtime = 'edge'
 
+type ProfileRow = {
+  credits: number
+}
+
 export async function POST(request: NextRequest) {
   try {
     const supabase = await createClient()
+    const db = supabase as any
+
     const {
       data: { user },
+      error: userError,
     } = await supabase.auth.getUser()
 
-    if (!user) {
+    if (userError || !user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
@@ -22,45 +29,53 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid request' }, { status: 400 })
     }
 
-    const { data: profile } = await supabase
+    const { data: profile, error: profileError } = await db
       .from('profiles')
       .select('credits')
       .eq('user_id', user.id)
       .single()
 
-    if (!profile) {
+    const typedProfile = profile as ProfileRow | null
+
+    if (!typedProfile) {
       return NextResponse.json({ error: 'Profile not found' }, { status: 404 })
     }
 
     const cost = getModelCost(model)
 
-    if (profile.credits < cost) {
+    if (typedProfile.credits < cost) {
       return NextResponse.json(
-        { error: 'Insufficient credits', credits: profile.credits },
+        { error: 'Insufficient credits', credits: typedProfile.credits },
         { status: 402 }
       )
     }
 
-    await supabase
+    const { error: updateError } = await db
       .from('profiles')
-      .update({ credits: profile.credits - cost })
+      .update({ credits: typedProfile.credits - cost })
       .eq('user_id', user.id)
 
-    await supabase.from('credit_transactions').insert({
+    if (updateError) throw updateError
+
+    const { error: transactionError } = await db.from('credit_transactions').insert({
       user_id: user.id,
       amount: -cost,
       type: 'deduction',
       description: `Message sent using ${model}`,
     })
 
+    if (transactionError) throw transactionError
+
     const userMessage = messages[messages.length - 1]
     if (conversationId) {
-      await supabase.from('messages').insert({
+      const { error: messageError } = await db.from('messages').insert({
         conversation_id: conversationId,
         role: 'user',
         content: userMessage.content,
         model,
       })
+
+      if (messageError) throw messageError
     }
 
     const stream = await streamBedrockResponse(model, messages as ChatMessage[])
@@ -77,17 +92,25 @@ export async function POST(request: NextRequest) {
       },
       async flush() {
         if (conversationId && fullResponse) {
-          await supabase.from('messages').insert({
+          const { error: assistantMessageError } = await db.from('messages').insert({
             conversation_id: conversationId,
             role: 'assistant',
             content: fullResponse,
             model,
           })
 
-          await supabase
+          if (assistantMessageError) {
+            console.error('Failed to save assistant message:', assistantMessageError)
+          }
+
+          const { error: conversationUpdateError } = await db
             .from('conversations')
             .update({ updated_at: new Date().toISOString() })
             .eq('id', conversationId)
+
+          if (conversationUpdateError) {
+            console.error('Failed to update conversation:', conversationUpdateError)
+          }
         }
       },
     })

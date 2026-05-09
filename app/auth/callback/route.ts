@@ -12,8 +12,9 @@ export async function GET(request: NextRequest) {
     if (!error && data.user) {
       // Use service role client to bypass RLS for profile creation
       const serviceClient = await createServiceClient()
+      const db = serviceClient as any
 
-      const { data: existingProfile } = await serviceClient
+      const { data: existingProfile } = await db
         .from('profiles')
         .select('id')
         .eq('user_id', data.user.id)
@@ -22,7 +23,7 @@ export async function GET(request: NextRequest) {
       if (!existingProfile) {
         console.log('Creating profile for new user:', data.user.id)
 
-        const { error: profileError } = await serviceClient.from('profiles').insert({
+        const { error: profileError } = await db.from('profiles').insert({
           user_id: data.user.id,
           display_name: data.user.user_metadata.full_name || data.user.email?.split('@')[0],
           avatar_url: data.user.user_metadata.avatar_url,
@@ -35,7 +36,7 @@ export async function GET(request: NextRequest) {
           console.error('Failed to create profile:', profileError)
         }
 
-        const { error: subError } = await serviceClient.from('subscriptions').insert({
+        const { error: subError } = await db.from('subscriptions').insert({
           user_id: data.user.id,
           stripe_customer_id: '',
           tier: 'free',
@@ -46,7 +47,7 @@ export async function GET(request: NextRequest) {
           console.error('Failed to create subscription:', subError)
         }
 
-        const { error: txError } = await serviceClient.from('credit_transactions').insert({
+        const { error: txError } = await db.from('credit_transactions').insert({
           user_id: data.user.id,
           amount: 1000,
           type: 'grant',

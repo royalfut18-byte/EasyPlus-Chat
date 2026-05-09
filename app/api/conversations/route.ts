@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 export async function GET(request: NextRequest) {
   try {
     const supabase = await createClient()
+    const db = supabase as any
     const {
       data: { user },
     } = await supabase.auth.getUser()
@@ -12,7 +13,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { data: conversations, error } = await supabase
+    const { data: conversations, error } = await db
       .from('conversations')
       .select('*')
       .eq('user_id', user.id)
@@ -30,6 +31,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const supabase = await createClient()
+    const db = supabase as any
     const {
       data: { user },
     } = await supabase.auth.getUser()
@@ -40,7 +42,7 @@ export async function POST(request: NextRequest) {
 
     const { title, model } = await request.json()
 
-    const { data: conversation, error } = await supabase
+    const { data: conversation, error } = await db
       .from('conversations')
       .insert({
         user_id: user.id,

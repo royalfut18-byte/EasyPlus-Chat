@@ -185,6 +185,11 @@ export default function ChatPage() {
       }
     }
 
+    if (!conversation) {
+      isSendingRef.current = false
+      return
+    }
+
     const userMessage: Message = {
       id: Date.now().toString(),
       conversation_id: conversation.id,

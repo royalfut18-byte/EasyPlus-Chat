@@ -8,6 +8,7 @@ import { formatCredits, formatDate } from '@/lib/utils'
 
 export default async function DashboardPage() {
   const supabase = await createClient()
+  const db = supabase as any
   const {
     data: { user },
   } = await supabase.auth.getUser()
@@ -16,27 +17,27 @@ export default async function DashboardPage() {
     redirect('/login')
   }
 
-  const { data: profile } = await supabase
+  const { data: profile } = await db
     .from('profiles')
     .select('*')
     .eq('user_id', user.id)
     .single()
 
-  const { data: conversations } = await supabase
+  const { data: conversations } = await db
     .from('conversations')
     .select('*')
     .eq('user_id', user.id)
     .order('updated_at', { ascending: false })
     .limit(5)
 
-  const { data: transactions } = await supabase
+  const { data: transactions } = await db
     .from('credit_transactions')
     .select('*')
     .eq('user_id', user.id)
     .order('created_at', { ascending: false })
     .limit(10)
 
-  const { count: messageCount } = await supabase
+  const { count: messageCount } = await db
     .from('messages')
     .select('*', { count: 'exact', head: true })
     .eq('role', 'user')
@@ -101,7 +102,7 @@ export default async function DashboardPage() {
               </div>
               <Link href="/billing">
                 <Button variant="link" className="p-0 h-auto text-xs mt-2">
-                  Manage billing
+                  View credits
                 </Button>
               </Link>
             </CardContent>
@@ -116,7 +117,7 @@ export default async function DashboardPage() {
             <CardContent>
               <div className="space-y-3">
                 {conversations && conversations.length > 0 ? (
-                  conversations.map((conv) => (
+                  conversations.map((conv: any) => (
                     <Link key={conv.id} href="/chat">
                       <div className="glass p-3 rounded-lg hover:bg-white/10 transition-colors">
                         <p className="font-medium text-white">{conv.title}</p>
@@ -140,7 +141,7 @@ export default async function DashboardPage() {
             <CardContent>
               <div className="space-y-3">
                 {transactions && transactions.length > 0 ? (
-                  transactions.map((tx) => (
+                  transactions.map((tx: any) => (
                     <div
                       key={tx.id}
                       className="flex items-center justify-between glass p-3 rounded-lg"
@@ -177,7 +178,7 @@ export default async function DashboardPage() {
             <Link href="/billing">
               <Button className="gradient-primary">
                 <CreditCard className="mr-2 h-4 w-4" />
-                Top Up Credits
+                View Credits
               </Button>
             </Link>
             <Link href="/chat">

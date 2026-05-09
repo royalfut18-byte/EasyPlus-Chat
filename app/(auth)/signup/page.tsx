@@ -51,7 +51,6 @@ export default function SignupPage() {
 
       await supabase.from('subscriptions').insert({
         user_id: data.user.id,
-        stripe_customer_id: '',
         tier: 'free',
         status: 'active',
       } as any)

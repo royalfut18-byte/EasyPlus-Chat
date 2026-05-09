@@ -1,12 +1,10 @@
-import { SupabaseClient } from '@supabase/supabase-js'
-import type { Database } from '@/types/database'
-
 export async function ensureProfile(
-  supabase: SupabaseClient<Database>,
+  supabase: any,
   userId: string
 ) {
+  const db = supabase as any
   // Check if profile exists
-  const { data: profile, error } = await supabase
+  const { data: profile, error } = await db
     .from('profiles')
     .select('*')
     .eq('user_id', userId)
@@ -14,7 +12,7 @@ export async function ensureProfile(
 
   if (error && error.code === 'PGRST116') {
     // Profile doesn't exist, create it
-    const { data: newProfile, error: insertError } = await supabase
+    const { data: newProfile, error: insertError } = await db
       .from('profiles')
       .insert({
         user_id: userId,
