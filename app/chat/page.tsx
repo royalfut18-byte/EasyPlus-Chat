@@ -644,11 +644,29 @@ Rules:
   const handleOpenArtifact = (artifact?: Artifact) => {
     // If artifact is provided (from message bubble), use it
     if (artifact) {
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('[Chat] Opening artifact:', {
+          title: artifact.title,
+          language: artifact.language,
+          codeLength: artifact.code?.length,
+        })
+      }
       setActiveArtifact(artifact)
       setIsArtifactOpen(true)
     } else if (activeArtifact) {
       // Otherwise use current active artifact
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('[Chat] Reopening existing artifact:', {
+          title: activeArtifact.title,
+          language: activeArtifact.language,
+          codeLength: activeArtifact.code?.length,
+        })
+      }
       setIsArtifactOpen(true)
+    } else {
+      if (process.env.NODE_ENV !== 'production') {
+        console.warn('[Chat] Cannot open artifact: no artifact available')
+      }
     }
   }
 
@@ -678,14 +696,10 @@ Rules:
         userProfile={userProfile}
       />
 
-      <main
-        className={cn(
-          'flex-1 flex flex-col ml-0 md:ml-80 transition-all duration-300'
-        )}
-        style={{
-          marginRight: isArtifactOpen && typeof window !== 'undefined' && window.innerWidth >= 768 ? `${artifactPanelWidth}px` : undefined,
-        }}
-      >
+      {/* Main content + artifact panel flex container */}
+      <div className="flex min-w-0 flex-1 overflow-hidden ml-0 md:ml-80">
+        {/* Chat section */}
+        <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <div className="flex items-center justify-between flex-wrap gap-2 border-b border-white/10 bg-[#0A0A0F]/90 backdrop-blur-xl">
           <div className="flex-1 min-w-0">
             <ModelSelector selectedModel={selectedModel} onSelectModel={setSelectedModel} />
@@ -828,15 +842,19 @@ Rules:
           disabled={isRequestInProgress}
           isLoading={isLoading || isCreatingConversation}
         />
-      </main>
+        </main>
 
-      <ArtifactPanel
-        artifact={activeArtifact}
-        isOpen={isArtifactOpen}
-        onClose={() => setIsArtifactOpen(false)}
-        width={artifactPanelWidth}
-        onWidthChange={handlePanelWidthChange}
-      />
+        {/* Artifact panel as flex child */}
+        {isArtifactOpen && activeArtifact && (
+          <ArtifactPanel
+            artifact={activeArtifact}
+            isOpen={isArtifactOpen}
+            onClose={() => setIsArtifactOpen(false)}
+            width={artifactPanelWidth}
+            onWidthChange={handlePanelWidthChange}
+          />
+        )}
+      </div>
     </div>
   )
 }
