@@ -162,41 +162,38 @@ export default function ChatPage() {
   }
 
   const loadConversationMessages = async (conversationId: string, requestSeq: number) => {
-    // Abort previous request if still loading
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort()
-    }
-
     // Create new abort controller for this request
     const controller = new AbortController()
     abortControllerRef.current = controller
-    loadingConversationIdRef.current = conversationId
 
     try {
       setIsLoadingConversation(true)
 
       const response = await fetch(`/api/conversations/${conversationId}`, {
         signal: controller.signal,
+        cache: 'no-store',
       })
 
-      // Triple check: ignore if stale
-      if (selectedConversationIdRef.current !== conversationId) {
-        if (process.env.NODE_ENV !== 'production') {
-          console.log('[Chat] Ignoring stale response - conversation changed')
-        }
-        return
-      }
-
-      if (conversationRequestSeqRef.current !== requestSeq) {
-        if (process.env.NODE_ENV !== 'production') {
-          console.log('[Chat] Ignoring stale response - sequence mismatch')
-        }
-        return
-      }
-
+      // Check if aborted first
       if (controller.signal.aborted) {
         if (process.env.NODE_ENV !== 'production') {
-          console.log('[Chat] Request was aborted')
+          console.log('[ChatSwitch]', { conversationId, requestSeq, action: 'aborted' })
+        }
+        return
+      }
+
+      // Check if conversation changed
+      if (selectedConversationIdRef.current !== conversationId) {
+        if (process.env.NODE_ENV !== 'production') {
+          console.log('[ChatSwitch]', { conversationId, requestSeq, action: 'ignored - conversation changed' })
+        }
+        return
+      }
+
+      // Check if sequence is stale
+      if (conversationRequestSeqRef.current !== requestSeq) {
+        if (process.env.NODE_ENV !== 'production') {
+          console.log('[ChatSwitch]', { conversationId, requestSeq, action: 'ignored - stale sequence' })
         }
         return
       }
@@ -204,11 +201,27 @@ export default function ChatPage() {
       if (response.ok) {
         const rawData = await response.json()
 
+        // Final check before applying
+        if (
+          selectedConversationIdRef.current !== conversationId ||
+          conversationRequestSeqRef.current !== requestSeq ||
+          controller.signal.aborted
+        ) {
+          if (process.env.NODE_ENV !== 'production') {
+            console.log('[ChatSwitch]', { conversationId, requestSeq, action: 'ignored before apply' })
+          }
+          return
+        }
+
         // Process loaded messages: dedupe, sort, parse artifacts
         const processedData = processLoadedMessages(rawData, {
           conversationId,
           parseArtifacts: true,
         })
+
+        if (process.env.NODE_ENV !== 'production') {
+          console.log('[ChatSwitch]', { conversationId, requestSeq, action: 'applied messages', count: processedData.length })
+        }
 
         setMessages(processedData)
         // Update cache with processed messages
@@ -217,19 +230,22 @@ export default function ChatPage() {
         setMessages([])
       }
     } catch (error: any) {
+      // Don't show error toast for aborted requests
       if (error.name === 'AbortError') {
         if (process.env.NODE_ENV !== 'production') {
-          console.log('[Chat] Request aborted for:', conversationId)
+          console.log('[ChatSwitch]', { conversationId, requestSeq, action: 'caught abort error' })
         }
-      } else {
-        console.error('[Chat] Failed to load messages:', error)
-        setMessages([])
+        return
       }
+      console.error('[Chat] Failed to load messages:', error)
+      setMessages([])
     } finally {
-      // Only clear loading if this conversation is still selected
-      if (selectedConversationIdRef.current === conversationId) {
+      // Only clear loading if this is still the selected conversation AND sequence matches
+      if (
+        selectedConversationIdRef.current === conversationId &&
+        conversationRequestSeqRef.current === requestSeq
+      ) {
         setIsLoadingConversation(false)
-        loadingConversationIdRef.current = null
       }
     }
   }
@@ -251,6 +267,15 @@ export default function ChatPage() {
     const requestSeq = ++conversationRequestSeqRef.current
     selectedConversationIdRef.current = id
 
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('[ChatSwitch]', { id, requestSeq, action: 'start' })
+    }
+
+    // Abort any previous request
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort()
+    }
+
     // IMMEDIATELY update UI - don't wait for fetch
     setCurrentConversation(conv)
     setSelectedModel(conv.model_used)
@@ -260,7 +285,7 @@ export default function ChatPage() {
     const cached = messageCache[id]
     if (cached) {
       if (process.env.NODE_ENV !== 'production') {
-        console.log('[Chat] Using cached messages for:', id)
+        console.log('[ChatSwitch]', { id, requestSeq, action: 'using cache' })
       }
       // Process cached messages to ensure deduplication and correct order
       const processed = processLoadedMessages(cached, {
