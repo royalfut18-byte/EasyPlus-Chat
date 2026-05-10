@@ -84,13 +84,22 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
     document.body.style.cursor = 'col-resize'
   }
 
-  if (!artifact || !isOpen) return null
+  // Debug logging
+  if (process.env.NODE_ENV !== 'production' && isOpen) {
+    console.log('[ArtifactPanel] Rendering', {
+      hasArtifact: !!artifact,
+      title: artifact?.title,
+      language: artifact?.language,
+      codeLength: artifact?.code?.length,
+    })
+  }
 
-  const canPreview = artifact.language === 'html'
-  const isReact = artifact.language === 'tsx' || artifact.language === 'jsx'
+  const canPreview = artifact?.language === 'html'
+  const isReact = artifact?.language === 'tsx' || artifact?.language === 'jsx'
   const currentTab = canPreview || isReact ? activeTab : 'code'
 
   const handleCopy = () => {
+    if (!artifact?.code) return
     navigator.clipboard.writeText(artifact.code)
     toast({
       title: 'Copied to clipboard',
@@ -99,6 +108,8 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
   }
 
   const handleDownload = () => {
+    if (!artifact?.code) return
+
     const extensions: Record<string, string> = {
       html: 'html',
       tsx: 'tsx',
@@ -131,18 +142,19 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
 
   return (
     <AnimatePresence>
-      <motion.div
-        ref={panelRef}
-        initial={{ x: '100%' }}
-        animate={{ x: 0 }}
-        exit={{ x: '100%' }}
-        transition={{ type: 'spring', damping: 30, stiffness: 300 }}
-        className="fixed top-0 right-0 h-full glass-strong border-l border-white/10 z-50 shadow-2xl"
-        style={{
-          width: isMobile ? '100%' : `${currentWidth}px`,
-          position: 'relative',
-        }}
-      >
+      {isOpen && (
+        <motion.div
+          ref={panelRef}
+          initial={{ x: '100%' }}
+          animate={{ x: 0 }}
+          exit={{ x: '100%' }}
+          transition={{ type: 'spring', damping: 30, stiffness: 300 }}
+          className="fixed top-0 right-0 h-full glass-strong border-l border-white/10 z-50 shadow-2xl"
+          style={{
+            width: isMobile ? '100%' : `${currentWidth}px`,
+            position: 'relative',
+          }}
+        >
         {/* Resize Handle - Desktop Only - Full Height */}
         {!isMobile && (
           <div
@@ -176,9 +188,11 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
           {/* Header */}
           <div className="glass border-b border-white/10 p-4 flex items-center justify-between">
             <div className="flex-1 min-w-0">
-              <h3 className="text-lg font-semibold text-white truncate">{artifact.title}</h3>
+              <h3 className="text-lg font-semibold text-white truncate">
+                {artifact?.title || 'No Artifact'}
+              </h3>
               <p className="text-xs text-gray-400 capitalize mt-0.5">
-                {artifact.language} • Artifact
+                {artifact?.language ? `${artifact.language} • Artifact` : 'No artifact selected'}
               </p>
             </div>
             <Button
@@ -222,15 +236,38 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
           </div>
 
           {/* Content */}
-          <div className="flex-1 overflow-y-auto scrollbar-thin bg-[#0A0A0F]">
-            {currentTab === 'preview' ? (
+          <div className="flex-1 overflow-hidden flex flex-col min-h-0 bg-[#0A0A0F]">
+            {!artifact ? (
+              <div className="flex items-center justify-center h-full p-8 text-center">
+                <div className="max-w-md space-y-4">
+                  <div className="text-4xl">📦</div>
+                  <h4 className="text-lg font-semibold text-white">No Artifact Selected</h4>
+                  <p className="text-sm text-gray-400">
+                    Create or select an artifact to view it here.
+                  </p>
+                </div>
+              </div>
+            ) : !artifact.code ? (
+              <div className="flex items-center justify-center h-full p-8 text-center">
+                <div className="max-w-md space-y-4">
+                  <div className="text-4xl">⚠️</div>
+                  <h4 className="text-lg font-semibold text-white">Empty Artifact</h4>
+                  <p className="text-sm text-gray-400">
+                    This artifact has no code to display.
+                  </p>
+                </div>
+              </div>
+            ) : currentTab === 'preview' ? (
               canPreview ? (
-                <iframe
-                  srcDoc={artifact.code}
-                  title={artifact.title}
-                  sandbox="allow-scripts"
-                  className="w-full h-full bg-white border-0"
-                />
+                <div className="flex-1 min-h-0 h-full">
+                  <iframe
+                    srcDoc={artifact.code}
+                    title={artifact.title}
+                    sandbox="allow-scripts allow-forms allow-modals allow-popups"
+                    className="w-full h-full bg-white border-0"
+                    style={{ minHeight: 0 }}
+                  />
+                </div>
               ) : isReact ? (
                 <div className="flex items-center justify-center h-full p-8 text-center">
                   <div className="max-w-md space-y-4">
@@ -241,9 +278,19 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
                     </p>
                   </div>
                 </div>
-              ) : null
+              ) : (
+                <div className="flex items-center justify-center h-full p-8 text-center">
+                  <div className="max-w-md space-y-4">
+                    <div className="text-4xl">👁️</div>
+                    <h4 className="text-lg font-semibold text-white">Preview Not Available</h4>
+                    <p className="text-sm text-gray-400">
+                      Preview is only available for HTML artifacts. Switch to the Code tab to view the {artifact.language} code.
+                    </p>
+                  </div>
+                </div>
+              )
             ) : (
-              <div className="p-4">
+              <div className="flex-1 overflow-auto p-4 min-h-0">
                 <SyntaxHighlighter
                   language={
                     artifact.language === 'tsx' || artifact.language === 'jsx'
@@ -269,25 +316,28 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
           </div>
 
           {/* Actions */}
-          <div className="glass border-t border-white/10 p-4 flex gap-3">
-            <Button
-              onClick={handleCopy}
-              className="flex-1 glass hover:bg-white/10 border border-white/20"
-              variant="ghost"
-            >
-              <Copy className="h-4 w-4 mr-2" />
-              Copy Code
-            </Button>
-            <Button
-              onClick={handleDownload}
-              className="flex-1 gradient-primary hover:opacity-90"
-            >
-              <Download className="h-4 w-4 mr-2" />
-              Download
-            </Button>
-          </div>
+          {artifact && artifact.code && (
+            <div className="glass border-t border-white/10 p-4 flex gap-3">
+              <Button
+                onClick={handleCopy}
+                className="flex-1 glass hover:bg-white/10 border border-white/20"
+                variant="ghost"
+              >
+                <Copy className="h-4 w-4 mr-2" />
+                Copy Code
+              </Button>
+              <Button
+                onClick={handleDownload}
+                className="flex-1 gradient-primary hover:opacity-90"
+              >
+                <Download className="h-4 w-4 mr-2" />
+                Download
+              </Button>
+            </div>
+          )}
         </div>
-      </motion.div>
+        </motion.div>
+      )}
     </AnimatePresence>
   )
 }
