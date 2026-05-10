@@ -196,8 +196,9 @@ export default function ChatPage() {
       return
     }
 
-    // CRITICAL: Prevent duplicate sends
+    // CRITICAL: Prevent duplicate sends - must be FIRST
     if (isSendingRef.current) {
+      console.log('[Chat] Duplicate send blocked')
       return
     }
     isSendingRef.current = true
@@ -208,9 +209,13 @@ export default function ChatPage() {
     // Store user prompt for artifact parsing
     lastUserPromptRef.current = trimmedContent
 
-    // Generate stable IDs
-    const userMessageId = `user-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
-    const assistantMessageId = `assistant-${Date.now() + 1}-${Math.random().toString(36).substr(2, 9)}`
+    // Generate stable IDs using crypto
+    const userMessageId = typeof crypto !== 'undefined' && crypto.randomUUID
+      ? `user-${crypto.randomUUID()}`
+      : `user-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+    const assistantMessageId = typeof crypto !== 'undefined' && crypto.randomUUID
+      ? `assistant-${crypto.randomUUID()}`
+      : `assistant-${Date.now() + 1}-${Math.random().toString(36).substr(2, 9)}`
 
     const userMessage: Message = {
       id: userMessageId,
@@ -222,8 +227,12 @@ export default function ChatPage() {
       attachments,
     }
 
-    // IMMEDIATELY show user message
-    setMessages((prev) => dedupeMessages([...prev, userMessage]))
+    // IMMEDIATELY show user message (once only)
+    setMessages((prev) => {
+      const exists = prev.some(m => m.id === userMessageId)
+      if (exists) return prev
+      return [...prev, userMessage]
+    })
     setIsLoading(true)
 
     // Create conversation if needed
@@ -250,7 +259,7 @@ export default function ChatPage() {
         setCurrentConversation(conversation)
         setConversations((prev) => [conversation!, ...prev])
 
-        // Update user message with real conversation ID
+        // Update user message with real conversation ID (no duplication)
         setMessages((prev) =>
           prev.map((m) =>
             m.id === userMessageId ? { ...m, conversation_id: conversation!.id } : m
@@ -259,6 +268,7 @@ export default function ChatPage() {
 
         setIsCreatingConversation(false)
       } catch (error: any) {
+        console.error('[Chat] Failed to create conversation:', error.message)
         toast({
           title: 'Error',
           description: 'Failed to create conversation',
@@ -279,7 +289,7 @@ export default function ChatPage() {
       return
     }
 
-    // Create assistant placeholder
+    // Create assistant placeholder with stable ID
     const assistantPlaceholder: Message = {
       id: assistantMessageId,
       conversation_id: conversation.id,
@@ -289,12 +299,17 @@ export default function ChatPage() {
       created_at: new Date().toISOString(),
     }
 
-    // IMMEDIATELY add assistant placeholder
-    setMessages((prev) => dedupeMessages([...prev, assistantPlaceholder]))
+    // IMMEDIATELY add assistant placeholder (once only)
+    setMessages((prev) => {
+      const exists = prev.some(m => m.id === assistantMessageId)
+      if (exists) return prev
+      return [...prev, assistantPlaceholder]
+    })
 
     try {
-      // Prepare messages for API (use captured artifact mode)
-      const messagesToSend = [...messages, userMessage].map((m) => ({
+      // Prepare messages for API (do NOT include the new user message in context - it's not in old messages yet)
+      const contextMessages = messages.filter(m => m.role === 'user' || m.role === 'assistant')
+      const messagesToSend = [...contextMessages, userMessage].map((m) => ({
         role: m.role,
         content: m.content,
         attachments: m.attachments,
@@ -342,8 +357,16 @@ Rules:
           description: errorData.error || 'Please top up your credits to continue',
           variant: 'destructive',
         })
-        setMessages((prev) => prev.filter((m) => m.id !== assistantMessageId))
+        // Update placeholder with error instead of removing
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === assistantMessageId
+              ? { ...m, content: 'Error: Insufficient credits. Please top up to continue.' }
+              : m
+          )
+        )
         setIsLoading(false)
+        setIsCreatingConversation(false)
         isSendingRef.current = false
         return
       }
@@ -363,7 +386,7 @@ Rules:
       const decoder = new TextDecoder()
       let assistantContent = ''
 
-      // Stream response
+      // Stream response and update in real-time
       while (reader) {
         const { done, value } = await reader.read()
         if (done) break
@@ -371,7 +394,7 @@ Rules:
         const chunk = decoder.decode(value)
         assistantContent += chunk
 
-        // Update message in real-time
+        // Update message by ID - functional update
         setMessages((prev) =>
           prev.map((m) =>
             m.id === assistantMessageId ? { ...m, content: assistantContent } : m
@@ -379,8 +402,27 @@ Rules:
         )
       }
 
-      // CRITICAL: Parse artifact AFTER streaming completes (use captured artifact mode)
-      if (artifactModeAtSendRef.current && assistantContent) {
+      // CRITICAL: Handle final content after streaming
+      console.log('[Chat] Stream complete, content length:', assistantContent.length)
+
+      // If content is empty, show error
+      if (!assistantContent || assistantContent.trim() === '') {
+        console.error('[Chat] Empty response from API')
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === assistantMessageId
+              ? { ...m, content: 'Error: Received empty response from AI.' }
+              : m
+          )
+        )
+        setIsLoading(false)
+        setIsCreatingConversation(false)
+        isSendingRef.current = false
+        return
+      }
+
+      // Parse artifact AFTER streaming completes
+      if (artifactModeAtSendRef.current) {
         const { artifact, cleanContent } = parseArtifactFromResponse(
           assistantContent,
           artifactModeAtSendRef.current,
@@ -388,10 +430,18 @@ Rules:
         )
 
         if (artifact) {
+          console.log('[Chat] Artifact detected:', artifact.title)
+
+          // Ensure clean content is not empty
+          let finalContent = cleanContent.trim()
+          if (!finalContent) {
+            finalContent = `I created an artifact for you: **${artifact.title}**.`
+          }
+
           // Update message with clean content
           setMessages((prev) =>
             prev.map((m) =>
-              m.id === assistantMessageId ? { ...m, content: cleanContent } : m
+              m.id === assistantMessageId ? { ...m, content: finalContent } : m
             )
           )
 
@@ -399,24 +449,50 @@ Rules:
           setActiveArtifact(artifact)
           setIsArtifactOpen(true)
           setArtifactMessageId(assistantMessageId)
+        } else {
+          // No artifact, ensure content is shown
+          console.log('[Chat] No artifact detected, showing normal response')
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === assistantMessageId ? { ...m, content: assistantContent } : m
+            )
+          )
         }
+      } else {
+        // Normal mode, ensure content is shown
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === assistantMessageId ? { ...m, content: assistantContent } : m
+          )
+        )
       }
 
-      // Background tasks
-      loadUserProfile()
+      // Background tasks (non-blocking)
+      loadUserProfile().catch(e => console.error('[Chat] Profile load failed:', e))
       if (messages.length === 0) {
-        loadConversations()
+        loadConversations().catch(e => console.error('[Chat] Conversations load failed:', e))
       }
     } catch (error: any) {
-      setMessages((prev) => prev.filter((m) => m.id === assistantMessageId))
+      console.error('[Chat] Send message error:', error.message)
+      // Update assistant message with error instead of removing
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === assistantMessageId
+            ? { ...m, content: `Sorry, something went wrong: ${error.message}` }
+            : m
+        )
+      )
       toast({
         title: 'Error',
         description: error.message || 'Failed to send message',
         variant: 'destructive',
       })
     } finally {
+      // ALWAYS reset loading states
       setIsLoading(false)
+      setIsCreatingConversation(false)
       isSendingRef.current = false
+      console.log('[Chat] Send complete, loading states reset')
     }
   }
 

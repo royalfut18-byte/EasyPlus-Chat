@@ -74,9 +74,14 @@ export function parseArtifactFromResponse(
     if (beforeArtifact) {
       cleanContent += beforeArtifact + '\n\n'
     }
-    cleanContent += `**✨ Artifact created: ${artifact.title}**\n\n_Click "Open Artifact" below to view and interact with the ${language} code._`
+    cleanContent += `**✨ Artifact created: ${artifact.title}**\n\n_The ${language} code is now available in the artifact panel on the right._`
     if (afterArtifact) {
       cleanContent += '\n\n' + afterArtifact
+    }
+
+    // Ensure cleanContent is never empty
+    if (!cleanContent.trim()) {
+      cleanContent = `I created an artifact for you: **${artifact.title}**.`
     }
 
     return { cleanContent, artifact }
@@ -106,9 +111,14 @@ export function parseArtifactFromResponse(
     if (beforeHtml) {
       cleanContent += beforeHtml + '\n\n'
     }
-    cleanContent += `**✨ Artifact created: ${artifact.title}**\n\n_Click "Open Artifact" below to view the interactive HTML page._`
+    cleanContent += `**✨ Artifact created: ${artifact.title}**\n\n_The interactive HTML page is now available in the artifact panel on the right._`
     if (afterHtml) {
       cleanContent += '\n\n' + afterHtml
+    }
+
+    // Ensure cleanContent is never empty
+    if (!cleanContent.trim()) {
+      cleanContent = `I created an artifact for you: **${artifact.title}**.`
     }
 
     return { cleanContent, artifact }
@@ -140,9 +150,14 @@ export function parseArtifactFromResponse(
       if (beforeCode) {
         cleanContent += beforeCode + '\n\n'
       }
-      cleanContent += `**✨ Artifact created: ${artifact.title}**\n\n_Click "Open Artifact" below to view the ${language} code._`
+      cleanContent += `**✨ Artifact created: ${artifact.title}**\n\n_The ${language} code is now available in the artifact panel on the right._`
       if (afterCode) {
         cleanContent += '\n\n' + afterCode
+      }
+
+      // Ensure cleanContent is never empty
+      if (!cleanContent.trim()) {
+        cleanContent = `I created an artifact for you: **${artifact.title}**.`
       }
 
       return { cleanContent, artifact }
