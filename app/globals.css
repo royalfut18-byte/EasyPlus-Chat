@@ -82,19 +82,67 @@
 }
 
 .prose code {
-  @apply text-sm;
+  @apply text-sm font-mono;
 }
 
 .prose p {
-  @apply mb-4;
+  @apply mb-4 leading-7;
 }
 
 .prose ul, .prose ol {
-  @apply mb-4 ml-6;
+  @apply mb-4 ml-6 space-y-2;
 }
 
 .prose li {
-  @apply mb-2;
+  @apply leading-7;
+}
+
+.prose h1, .prose h2, .prose h3, .prose h4 {
+  @apply font-bold;
+}
+
+.prose h1 {
+  @apply text-2xl mt-6 mb-4;
+}
+
+.prose h2 {
+  @apply text-xl mt-5 mb-3;
+}
+
+.prose h3 {
+  @apply text-lg mt-4 mb-2;
+}
+
+.prose table {
+  @apply border-collapse w-full my-4;
+}
+
+.prose th {
+  @apply font-semibold text-left px-4 py-2;
+}
+
+.prose td {
+  @apply px-4 py-2;
+}
+
+.prose blockquote {
+  @apply border-l-4 pl-4 py-2 my-4 italic;
+}
+
+.prose a {
+  @apply text-blue-400 hover:text-blue-300 underline underline-offset-2 transition-colors;
+}
+
+.prose strong {
+  @apply font-bold;
+}
+
+.prose em {
+  @apply italic;
+}
+
+.prose hr {
+  @apply my-6 border-white/20;
 }
 
 .message-content p:last-child {

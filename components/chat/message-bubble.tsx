@@ -38,53 +38,105 @@ export function MessageBubble({ role, content, model, onRegenerate }: MessageBub
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3 }}
-      className={cn('flex gap-4 mb-6', isUser ? 'justify-end' : 'justify-start')}
+      className={cn('mb-6', isUser ? 'flex justify-end' : 'flex justify-start')}
     >
       <div
         className={cn(
-          'max-w-[80%] rounded-2xl p-4 relative group',
+          'rounded-2xl p-4 md:p-6 relative group',
           isUser
-            ? 'gradient-primary text-white ml-auto'
-            : 'glass text-gray-100'
+            ? 'max-w-[85%] md:max-w-[70%] gradient-primary text-white'
+            : 'w-full glass'
         )}
       >
         {!isUser && modelData && (
-          <div className="flex items-center gap-2 mb-2 pb-2 border-b border-white/10">
+          <div className="flex items-center gap-2 mb-3 pb-3 border-b border-white/10">
             <span className="text-lg">{modelData.icon}</span>
             <span className="text-xs font-medium text-gray-400">{modelData.name}</span>
           </div>
         )}
 
-        <div className="message-content prose prose-invert max-w-none">
+        <div className={cn(
+          'message-content prose prose-invert max-w-none',
+          isUser ? 'prose-sm' : 'prose-base'
+        )}>
           {isUser ? (
-            <p className="mb-0">{content}</p>
+            <p className="mb-0 whitespace-pre-wrap break-words">{content}</p>
           ) : (
             <ReactMarkdown
               remarkPlugins={[remarkGfm, remarkMath]}
               rehypePlugins={[rehypeKatex]}
               components={{
+                h1: ({ children }) => <h1 className="text-2xl font-bold mt-6 mb-4 text-white">{children}</h1>,
+                h2: ({ children }) => <h2 className="text-xl font-bold mt-5 mb-3 text-white">{children}</h2>,
+                h3: ({ children }) => <h3 className="text-lg font-semibold mt-4 mb-2 text-white">{children}</h3>,
+                h4: ({ children }) => <h4 className="text-base font-semibold mt-3 mb-2 text-gray-200">{children}</h4>,
+                p: ({ children }) => <p className="mb-4 leading-7 text-gray-100 last:mb-0">{children}</p>,
+                ul: ({ children }) => <ul className="mb-4 ml-6 space-y-2 list-disc text-gray-100">{children}</ul>,
+                ol: ({ children }) => <ol className="mb-4 ml-6 space-y-2 list-decimal text-gray-100">{children}</ol>,
+                li: ({ children }) => <li className="leading-7">{children}</li>,
+                blockquote: ({ children }) => (
+                  <blockquote className="border-l-4 border-primary/50 pl-4 py-2 my-4 italic text-gray-300 bg-white/5 rounded-r">
+                    {children}
+                  </blockquote>
+                ),
+                a: ({ href, children }) => (
+                  <a
+                    href={href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-400 hover:text-blue-300 underline underline-offset-2 transition-colors"
+                  >
+                    {children}
+                  </a>
+                ),
+                table: ({ children }) => (
+                  <div className="my-4 overflow-x-auto">
+                    <table className="w-full border-collapse border border-white/20 rounded-lg overflow-hidden">
+                      {children}
+                    </table>
+                  </div>
+                ),
+                thead: ({ children }) => <thead className="bg-white/10">{children}</thead>,
+                tbody: ({ children }) => <tbody>{children}</tbody>,
+                tr: ({ children }) => <tr className="border-b border-white/10 last:border-0">{children}</tr>,
+                th: ({ children }) => (
+                  <th className="px-4 py-2 text-left font-semibold text-white border-r border-white/10 last:border-0">
+                    {children}
+                  </th>
+                ),
+                td: ({ children }) => (
+                  <td className="px-4 py-2 text-gray-200 border-r border-white/10 last:border-0">
+                    {children}
+                  </td>
+                ),
                 code({ node, inline, className, children, ...props }: any) {
                   const match = /language-(\w+)/.exec(className || '')
                   return !inline && match ? (
-                    <SyntaxHighlighter
-                      style={vscDarkPlus}
-                      language={match[1]}
-                      PreTag="div"
-                      customStyle={{
-                        margin: 0,
-                        borderRadius: '0.5rem',
-                        fontSize: '0.875rem',
-                      }}
-                      {...props}
-                    >
-                      {String(children).replace(/\n$/, '')}
-                    </SyntaxHighlighter>
+                    <div className="my-4">
+                      <SyntaxHighlighter
+                        style={vscDarkPlus}
+                        language={match[1]}
+                        PreTag="div"
+                        customStyle={{
+                          margin: 0,
+                          borderRadius: '0.5rem',
+                          fontSize: '0.875rem',
+                          padding: '1rem',
+                        }}
+                        {...props}
+                      >
+                        {String(children).replace(/\n$/, '')}
+                      </SyntaxHighlighter>
+                    </div>
                   ) : (
-                    <code className={cn('text-xs bg-white/10 px-1.5 py-0.5 rounded', className)} {...props}>
+                    <code className={cn('text-xs bg-white/20 px-1.5 py-0.5 rounded font-mono text-blue-300', className)} {...props}>
                       {children}
                     </code>
                   )
                 },
+                strong: ({ children }) => <strong className="font-bold text-white">{children}</strong>,
+                em: ({ children }) => <em className="italic text-gray-200">{children}</em>,
+                hr: () => <hr className="my-6 border-white/20" />,
               }}
             >
               {content}

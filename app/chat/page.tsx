@@ -14,6 +14,38 @@ import { toast } from '@/components/ui/use-toast'
 import { AI_MODELS } from '@/types/models'
 import type { Conversation, Message } from '@/types/models'
 
+// Generate a smart conversation title from the first user message
+function generateConversationTitle(message: string): string {
+  // Remove common filler words
+  const fillers = /^(what is|what's|can you|please|could you|tell me|explain|search the web|latest|give me|show me|find)\s+/i
+  let title = message.replace(fillers, '')
+
+  // Take first 50 characters and find last complete word
+  if (title.length > 50) {
+    title = title.substring(0, 50)
+    const lastSpace = title.lastIndexOf(' ')
+    if (lastSpace > 20) {
+      title = title.substring(0, lastSpace)
+    }
+  }
+
+  // Capitalize first letter of each major word
+  title = title
+    .split(' ')
+    .map((word, index) => {
+      if (index === 0 || word.length > 3) {
+        return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
+      }
+      return word.toLowerCase()
+    })
+    .join(' ')
+
+  // Remove trailing punctuation
+  title = title.replace(/[.,;:!?]+$/, '')
+
+  return title || 'New Chat'
+}
+
 export default function ChatPage() {
   const [selectedModel, setSelectedModel] = useState(AI_MODELS[0].id)
   const [conversations, setConversations] = useState<Conversation[]>([])
@@ -90,29 +122,13 @@ export default function ChatPage() {
     }
   }
 
-  const handleNewChat = async () => {
-    if (isCreatingConversation) return
+  const handleNewChat = () => {
+    // Don't create blank chats - only clear UI to draft state
+    // If already in a blank state, do nothing
+    if (!currentConversation && messages.length === 0) return
 
-    setIsCreatingConversation(true)
-    try {
-      const response = await fetch('/api/conversations', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: 'New Conversation',
-          model: selectedModel,
-        }),
-      })
-
-      if (response.ok) {
-        const conversation = await response.json()
-        setCurrentConversation(conversation)
-        setMessages([])
-        await loadConversations()
-      }
-    } finally {
-      setIsCreatingConversation(false)
-    }
+    setCurrentConversation(null)
+    setMessages([])
   }
 
   const handleSelectConversation = async (id: string) => {
@@ -143,6 +159,12 @@ export default function ChatPage() {
   }
 
   const handleSendMessage = async (content: string) => {
+    // Trim and validate input
+    const trimmedContent = content.trim()
+    if (!trimmedContent) {
+      return
+    }
+
     // Prevent duplicate sends
     if (isSendingRef.current || isLoading || isCreatingConversation) {
       return
@@ -150,16 +172,19 @@ export default function ChatPage() {
 
     isSendingRef.current = true
 
-    // Create conversation if needed
+    // Create conversation if needed (first message)
     let conversation = currentConversation
     if (!conversation) {
       setIsCreatingConversation(true)
       try {
+        // Generate smart title from first user message
+        const title = generateConversationTitle(trimmedContent)
+
         const response = await fetch('/api/conversations', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            title: 'New Conversation',
+            title,
             model: selectedModel,
           }),
         })
@@ -194,7 +219,7 @@ export default function ChatPage() {
       id: Date.now().toString(),
       conversation_id: conversation.id,
       role: 'user',
-      content,
+      content: trimmedContent,
       model: selectedModel,
       created_at: new Date().toISOString(),
     }
@@ -309,53 +334,76 @@ export default function ChatPage() {
       <main className="flex-1 flex flex-col ml-0 md:ml-80">
         <ModelSelector selectedModel={selectedModel} onSelectModel={setSelectedModel} />
 
-        <div className="flex-1 overflow-y-auto px-6 py-8 scrollbar-thin">
+        <div className="flex-1 overflow-y-auto px-4 md:px-6 py-6 md:py-8 scrollbar-thin">
           <div className="max-w-4xl mx-auto">
             <AnimatePresence mode="popLayout">
               {messages.length === 0 ? (
                 <motion.div
                   key="empty"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  className="flex flex-col items-center justify-center h-full min-h-[60vh] text-center space-y-6"
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  transition={{ duration: 0.3 }}
+                  className="flex flex-col items-center justify-center h-full min-h-[60vh] text-center space-y-8 px-4"
                 >
-                  <div className="h-20 w-20 rounded-2xl gradient-primary flex items-center justify-center">
-                    <Sparkles className="h-10 w-10" />
+                  <div className="h-24 w-24 rounded-3xl gradient-primary flex items-center justify-center shadow-2xl shadow-purple-500/30">
+                    <Sparkles className="h-12 w-12 text-white" />
                   </div>
-                  <div>
-                    <h2 className="text-3xl font-bold mb-2">Ready to chat?</h2>
-                    <p className="text-gray-400">
-                      Select a model above and start a conversation
+                  <div className="space-y-3">
+                    <h2 className="text-3xl md:text-4xl font-bold gradient-text">Ready to explore?</h2>
+                    <p className="text-gray-400 text-base md:text-lg max-w-md mx-auto">
+                      Ask me anything. I can help with research, coding, analysis, and more.
                     </p>
                   </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-w-2xl w-full">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 w-full max-w-2xl">
                     {[
-                      'Explain quantum computing',
-                      'Write a Python function',
-                      'Plan a trip to Japan',
-                      'Debug this code',
+                      { text: 'Explain quantum computing', icon: '🔬' },
+                      { text: 'Write a Python function', icon: '💻' },
+                      { text: 'Plan a trip to Japan', icon: '✈️' },
+                      { text: 'Debug this code', icon: '🐛' },
                     ].map((prompt, i) => (
-                      <button
+                      <motion.button
                         key={i}
-                        onClick={() => handleSendMessage(prompt)}
+                        onClick={() => handleSendMessage(prompt.text)}
                         disabled={isLoading || isCreatingConversation}
-                        className="glass-strong p-4 rounded-xl text-left hover:glow-border transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="glass-strong p-4 md:p-5 rounded-xl text-left hover:glow-border hover:bg-white/5 transition-all disabled:opacity-50 disabled:cursor-not-allowed group"
+                        whileHover={{ scale: 1.02, y: -2 }}
+                        whileTap={{ scale: 0.98 }}
                       >
-                        <p className="text-sm text-gray-300">{prompt}</p>
-                      </button>
+                        <span className="text-2xl mb-2 block">{prompt.icon}</span>
+                        <p className="text-sm md:text-base text-gray-300 group-hover:text-white transition-colors">
+                          {prompt.text}
+                        </p>
+                      </motion.button>
                     ))}
                   </div>
                 </motion.div>
               ) : (
-                messages.map((message) => (
-                  <MessageBubble
-                    key={message.id}
-                    role={message.role}
-                    content={message.content}
-                    model={message.model}
-                  />
-                ))
+                <>
+                  {messages.map((message) => (
+                    <MessageBubble
+                      key={message.id}
+                      role={message.role}
+                      content={message.content}
+                      model={message.model}
+                    />
+                  ))}
+                  {isLoading && (
+                    <motion.div
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      className="flex justify-start mb-6"
+                    >
+                      <div className="glass p-4 rounded-2xl">
+                        <div className="flex gap-2">
+                          <div className="w-2 h-2 bg-purple-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                          <div className="w-2 h-2 bg-purple-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                          <div className="w-2 h-2 bg-purple-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                        </div>
+                      </div>
+                    </motion.div>
+                  )}
+                </>
               )}
             </AnimatePresence>
             <div ref={messagesEndRef} />

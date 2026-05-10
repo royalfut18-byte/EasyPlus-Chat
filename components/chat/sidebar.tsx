@@ -152,8 +152,10 @@ export function Sidebar({
 
             <div className="flex-1 overflow-y-auto p-4 space-y-2 scrollbar-thin">
               {conversations.length === 0 ? (
-                <div className="text-center py-8 text-gray-500 text-sm">
-                  No conversations yet
+                <div className="text-center py-8 text-gray-400 text-sm">
+                  <MessageSquare className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                  <p>No conversations yet</p>
+                  <p className="text-xs text-gray-500 mt-1">Start a new chat to begin</p>
                 </div>
               ) : (
                 conversations.map((conv) => (
@@ -161,22 +163,32 @@ export function Sidebar({
                     key={conv.id}
                     onClick={() => onSelectConversation(conv.id)}
                     className={cn(
-                      'w-full text-left p-3 rounded-lg transition-colors group relative',
+                      'w-full text-left p-3 rounded-xl transition-all group relative',
                       currentConversationId === conv.id
-                        ? 'bg-white/10 glow-border'
-                        : 'hover:bg-white/5'
+                        ? 'bg-gradient-to-r from-purple-500/20 to-blue-500/20 glow-border shadow-lg'
+                        : 'hover:bg-white/5 border border-transparent hover:border-white/10'
                     )}
-                    whileHover={{ scale: 1.02 }}
-                    whileTap={{ scale: 0.98 }}
+                    whileHover={{ scale: 1.01 }}
+                    whileTap={{ scale: 0.99 }}
                   >
-                    <div className="flex items-start gap-2">
-                      <MessageSquare className="h-4 w-4 mt-1 text-gray-400 shrink-0" />
+                    <div className="flex items-start gap-3 pr-8">
+                      <MessageSquare className={cn(
+                        'h-4 w-4 mt-1 shrink-0 transition-colors',
+                        currentConversationId === conv.id ? 'text-purple-400' : 'text-gray-400'
+                      )} />
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-white truncate">
+                        <p className={cn(
+                          'text-sm font-medium truncate leading-snug',
+                          currentConversationId === conv.id ? 'text-white' : 'text-gray-200'
+                        )}>
                           {conv.title}
                         </p>
-                        <p className="text-xs text-gray-500 mt-0.5">
-                          {new Date(conv.created_at).toLocaleDateString()}
+                        <p className="text-xs text-gray-500 mt-1">
+                          {new Date(conv.created_at).toLocaleDateString(undefined, {
+                            month: 'short',
+                            day: 'numeric',
+                            year: new Date(conv.created_at).getFullYear() !== new Date().getFullYear() ? 'numeric' : undefined
+                          })}
                         </p>
                       </div>
                     </div>
@@ -187,7 +199,7 @@ export function Sidebar({
                       }}
                       variant="ghost"
                       size="icon"
-                      className="absolute top-2 right-2 h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity"
+                      className="absolute top-2 right-2 h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-500/20"
                     >
                       <Trash2 className="h-3 w-3 text-red-400" />
                     </Button>

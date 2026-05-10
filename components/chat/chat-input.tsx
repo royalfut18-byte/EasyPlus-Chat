@@ -39,9 +39,9 @@ export function ChatInput({ onSend, disabled, isLoading }: ChatInputProps) {
   }
 
   return (
-    <div className="border-t border-white/10 bg-[#0A0A0F]/80 backdrop-blur-xl p-4">
+    <div className="sticky bottom-0 border-t border-white/10 bg-[#0A0A0F]/90 backdrop-blur-xl p-4 shadow-2xl">
       <div className="max-w-4xl mx-auto">
-        <div className="glass-strong rounded-2xl p-3 flex items-end gap-3">
+        <div className="glass-strong rounded-2xl p-3 flex items-end gap-3 shadow-lg hover:shadow-purple-500/10 transition-shadow">
           <textarea
             ref={textareaRef}
             value={message}
@@ -50,17 +50,19 @@ export function ChatInput({ onSend, disabled, isLoading }: ChatInputProps) {
             placeholder="Ask anything..."
             disabled={disabled || isLoading}
             className={cn(
-              'flex-1 bg-transparent border-none outline-none resize-none text-white placeholder:text-gray-500',
+              'flex-1 bg-transparent border-none outline-none resize-none text-white placeholder:text-gray-400',
               'min-h-[44px] max-h-[200px] py-3 px-2',
-              'scrollbar-thin'
+              'scrollbar-thin',
+              'disabled:opacity-50 disabled:cursor-not-allowed'
             )}
             rows={1}
+            autoFocus
           />
           <Button
             onClick={handleSubmit}
             disabled={!message.trim() || disabled || isLoading}
             size="icon"
-            className="gradient-primary h-11 w-11 rounded-xl shrink-0"
+            className="gradient-primary h-11 w-11 rounded-xl shrink-0 hover:shadow-lg hover:shadow-purple-500/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isLoading ? (
               <Loader2 className="h-5 w-5 animate-spin" />
@@ -69,8 +71,8 @@ export function ChatInput({ onSend, disabled, isLoading }: ChatInputProps) {
             )}
           </Button>
         </div>
-        <p className="text-xs text-gray-500 text-center mt-2">
-          Press Enter to send, Shift+Enter for new line
+        <p className="text-xs text-gray-500 text-center mt-2.5">
+          Press <kbd className="px-1.5 py-0.5 bg-white/10 rounded text-gray-400">Enter</kbd> to send, <kbd className="px-1.5 py-0.5 bg-white/10 rounded text-gray-400">Shift+Enter</kbd> for new line
         </p>
       </div>
     </div>
