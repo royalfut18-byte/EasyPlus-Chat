@@ -21,6 +21,7 @@ import type { Conversation, Message, ChatAttachment, Artifact } from '@/types/mo
 const DEFAULT_PANEL_WIDTH = 560
 const PANEL_WIDTH_KEY = 'easyplus-artifact-panel-width'
 const ARTIFACT_LOADING_MARKER = '__ARTIFACT_LOADING__'
+const ASSISTANT_LOADING_MARKER = '__ASSISTANT_LOADING__'
 
 // Artifact persistence keys
 const getArtifactKey = (conversationId: string) => `easyplus:artifact:${conversationId}`
@@ -343,11 +344,12 @@ export default function ChatPage() {
       return
     }
 
-    // 3. Create stable IDs once
+    // 3. Create stable IDs once and capture mode at send time
     const clientUserMessageId = crypto.randomUUID()
     const clientAssistantMessageId = crypto.randomUUID()
+    const requestArtifactMode = artifactMode
 
-    artifactModeAtSendRef.current = artifactMode
+    artifactModeAtSendRef.current = requestArtifactMode
     lastUserPromptRef.current = trimmedContent
 
     const userMessage: Message = {
@@ -426,7 +428,7 @@ export default function ChatPage() {
       id: clientAssistantMessageId,
       conversation_id: conversation.id,
       role: 'assistant',
-      content: artifactModeAtSendRef.current ? ARTIFACT_LOADING_MARKER : '',
+      content: requestArtifactMode ? ARTIFACT_LOADING_MARKER : ASSISTANT_LOADING_MARKER,
       model: selectedModel,
       created_at: new Date().toISOString(),
     }
@@ -442,7 +444,7 @@ export default function ChatPage() {
         attachments: m.attachments,
       }))
 
-      if (artifactModeAtSendRef.current) {
+      if (requestArtifactMode) {
         messagesToSend.unshift({
           role: 'user',
           content: `[ARTIFACT MODE ENABLED]
@@ -473,7 +475,7 @@ Rules:
           model: selectedModel,
           messages: messagesToSend,
           conversationId: conversation.id,
-          artifactMode: artifactModeAtSendRef.current,
+          artifactMode: requestArtifactMode,
         }),
       })
 
@@ -554,10 +556,10 @@ Rules:
       }
 
       // 10. Parse artifact if enabled
-      if (artifactModeAtSendRef.current) {
+      if (requestArtifactMode) {
         const { artifact, cleanContent } = parseArtifactFromResponse(
           assistantContent,
-          artifactModeAtSendRef.current,
+          requestArtifactMode,
           lastUserPromptRef.current
         )
 

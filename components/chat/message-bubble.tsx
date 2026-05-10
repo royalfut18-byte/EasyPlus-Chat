@@ -29,11 +29,13 @@ interface MessageBubbleProps {
 }
 
 const ARTIFACT_LOADING_MARKER = '__ARTIFACT_LOADING__'
+const ASSISTANT_LOADING_MARKER = '__ASSISTANT_LOADING__'
 
 export function MessageBubble({ role, content, model, onRegenerate, attachments, hasArtifact, artifact, onOpenArtifact }: MessageBubbleProps) {
   const isUser = role === 'user'
   const modelData = model ? AI_MODELS.find((m) => m.id === model) : null
   const isArtifactLoading = !isUser && content === ARTIFACT_LOADING_MARKER
+  const isAssistantLoading = !isUser && content === ASSISTANT_LOADING_MARKER
   const hasArtifactCard = !isUser && (hasArtifact || artifact)
 
   const copyToClipboard = () => {
@@ -110,6 +112,21 @@ export function MessageBubble({ role, content, model, onRegenerate, attachments,
                 <span className="text-xs text-gray-400">Preparing preview panel...</span>
               </div>
             </div>
+          ) : isAssistantLoading ? (
+            <div className="flex items-center gap-3 py-2">
+              <div className="relative">
+                <Sparkles className="h-5 w-5 text-blue-400 animate-pulse" />
+                <div className="absolute inset-0 bg-blue-500/20 blur-lg animate-pulse" />
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-white font-medium">Thinking</span>
+                <div className="flex gap-1">
+                  <div className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                  <div className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                  <div className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                </div>
+              </div>
+            </div>
           ) : hasArtifactCard && onOpenArtifact ? (
             <div>
               <ReactMarkdown
@@ -149,7 +166,7 @@ export function MessageBubble({ role, content, model, onRegenerate, attachments,
                 </div>
               )}
             </div>
-          ) : (
+          ) : content ? (
             <ReactMarkdown
               remarkPlugins={[remarkGfm, remarkMath]}
               rehypePlugins={[rehypeKatex]}
@@ -229,6 +246,14 @@ export function MessageBubble({ role, content, model, onRegenerate, attachments,
             >
               {content}
             </ReactMarkdown>
+          ) : (
+            <div className="flex items-center gap-3 py-2">
+              <div className="flex gap-1">
+                <div className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                <div className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                <div className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+              </div>
+            </div>
           )}
         </div>
 
