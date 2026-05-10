@@ -8,6 +8,8 @@ export const runtime = 'nodejs'
 
 type ProfileRow = {
   credits: number
+  role: 'user' | 'admin'
+  unlimited_credits: boolean
 }
 
 export async function POST(request: NextRequest) {
@@ -65,7 +67,7 @@ export async function POST(request: NextRequest) {
 
     const { data: profile, error: profileError } = await db
       .from('profiles')
-      .select('credits')
+      .select('credits, role, unlimited_credits')
       .eq('user_id', user.id)
       .single()
 
@@ -85,45 +87,56 @@ export async function POST(request: NextRequest) {
     }
 
     console.log('[Chat API] User credits:', typedProfile.credits)
+    console.log('[Chat API] User role:', typedProfile.role)
+    console.log('[Chat API] Unlimited credits:', typedProfile.unlimited_credits)
 
     const cost = getModelCost(model)
-
     console.log('[Chat API] Model cost:', cost)
 
-    if (typedProfile.credits < cost) {
-      console.warn('[Chat API] Insufficient credits:', {
-        userCredits: typedProfile.credits,
-        cost,
+    // Check if user has unlimited credits (admin or unlimited_credits flag)
+    const hasUnlimitedCredits = typedProfile.role === 'admin' || typedProfile.unlimited_credits === true
+
+    if (!hasUnlimitedCredits) {
+      // Normal credit check for regular users
+      if (typedProfile.credits < cost) {
+        console.warn('[Chat API] Insufficient credits:', {
+          userCredits: typedProfile.credits,
+          cost,
+        })
+        return NextResponse.json(
+          { error: 'Insufficient credits', credits: typedProfile.credits },
+          { status: 402 }
+        )
+      }
+
+      // Deduct credits for regular users
+      const { error: updateError } = await db
+        .from('profiles')
+        .update({ credits: typedProfile.credits - cost })
+        .eq('user_id', user.id)
+
+      if (updateError) {
+        console.error('[Chat API] Failed to update credits:', updateError)
+        throw new Error(`Failed to update credits: ${updateError.message}`)
+      }
+
+      // Log transaction for regular users
+      const { error: transactionError } = await db.from('credit_transactions').insert({
+        user_id: user.id,
+        amount: -cost,
+        type: 'deduction',
+        description: `Message sent using ${model}`,
       })
-      return NextResponse.json(
-        { error: 'Insufficient credits', credits: typedProfile.credits },
-        { status: 402 }
-      )
+
+      if (transactionError) {
+        console.error('[Chat API] Failed to create transaction:', transactionError)
+        throw new Error(`Failed to create transaction: ${transactionError.message}`)
+      }
+
+      console.log('[Chat API] Credits deducted successfully')
+    } else {
+      console.log('[Chat API] User has unlimited credits - skipping deduction')
     }
-
-    const { error: updateError } = await db
-      .from('profiles')
-      .update({ credits: typedProfile.credits - cost })
-      .eq('user_id', user.id)
-
-    if (updateError) {
-      console.error('[Chat API] Failed to update credits:', updateError)
-      throw new Error(`Failed to update credits: ${updateError.message}`)
-    }
-
-    const { error: transactionError } = await db.from('credit_transactions').insert({
-      user_id: user.id,
-      amount: -cost,
-      type: 'deduction',
-      description: `Message sent using ${model}`,
-    })
-
-    if (transactionError) {
-      console.error('[Chat API] Failed to create transaction:', transactionError)
-      throw new Error(`Failed to create transaction: ${transactionError.message}`)
-    }
-
-    console.log('[Chat API] Credits deducted successfully')
 
     const userMessage = messages[messages.length - 1]
     if (conversationId) {

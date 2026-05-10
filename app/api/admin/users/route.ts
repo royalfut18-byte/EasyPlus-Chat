@@ -31,14 +31,32 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
-    const { data: users, error } = await db
+    const { data: profiles, error } = await db
       .from('profiles')
       .select('*')
       .order('created_at', { ascending: false })
 
     if (error) throw error
 
-    return NextResponse.json(users)
+    // Fetch emails from auth.users for each profile
+    const usersWithEmails = await Promise.all(
+      (profiles || []).map(async (profile: any) => {
+        try {
+          const { data: authUser } = await supabase.auth.admin.getUserById(profile.user_id)
+          return {
+            ...profile,
+            email: authUser?.user?.email || 'N/A',
+          }
+        } catch (e) {
+          return {
+            ...profile,
+            email: 'N/A',
+          }
+        }
+      })
+    )
+
+    return NextResponse.json(usersWithEmails)
   } catch (error: any) {
     console.error('Admin users GET error:', error)
     return NextResponse.json({ error: error.message }, { status: 500 })

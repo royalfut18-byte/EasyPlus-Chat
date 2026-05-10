@@ -162,11 +162,8 @@ export default function LoginPage() {
           Google
         </Button>
 
-        <p className="text-center text-sm text-gray-400 mt-6">
-          Don't have an account?{' '}
-          <Link href="/signup" className="text-primary hover:underline">
-            Sign up
-          </Link>
+        <p className="text-center text-sm text-gray-500 mt-6">
+          This is a private application. Contact admin for access.
         </p>
       </motion.div>
     </div>

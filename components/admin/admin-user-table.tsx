@@ -12,14 +12,27 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { toast } from '@/components/ui/use-toast'
 import { formatDate, formatCredits } from '@/lib/utils'
+import { Settings, Infinity } from 'lucide-react'
+import { CreateUserDialog } from './create-user-dialog'
 
 export function AdminUserTable() {
   const [users, setUsers] = useState<any[]>([])
   const [selectedUser, setSelectedUser] = useState<any>(null)
-  const [creditAmount, setCreditAmount] = useState('')
-  const [reason, setReason] = useState('')
+  const [editDialogOpen, setEditDialogOpen] = useState(false)
+  const [editForm, setEditForm] = useState({
+    role: 'user',
+    credits: '',
+    unlimitedCredits: false,
+  })
 
   useEffect(() => {
     loadUsers()
@@ -33,31 +46,46 @@ export function AdminUserTable() {
     }
   }
 
-  const handleAdjustCredits = async () => {
-    if (!selectedUser || !creditAmount) return
-
-    const response = await fetch(`/api/admin/users/${selectedUser.id}/credits`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        amount: parseInt(creditAmount),
-        reason: reason || 'Manual adjustment by admin',
-      }),
+  const openEditDialog = (user: any) => {
+    setSelectedUser(user)
+    setEditForm({
+      role: user.role || 'user',
+      credits: user.credits?.toString() || '0',
+      unlimitedCredits: user.unlimited_credits || false,
     })
+    setEditDialogOpen(true)
+  }
 
-    if (response.ok) {
+  const handleUpdateUser = async () => {
+    if (!selectedUser) return
+
+    try {
+      const response = await fetch(`/api/admin/users/${selectedUser.user_id}/update`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          role: editForm.role,
+          credits: parseInt(editForm.credits) || 0,
+          unlimitedCredits: editForm.unlimitedCredits,
+        }),
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to update user')
+      }
+
       toast({
         title: 'Success',
-        description: 'Credits adjusted successfully',
+        description: 'User updated successfully',
       })
-      setCreditAmount('')
-      setReason('')
+
+      setEditDialogOpen(false)
       setSelectedUser(null)
       loadUsers()
-    } else {
+    } catch (error: any) {
       toast({
         title: 'Error',
-        description: 'Failed to adjust credits',
+        description: error.message,
         variant: 'destructive',
       })
     }
@@ -65,93 +93,148 @@ export function AdminUserTable() {
 
   return (
     <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <p className="text-sm text-gray-400">
+          Total users: <span className="text-white font-semibold">{users.length}</span>
+        </p>
+        <CreateUserDialog onUserCreated={loadUsers} />
+      </div>
+
       <div className="overflow-x-auto">
         <table className="w-full">
           <thead>
             <tr className="border-b border-white/10 text-left">
-              <th className="pb-2 text-sm font-medium text-gray-400">User</th>
-              <th className="pb-2 text-sm font-medium text-gray-400">Email</th>
-              <th className="pb-2 text-sm font-medium text-gray-400">Credits</th>
-              <th className="pb-2 text-sm font-medium text-gray-400">Tier</th>
-              <th className="pb-2 text-sm font-medium text-gray-400">Role</th>
-              <th className="pb-2 text-sm font-medium text-gray-400">Joined</th>
-              <th className="pb-2 text-sm font-medium text-gray-400">Actions</th>
+              <th className="pb-3 text-sm font-medium text-gray-400">Name</th>
+              <th className="pb-3 text-sm font-medium text-gray-400">Email</th>
+              <th className="pb-3 text-sm font-medium text-gray-400">Role</th>
+              <th className="pb-3 text-sm font-medium text-gray-400">Credits</th>
+              <th className="pb-3 text-sm font-medium text-gray-400">Status</th>
+              <th className="pb-3 text-sm font-medium text-gray-400">Joined</th>
+              <th className="pb-3 text-sm font-medium text-gray-400">Actions</th>
             </tr>
           </thead>
           <tbody>
             {users.map((user) => (
-              <tr key={user.id} className="border-b border-white/5">
+              <tr key={user.id} className="border-b border-white/5 hover:bg-white/5 transition-colors">
                 <td className="py-3 text-sm text-white">{user.display_name || 'N/A'}</td>
-                <td className="py-3 text-sm text-gray-400">{user.user_id}</td>
-                <td className="py-3 text-sm text-white">{formatCredits(user.credits)}</td>
-                <td className="py-3 text-sm text-gray-400 capitalize">
-                  {user.subscription_tier}
+                <td className="py-3 text-sm text-gray-400">{user.email}</td>
+                <td className="py-3">
+                  <span
+                    className={`text-xs px-2 py-1 rounded-full ${
+                      user.role === 'admin'
+                        ? 'bg-purple-500/20 text-purple-300'
+                        : 'bg-blue-500/20 text-blue-300'
+                    }`}
+                  >
+                    {user.role}
+                  </span>
                 </td>
-                <td className="py-3 text-sm text-gray-400 capitalize">{user.role}</td>
+                <td className="py-3 text-sm">
+                  {user.unlimited_credits || user.role === 'admin' ? (
+                    <div className="flex items-center gap-1 text-yellow-400">
+                      <Infinity className="h-4 w-4" />
+                      <span className="font-semibold">Unlimited</span>
+                    </div>
+                  ) : (
+                    <span className="text-white">{formatCredits(user.credits)}</span>
+                  )}
+                </td>
+                <td className="py-3">
+                  <span className="text-xs px-2 py-1 rounded-full bg-green-500/20 text-green-300">
+                    Active
+                  </span>
+                </td>
                 <td className="py-3 text-sm text-gray-400">
                   {formatDate(user.created_at)}
                 </td>
                 <td className="py-3">
-                  <Dialog>
-                    <DialogTrigger asChild>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => setSelectedUser(user)}
-                      >
-                        Adjust Credits
-                      </Button>
-                    </DialogTrigger>
-                    <DialogContent className="glass-strong border-white/10">
-                      <DialogHeader>
-                        <DialogTitle>Adjust Credits</DialogTitle>
-                        <DialogDescription className="text-gray-400">
-                          Modify credits for {user.display_name}
-                        </DialogDescription>
-                      </DialogHeader>
-                      <div className="space-y-4">
-                        <div>
-                          <Label>Current Balance</Label>
-                          <p className="text-2xl font-bold gradient-text">
-                            {formatCredits(user.credits)}
-                          </p>
-                        </div>
-                        <div>
-                          <Label htmlFor="amount">Amount (positive to add, negative to deduct)</Label>
-                          <Input
-                            id="amount"
-                            type="number"
-                            value={creditAmount}
-                            onChange={(e) => setCreditAmount(e.target.value)}
-                            placeholder="e.g., 1000 or -500"
-                            className="glass"
-                          />
-                        </div>
-                        <div>
-                          <Label htmlFor="reason">Reason</Label>
-                          <Input
-                            id="reason"
-                            value={reason}
-                            onChange={(e) => setReason(e.target.value)}
-                            placeholder="Optional reason"
-                            className="glass"
-                          />
-                        </div>
-                        <Button
-                          onClick={handleAdjustCredits}
-                          className="w-full gradient-primary"
-                        >
-                          Apply Adjustment
-                        </Button>
-                      </div>
-                    </DialogContent>
-                  </Dialog>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => openEditDialog(user)}
+                    className="text-xs"
+                  >
+                    <Settings className="h-3 w-3 mr-1" />
+                    Edit
+                  </Button>
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+
+      <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+        <DialogContent className="glass-strong border-white/10">
+          <DialogHeader>
+            <DialogTitle>Edit User Settings</DialogTitle>
+            <DialogDescription className="text-gray-400">
+              Update settings for {selectedUser?.display_name || selectedUser?.email}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="role">Role</Label>
+              <Select
+                value={editForm.role}
+                onValueChange={(value) => setEditForm({ ...editForm, role: value })}
+              >
+                <SelectTrigger className="glass">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="glass-strong border-white/10">
+                  <SelectItem value="user">User</SelectItem>
+                  <SelectItem value="admin">Admin</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="credits">Credits</Label>
+              <Input
+                id="credits"
+                type="number"
+                value={editForm.credits}
+                onChange={(e) => setEditForm({ ...editForm, credits: e.target.value })}
+                className="glass"
+                disabled={editForm.unlimitedCredits}
+              />
+              <p className="text-xs text-gray-500">
+                Current: {formatCredits(selectedUser?.credits || 0)}
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <input
+                id="unlimitedCredits"
+                type="checkbox"
+                checked={editForm.unlimitedCredits}
+                onChange={(e) =>
+                  setEditForm({ ...editForm, unlimitedCredits: e.target.checked })
+                }
+                className="w-4 h-4 rounded border-white/20 bg-white/10 text-primary focus:ring-primary"
+              />
+              <Label htmlFor="unlimitedCredits" className="cursor-pointer flex items-center gap-1">
+                <Infinity className="h-4 w-4 text-yellow-400" />
+                Unlimited Credits
+              </Label>
+            </div>
+
+            <div className="flex gap-3 pt-4">
+              <Button
+                variant="outline"
+                onClick={() => setEditDialogOpen(false)}
+                className="flex-1"
+              >
+                Cancel
+              </Button>
+              <Button onClick={handleUpdateUser} className="flex-1 gradient-primary">
+                Save Changes
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
