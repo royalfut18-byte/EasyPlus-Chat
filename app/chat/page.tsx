@@ -14,8 +14,8 @@ import { ArtifactPanel } from '@/components/chat/artifact-panel'
 import { toast } from '@/components/ui/use-toast'
 import { AI_MODELS } from '@/types/models'
 import { cn } from '@/lib/utils'
-import { parseArtifactFromResponse, dedupeMessages } from '@/lib/artifact-parser'
-import { sortMessagesChronologically, parseArtifactsFromMessages, getStoredArtifact } from '@/lib/message-utils'
+import { parseArtifactFromResponse } from '@/lib/artifact-parser'
+import { sortMessagesChronologically, dedupeMessages, processLoadedMessages, getStoredArtifact } from '@/lib/chat/message-utils'
 import type { Conversation, Message, ChatAttachment, Artifact } from '@/types/models'
 
 const DEFAULT_PANEL_WIDTH = 560
@@ -178,18 +178,20 @@ export default function ChatPage() {
 
       // Ignore response if we've moved to a different conversation
       if (loadingConversationIdRef.current !== conversationId) {
-        console.log('[Chat] Ignoring stale response for:', conversationId)
+        if (process.env.NODE_ENV !== 'production') {
+          console.log('[Chat] Ignoring stale response for:', conversationId)
+        }
         return
       }
 
       if (response.ok) {
         const rawData = await response.json()
 
-        // Sort messages chronologically
-        const sortedData = sortMessagesChronologically(rawData)
-
-        // Parse artifacts from old messages
-        const processedData = parseArtifactsFromMessages(sortedData, conversationId)
+        // Process loaded messages: dedupe, sort, parse artifacts
+        const processedData = processLoadedMessages(rawData, {
+          conversationId,
+          parseArtifacts: true,
+        })
 
         setMessages(processedData)
         // Update cache with processed messages
@@ -199,7 +201,9 @@ export default function ChatPage() {
       }
     } catch (error: any) {
       if (error.name === 'AbortError') {
-        console.log('[Chat] Request aborted for:', conversationId)
+        if (process.env.NODE_ENV !== 'production') {
+          console.log('[Chat] Request aborted for:', conversationId)
+        }
       } else {
         console.error('[Chat] Failed to load messages:', error)
         setMessages([])
@@ -233,10 +237,15 @@ export default function ChatPage() {
     // Try to load cached messages first
     const cached = messageCache[id]
     if (cached) {
-      console.log('[Chat] Using cached messages for:', id)
-      // Sort cached messages to ensure correct order
-      const sortedCached = sortMessagesChronologically(cached)
-      setMessages(sortedCached)
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('[Chat] Using cached messages for:', id)
+      }
+      // Process cached messages to ensure deduplication and correct order
+      const processed = processLoadedMessages(cached, {
+        conversationId: id,
+        parseArtifacts: false, // Already parsed when cached
+      })
+      setMessages(processed)
       setIsLoadingConversation(false)
     } else {
       // Show empty/loading state immediately
@@ -318,29 +327,31 @@ export default function ChatPage() {
   }
 
   const handleSendMessage = async (content: string, attachments?: ChatAttachment[]) => {
-    const trimmedContent = content.trim()
-    if (!trimmedContent && (!attachments || attachments.length === 0)) {
-      return
-    }
-
+    // 1. Guard: Block duplicate sends at the very top
     if (isSendingRef.current) {
-      console.log('[Chat] Duplicate send blocked')
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('[Chat] Duplicate send blocked')
+      }
       return
     }
     isSendingRef.current = true
 
+    // 2. Trim content
+    const trimmedContent = content.trim()
+    if (!trimmedContent && (!attachments || attachments.length === 0)) {
+      isSendingRef.current = false
+      return
+    }
+
+    // 3. Create stable IDs once
+    const clientUserMessageId = crypto.randomUUID()
+    const clientAssistantMessageId = crypto.randomUUID()
+
     artifactModeAtSendRef.current = artifactMode
     lastUserPromptRef.current = trimmedContent
 
-    const userMessageId = typeof crypto !== 'undefined' && crypto.randomUUID
-      ? `user-${crypto.randomUUID()}`
-      : `user-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
-    const assistantMessageId = typeof crypto !== 'undefined' && crypto.randomUUID
-      ? `assistant-${crypto.randomUUID()}`
-      : `assistant-${Date.now() + 1}-${Math.random().toString(36).substr(2, 9)}`
-
     const userMessage: Message = {
-      id: userMessageId,
+      id: clientUserMessageId,
       conversation_id: currentConversation?.id || 'temp',
       role: 'user',
       content: trimmedContent,
@@ -349,14 +360,13 @@ export default function ChatPage() {
       attachments,
     }
 
-    setMessages((prev) => {
-      const exists = prev.some(m => m.id === userMessageId)
-      if (exists) return prev
-      return [...prev, userMessage]
-    })
+    // 4. Add optimistic user message exactly once
+    setMessages((prev) => dedupeMessages([...prev, userMessage]))
     setIsLoading(true)
 
     let conversation = currentConversation
+
+    // 5. Create conversation if needed (only once, no duplication after)
     if (!conversation) {
       setIsCreatingConversation(true)
       try {
@@ -379,9 +389,12 @@ export default function ChatPage() {
         setCurrentConversation(conversation)
         setConversations((prev) => [conversation!, ...prev])
 
+        // Update user message with real conversation ID
         setMessages((prev) =>
-          prev.map((m) =>
-            m.id === userMessageId ? { ...m, conversation_id: conversation!.id } : m
+          dedupeMessages(
+            prev.map((m) =>
+              m.id === clientUserMessageId ? { ...m, conversation_id: conversation!.id } : m
+            )
           )
         )
 
@@ -393,7 +406,7 @@ export default function ChatPage() {
           description: 'Failed to create conversation',
           variant: 'destructive',
         })
-        setMessages((prev) => prev.filter((m) => m.id !== userMessageId))
+        setMessages((prev) => dedupeMessages(prev.filter((m) => m.id !== clientUserMessageId)))
         setIsCreatingConversation(false)
         setIsLoading(false)
         isSendingRef.current = false
@@ -402,14 +415,15 @@ export default function ChatPage() {
     }
 
     if (!conversation) {
-      setMessages((prev) => prev.filter((m) => m.id !== userMessageId))
+      setMessages((prev) => dedupeMessages(prev.filter((m) => m.id !== clientUserMessageId)))
       setIsLoading(false)
       isSendingRef.current = false
       return
     }
 
+    // 6. Add assistant placeholder exactly once
     const assistantPlaceholder: Message = {
-      id: assistantMessageId,
+      id: clientAssistantMessageId,
       conversation_id: conversation.id,
       role: 'assistant',
       content: artifactModeAtSendRef.current ? ARTIFACT_LOADING_MARKER : '',
@@ -417,13 +431,10 @@ export default function ChatPage() {
       created_at: new Date().toISOString(),
     }
 
-    setMessages((prev) => {
-      const exists = prev.some(m => m.id === assistantMessageId)
-      if (exists) return prev
-      return [...prev, assistantPlaceholder]
-    })
+    setMessages((prev) => dedupeMessages([...prev, assistantPlaceholder]))
 
     try {
+      // 7. Prepare messages for API (exclude artifact metadata)
       const contextMessages = messages.filter(m => m.role === 'user' || m.role === 'assistant')
       const messagesToSend = [...contextMessages, userMessage].map((m) => ({
         role: m.role,
@@ -454,6 +465,7 @@ Rules:
         })
       }
 
+      // 8. Send one API request
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -473,10 +485,12 @@ Rules:
           variant: 'destructive',
         })
         setMessages((prev) =>
-          prev.map((m) =>
-            m.id === assistantMessageId
-              ? { ...m, content: 'Error: Insufficient credits. Please top up to continue.' }
-              : m
+          dedupeMessages(
+            prev.map((m) =>
+              m.id === clientAssistantMessageId
+                ? { ...m, content: 'Error: Insufficient credits. Please top up to continue.' }
+                : m
+            )
           )
         )
         setIsLoading(false)
@@ -496,6 +510,7 @@ Rules:
         throw new Error(errorMessage)
       }
 
+      // 9. Stream response and update assistant message by ID only
       const reader = response.body?.getReader()
       const decoder = new TextDecoder()
       let assistantContent = ''
@@ -507,22 +522,29 @@ Rules:
         const chunk = decoder.decode(value)
         assistantContent += chunk
 
+        // Update by ID only - no new messages
         setMessages((prev) =>
-          prev.map((m) =>
-            m.id === assistantMessageId ? { ...m, content: assistantContent } : m
+          dedupeMessages(
+            prev.map((m) =>
+              m.id === clientAssistantMessageId ? { ...m, content: assistantContent } : m
+            )
           )
         )
       }
 
-      console.log('[Chat] Stream complete, content length:', assistantContent.length)
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('[Chat] Stream complete, content length:', assistantContent.length)
+      }
 
       if (!assistantContent || assistantContent.trim() === '') {
         console.error('[Chat] Empty response from API')
         setMessages((prev) =>
-          prev.map((m) =>
-            m.id === assistantMessageId
-              ? { ...m, content: 'Error: Received empty response from AI.' }
-              : m
+          dedupeMessages(
+            prev.map((m) =>
+              m.id === clientAssistantMessageId
+                ? { ...m, content: 'Error: Received empty response from AI.' }
+                : m
+            )
           )
         )
         setIsLoading(false)
@@ -531,6 +553,7 @@ Rules:
         return
       }
 
+      // 10. Parse artifact if enabled
       if (artifactModeAtSendRef.current) {
         const { artifact, cleanContent } = parseArtifactFromResponse(
           assistantContent,
@@ -539,7 +562,9 @@ Rules:
         )
 
         if (artifact) {
-          console.log('[Chat] Artifact detected:', artifact.title)
+          if (process.env.NODE_ENV !== 'production') {
+            console.log('[Chat] Artifact detected:', artifact.title)
+          }
 
           let finalContent = cleanContent.trim()
           if (!finalContent) {
@@ -547,53 +572,51 @@ Rules:
           }
 
           setMessages((prev) =>
-            prev.map((m) =>
-              m.id === assistantMessageId ? { ...m, content: finalContent } : m
+            dedupeMessages(
+              prev.map((m) =>
+                m.id === clientAssistantMessageId
+                  ? { ...m, content: finalContent, artifact }
+                  : m
+              )
             )
           )
 
           setActiveArtifact(artifact)
           setIsArtifactOpen(true)
-          setArtifactMessageId(assistantMessageId)
+          setArtifactMessageId(clientAssistantMessageId)
 
           // Save artifact to localStorage
           saveArtifact(artifact, conversation.id)
         } else {
-          console.log('[Chat] No artifact detected, showing normal response')
-          setMessages((prev) =>
-            prev.map((m) =>
-              m.id === assistantMessageId ? { ...m, content: assistantContent } : m
-            )
-          )
+          if (process.env.NODE_ENV !== 'production') {
+            console.log('[Chat] No artifact detected, showing normal response')
+          }
         }
-      } else {
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.id === assistantMessageId ? { ...m, content: assistantContent } : m
-          )
-        )
       }
 
-      // Update cache with new messages
-      setMessageCache(prev => ({
-        ...prev,
-        [conversation!.id]: [...messages, userMessage, {
-          ...assistantPlaceholder,
-          content: assistantContent
-        }]
-      }))
+      // Update cache with deduplicated messages (use functional state to avoid stale closure)
+      setMessages((currentMessages) => {
+        const updatedMessages = dedupeMessages([...currentMessages])
+        setMessageCache((prev) => ({
+          ...prev,
+          [conversation!.id]: updatedMessages,
+        }))
+        return currentMessages // Don't modify messages here, just update cache
+      })
 
-      loadUserProfile().catch(e => console.error('[Chat] Profile load failed:', e))
+      loadUserProfile().catch((e) => console.error('[Chat] Profile load failed:', e))
       if (messages.length === 0) {
-        loadConversations().catch(e => console.error('[Chat] Conversations load failed:', e))
+        loadConversations().catch((e) => console.error('[Chat] Conversations load failed:', e))
       }
     } catch (error: any) {
       console.error('[Chat] Send message error:', error.message)
       setMessages((prev) =>
-        prev.map((m) =>
-          m.id === assistantMessageId
-            ? { ...m, content: `Sorry, something went wrong: ${error.message}` }
-            : m
+        dedupeMessages(
+          prev.map((m) =>
+            m.id === clientAssistantMessageId
+              ? { ...m, content: `Sorry, something went wrong: ${error.message}` }
+              : m
+          )
         )
       )
       toast({
@@ -605,7 +628,9 @@ Rules:
       setIsLoading(false)
       setIsCreatingConversation(false)
       isSendingRef.current = false
-      console.log('[Chat] Send complete, loading states reset')
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('[Chat] Send complete, loading states reset')
+      }
     }
   }
 
