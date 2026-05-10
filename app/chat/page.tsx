@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Sparkles, Box } from 'lucide-react'
+import { Sparkles, Box, PanelRightOpen } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { ensureProfile } from '@/lib/supabase/ensure-profile'
 import { ModelSelector } from '@/components/chat/model-selector'
@@ -16,6 +16,9 @@ import { AI_MODELS } from '@/types/models'
 import { cn } from '@/lib/utils'
 import { parseArtifactFromResponse, dedupeMessages } from '@/lib/artifact-parser'
 import type { Conversation, Message, ChatAttachment, Artifact } from '@/types/models'
+
+const DEFAULT_PANEL_WIDTH = 520
+const PANEL_WIDTH_KEY = 'easyplus-artifact-panel-width'
 
 // Generate a smart conversation title from the first user message
 function generateConversationTitle(message: string): string {
@@ -54,10 +57,19 @@ export default function ChatPage() {
   const [isCreatingConversation, setIsCreatingConversation] = useState(false)
   const [artifactMode, setArtifactMode] = useState(false)
   const [activeArtifact, setActiveArtifact] = useState<Artifact | null>(null)
+  const [isArtifactOpen, setIsArtifactOpen] = useState(false)
   const [artifactMessageId, setArtifactMessageId] = useState<string | null>(null)
+  const [artifactPanelWidth, setArtifactPanelWidth] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem(PANEL_WIDTH_KEY)
+      return saved ? parseInt(saved, 10) : DEFAULT_PANEL_WIDTH
+    }
+    return DEFAULT_PANEL_WIDTH
+  })
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const isSendingRef = useRef(false)
   const lastUserPromptRef = useRef<string>('')
+  const artifactModeAtSendRef = useRef(false)
   const router = useRouter()
   const supabase = createClient()
 
@@ -122,6 +134,7 @@ export default function ChatPage() {
     setCurrentConversation(null)
     setMessages([])
     setActiveArtifact(null)
+    setIsArtifactOpen(false)
     setArtifactMessageId(null)
   }
 
@@ -131,6 +144,7 @@ export default function ChatPage() {
       setCurrentConversation(conv)
       setSelectedModel(conv.model_used)
       setActiveArtifact(null)
+      setIsArtifactOpen(false)
       setArtifactMessageId(null)
       await loadConversationMessages(id)
     }
@@ -144,6 +158,7 @@ export default function ChatPage() {
       setCurrentConversation(null)
       setMessages([])
       setActiveArtifact(null)
+      setIsArtifactOpen(false)
       setArtifactMessageId(null)
     }
 
@@ -186,6 +201,9 @@ export default function ChatPage() {
       return
     }
     isSendingRef.current = true
+
+    // Capture artifact mode at send time
+    artifactModeAtSendRef.current = artifactMode
 
     // Store user prompt for artifact parsing
     lastUserPromptRef.current = trimmedContent
@@ -275,15 +293,15 @@ export default function ChatPage() {
     setMessages((prev) => dedupeMessages([...prev, assistantPlaceholder]))
 
     try {
-      // Prepare messages for API
+      // Prepare messages for API (use captured artifact mode)
       const messagesToSend = [...messages, userMessage].map((m) => ({
         role: m.role,
         content: m.content,
         attachments: m.attachments,
       }))
 
-      // Add artifact mode instruction
-      if (artifactMode) {
+      // Add artifact mode instruction (use captured value)
+      if (artifactModeAtSendRef.current) {
         messagesToSend.unshift({
           role: 'user',
           content: `[ARTIFACT MODE ENABLED]
@@ -313,7 +331,7 @@ Rules:
           model: selectedModel,
           messages: messagesToSend,
           conversationId: conversation.id,
-          artifactMode,
+          artifactMode: artifactModeAtSendRef.current,
         }),
       })
 
@@ -361,11 +379,11 @@ Rules:
         )
       }
 
-      // CRITICAL: Parse artifact AFTER streaming completes
-      if (artifactMode && assistantContent) {
+      // CRITICAL: Parse artifact AFTER streaming completes (use captured artifact mode)
+      if (artifactModeAtSendRef.current && assistantContent) {
         const { artifact, cleanContent } = parseArtifactFromResponse(
           assistantContent,
-          artifactMode,
+          artifactModeAtSendRef.current,
           lastUserPromptRef.current
         )
 
@@ -379,6 +397,7 @@ Rules:
 
           // Open artifact panel
           setActiveArtifact(artifact)
+          setIsArtifactOpen(true)
           setArtifactMessageId(assistantMessageId)
         }
       }
@@ -401,13 +420,25 @@ Rules:
     }
   }
 
-  const handleOpenArtifact = (messageId: string) => {
-    const message = messages.find((m) => m.id === messageId)
-    if (message && artifactMessageId === messageId && activeArtifact) {
-      // Artifact already exists for this message
+  const handleToggleArtifactMode = () => {
+    // Only allow toggle when not loading
+    if (isLoading || isCreatingConversation || isSendingRef.current) {
       return
     }
-    // Otherwise, could re-parse if needed, but for now just show existing
+    setArtifactMode(!artifactMode)
+  }
+
+  const handleOpenArtifact = () => {
+    if (activeArtifact) {
+      setIsArtifactOpen(true)
+    }
+  }
+
+  const handlePanelWidthChange = (width: number) => {
+    setArtifactPanelWidth(width)
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(PANEL_WIDTH_KEY, width.toString())
+    }
   }
 
   if (!userProfile) {
@@ -417,6 +448,9 @@ Rules:
       </div>
     )
   }
+
+  const isRequestInProgress = isLoading || isCreatingConversation || isSendingRef.current
+  const showReopenButton = activeArtifact && !isArtifactOpen
 
   return (
     <div className="h-screen bg-[#0A0A0F] flex overflow-hidden">
@@ -429,22 +463,46 @@ Rules:
         userProfile={userProfile}
       />
 
-      <main className={cn(
-        'flex-1 flex flex-col ml-0 md:ml-80 transition-all duration-300',
-        activeArtifact && 'md:mr-[45%]'
-      )}>
+      <main
+        className={cn(
+          'flex-1 flex flex-col ml-0 md:ml-80 transition-all duration-300',
+          isArtifactOpen && `md:mr-[${artifactPanelWidth}px]`
+        )}
+        style={{
+          marginRight: isArtifactOpen && window.innerWidth >= 768 ? `${artifactPanelWidth}px` : undefined,
+        }}
+      >
         <div className="flex items-center justify-between flex-wrap gap-2 border-b border-white/10 bg-[#0A0A0F]/90 backdrop-blur-xl">
           <div className="flex-1 min-w-0">
             <ModelSelector selectedModel={selectedModel} onSelectModel={setSelectedModel} />
           </div>
-          <div className="px-4 py-2">
+          <div className="px-4 py-2 flex items-center gap-2">
+            {/* Reopen Artifact Button */}
+            {showReopenButton && (
+              <motion.button
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.9 }}
+                onClick={handleOpenArtifact}
+                className="px-3 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 glass hover:bg-white/10 text-gray-300 hover:text-white border border-white/20"
+                title="Reopen latest artifact"
+              >
+                <PanelRightOpen className="h-4 w-4" />
+                <span className="hidden sm:inline">Open Artifact</span>
+              </motion.button>
+            )}
+
+            {/* Artifacts Toggle */}
             <button
-              onClick={() => setArtifactMode(!artifactMode)}
+              onClick={handleToggleArtifactMode}
+              disabled={isRequestInProgress}
+              title={isRequestInProgress ? 'Wait for the current response to finish' : 'Toggle Artifact Mode'}
               className={cn(
                 'px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2',
                 artifactMode
                   ? 'bg-purple-500/20 text-purple-400 border border-purple-500/50 glow-border'
-                  : 'glass hover:bg-white/10 text-gray-400'
+                  : 'glass hover:bg-white/10 text-gray-400',
+                isRequestInProgress && 'opacity-50 cursor-not-allowed'
               )}
             >
               <Box className="h-4 w-4" />
@@ -484,7 +542,7 @@ Rules:
                       <motion.button
                         key={i}
                         onClick={() => handleSendMessage(prompt.text)}
-                        disabled={isLoading || isCreatingConversation || isSendingRef.current}
+                        disabled={isRequestInProgress}
                         className="glass-strong p-4 md:p-5 rounded-xl text-left hover:glow-border hover:bg-white/5 transition-all disabled:opacity-50 disabled:cursor-not-allowed group"
                         whileHover={{ scale: 1.02, y: -2 }}
                         whileTap={{ scale: 0.98 }}
@@ -507,7 +565,7 @@ Rules:
                       model={message.model}
                       attachments={message.attachments}
                       hasArtifact={artifactMessageId === message.id && !!activeArtifact}
-                      onOpenArtifact={activeArtifact && artifactMessageId === message.id ? () => {} : undefined}
+                      onOpenArtifact={artifactMessageId === message.id && activeArtifact ? handleOpenArtifact : undefined}
                     />
                   ))}
                   {isLoading && messages[messages.length - 1]?.role !== 'assistant' && (
@@ -534,17 +592,17 @@ Rules:
 
         <ChatInput
           onSend={handleSendMessage}
-          disabled={isLoading || isCreatingConversation || isSendingRef.current}
+          disabled={isRequestInProgress}
           isLoading={isLoading || isCreatingConversation}
         />
       </main>
 
       <ArtifactPanel
         artifact={activeArtifact}
-        onClose={() => {
-          setActiveArtifact(null)
-          setArtifactMessageId(null)
-        }}
+        isOpen={isArtifactOpen}
+        onClose={() => setIsArtifactOpen(false)}
+        width={artifactPanelWidth}
+        onWidthChange={handlePanelWidthChange}
       />
     </div>
   )
