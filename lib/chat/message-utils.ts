@@ -70,6 +70,14 @@ export function dedupeMessages(messages: Message[]): Message[] {
 }
 
 /**
+ * Process messages: dedupe then sort
+ * Use this everywhere to ensure consistency
+ */
+export function processMessages(messages: Message[]): Message[] {
+  return sortMessagesChronologically(dedupeMessages(messages))
+}
+
+/**
  * Process loaded messages: dedupe, sort, parse artifacts
  */
 export function processLoadedMessages(

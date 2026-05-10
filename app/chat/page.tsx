@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Sparkles, Box, PanelRightOpen } from 'lucide-react'
@@ -15,7 +15,7 @@ import { toast } from '@/components/ui/use-toast'
 import { AI_MODELS } from '@/types/models'
 import { cn } from '@/lib/utils'
 import { parseArtifactFromResponse } from '@/lib/artifact-parser'
-import { sortMessagesChronologically, dedupeMessages, processLoadedMessages, getStoredArtifact } from '@/lib/chat/message-utils'
+import { sortMessagesChronologically, dedupeMessages, processMessages, processLoadedMessages, getStoredArtifact } from '@/lib/chat/message-utils'
 import type { Conversation, Message, ChatAttachment, Artifact } from '@/types/models'
 
 const DEFAULT_PANEL_WIDTH = 560
@@ -105,7 +105,6 @@ export default function ChatPage() {
   const isSendingRef = useRef(false)
   const lastUserPromptRef = useRef<string>('')
   const artifactModeAtSendRef = useRef(false)
-  const loadingConversationIdRef = useRef<string | null>(null)
   const abortControllerRef = useRef<AbortController | null>(null)
   const selectedConversationIdRef = useRef<string | null>(null)
   const conversationRequestSeqRef = useRef(0)
@@ -216,10 +215,9 @@ export default function ChatPage() {
 
         // Merge with cached optimistic messages to preserve unsaved messages
         const cachedMessages = messageCache[conversationId] || []
-        const mergedMessages = processLoadedMessages([...cachedMessages, ...fetchedProcessed], {
-          conversationId,
-          parseArtifacts: false, // Already parsed
-        })
+
+        // Combine and process: dedupe + sort
+        const mergedMessages = processMessages([...cachedMessages, ...fetchedProcessed])
 
         if (process.env.NODE_ENV !== 'production') {
           console.log('[ChatSwitch]', {
@@ -233,7 +231,7 @@ export default function ChatPage() {
         }
 
         setMessages(mergedMessages)
-        // Update cache with merged messages
+        // Update cache with processed merged messages
         setMessageCache(prev => ({ ...prev, [conversationId]: mergedMessages }))
 
         // Restore artifact from messages if exists
@@ -301,18 +299,17 @@ export default function ChatPage() {
     setCurrentConversation(conv)
     setSelectedModel(conv.model_used)
     setIsArtifactOpen(false) // Close artifact panel when switching
+    setActiveArtifact(null) // Clear artifact - will be restored from messages
+    setArtifactMessageId(null)
 
     // Try to load cached messages first
     const cached = messageCache[id]
-    if (cached) {
+    if (cached && cached.length > 0) {
       if (process.env.NODE_ENV !== 'production') {
-        console.log('[ChatSwitch]', { id, requestSeq, action: 'using cache' })
+        console.log('[ChatSwitch]', { id, requestSeq, action: 'using cache', count: cached.length })
       }
-      // Process cached messages to ensure deduplication and correct order
-      const processed = processLoadedMessages(cached, {
-        conversationId: id,
-        parseArtifacts: false, // Already parsed when cached
-      })
+      // Process cached messages to ensure correct order
+      const processed = processMessages(cached)
       setMessages(processed)
       setIsLoadingConversation(false)
     } else {
@@ -320,10 +317,6 @@ export default function ChatPage() {
       setMessages([])
       setIsLoadingConversation(true)
     }
-
-    // Clear artifact when switching - will be restored from messages if it exists
-    setActiveArtifact(null)
-    setArtifactMessageId(null)
 
     // Fetch messages in background (with sequence check)
     await loadConversationMessages(id, requestSeq)
@@ -400,10 +393,14 @@ export default function ChatPage() {
       return
     }
 
-    // 3. Create stable IDs once and capture mode at send time
+    // 3. Create stable IDs and timestamps - user MUST be before assistant
     const clientUserMessageId = crypto.randomUUID()
     const clientAssistantMessageId = crypto.randomUUID()
     const requestArtifactMode = artifactMode
+
+    const sentAt = new Date()
+    const userCreatedAt = sentAt.toISOString()
+    const assistantCreatedAt = new Date(sentAt.getTime() + 1).toISOString()
 
     artifactModeAtSendRef.current = requestArtifactMode
     lastUserPromptRef.current = trimmedContent
@@ -414,12 +411,12 @@ export default function ChatPage() {
       role: 'user',
       content: trimmedContent,
       model: selectedModel,
-      created_at: new Date().toISOString(),
+      created_at: userCreatedAt,
       attachments,
     }
 
-    // 4. Add optimistic user message exactly once
-    setMessages((prev) => dedupeMessages([...prev, userMessage]))
+    // 4. Add optimistic user message exactly once with processing
+    setMessages((prev) => processMessages([...prev, userMessage]))
     setIsLoading(true)
 
     let conversation = currentConversation
@@ -453,7 +450,7 @@ export default function ChatPage() {
         // Update user message with real conversation ID
         const updatedUserMessage = { ...userMessage, conversation_id: conversation!.id }
         setMessages((prev) =>
-          dedupeMessages(
+          processMessages(
             prev.map((m) =>
               m.id === clientUserMessageId ? updatedUserMessage : m
             )
@@ -463,7 +460,7 @@ export default function ChatPage() {
         // Immediately cache the optimistic user message so it persists if user switches away
         setMessageCache((prev) => ({
           ...prev,
-          [conversation!.id]: [updatedUserMessage],
+          [conversation!.id]: processMessages([updatedUserMessage]),
         }))
 
         setIsCreatingConversation(false)
@@ -474,7 +471,7 @@ export default function ChatPage() {
           description: 'Failed to create conversation',
           variant: 'destructive',
         })
-        setMessages((prev) => dedupeMessages(prev.filter((m) => m.id !== clientUserMessageId)))
+        setMessages((prev) => processMessages(prev.filter((m) => m.id !== clientUserMessageId)))
         setIsCreatingConversation(false)
         setIsLoading(false)
         isSendingRef.current = false
@@ -483,28 +480,28 @@ export default function ChatPage() {
     }
 
     if (!conversation) {
-      setMessages((prev) => dedupeMessages(prev.filter((m) => m.id !== clientUserMessageId)))
+      setMessages((prev) => processMessages(prev.filter((m) => m.id !== clientUserMessageId)))
       setIsLoading(false)
       isSendingRef.current = false
       return
     }
 
-    // 6. Add assistant placeholder exactly once
+    // 6. Add assistant placeholder exactly once with correct timestamp
     const assistantPlaceholder: Message = {
       id: clientAssistantMessageId,
       conversation_id: conversation.id,
       role: 'assistant',
       content: requestArtifactMode ? ARTIFACT_LOADING_MARKER : ASSISTANT_LOADING_MARKER,
       model: selectedModel,
-      created_at: new Date().toISOString(),
+      created_at: assistantCreatedAt, // Use the +1ms timestamp
     }
 
-    setMessages((prev) => dedupeMessages([...prev, assistantPlaceholder]))
+    setMessages((prev) => processMessages([...prev, assistantPlaceholder]))
 
     // Update cache with optimistic messages (user + placeholder) so they persist if user switches away
     setMessageCache((prev) => {
       const currentCached = prev[conversation.id] || []
-      const updatedMessages = dedupeMessages([...currentCached, assistantPlaceholder])
+      const updatedMessages = processMessages([...currentCached, assistantPlaceholder])
       return {
         ...prev,
         [conversation.id]: updatedMessages,
@@ -563,7 +560,7 @@ Rules:
           variant: 'destructive',
         })
         setMessages((prev) =>
-          dedupeMessages(
+          processMessages(
             prev.map((m) =>
               m.id === clientAssistantMessageId
                 ? { ...m, content: 'Error: Insufficient credits. Please top up to continue.' }
@@ -602,7 +599,7 @@ Rules:
 
         // Update by ID only - no new messages
         setMessages((prev) =>
-          dedupeMessages(
+          processMessages(
             prev.map((m) =>
               m.id === clientAssistantMessageId ? { ...m, content: assistantContent } : m
             )
@@ -617,7 +614,7 @@ Rules:
       if (!assistantContent || assistantContent.trim() === '') {
         console.error('[Chat] Empty response from API')
         setMessages((prev) =>
-          dedupeMessages(
+          processMessages(
             prev.map((m) =>
               m.id === clientAssistantMessageId
                 ? { ...m, content: 'Error: Received empty response from AI.' }
@@ -650,7 +647,7 @@ Rules:
           }
 
           setMessages((prev) =>
-            dedupeMessages(
+            processMessages(
               prev.map((m) =>
                 m.id === clientAssistantMessageId
                   ? { ...m, content: finalContent, artifact }
@@ -672,14 +669,25 @@ Rules:
         }
       }
 
-      // Update cache with deduplicated messages (use functional state to avoid stale closure)
+      // Update cache with processed messages (use functional state to avoid stale closure)
       setMessages((currentMessages) => {
-        const updatedMessages = dedupeMessages([...currentMessages])
+        const updatedMessages = processMessages([...currentMessages])
+
+        // Only update cache and visible messages if still on this conversation
+        if (selectedConversationIdRef.current === conversation!.id) {
+          setMessageCache((prev) => ({
+            ...prev,
+            [conversation!.id]: updatedMessages,
+          }))
+          return updatedMessages
+        }
+
+        // If switched away, only update cache, don't change visible messages
         setMessageCache((prev) => ({
           ...prev,
           [conversation!.id]: updatedMessages,
         }))
-        return currentMessages // Don't modify messages here, just update cache
+        return currentMessages
       })
 
       loadUserProfile().catch((e) => console.error('[Chat] Profile load failed:', e))
@@ -689,7 +697,7 @@ Rules:
     } catch (error: any) {
       console.error('[Chat] Send message error:', error.message)
       setMessages((prev) =>
-        dedupeMessages(
+        processMessages(
           prev.map((m) =>
             m.id === clientAssistantMessageId
               ? { ...m, content: `Sorry, something went wrong: ${error.message}` }
@@ -764,7 +772,7 @@ Rules:
   const showReopenButton = currentConversation && activeArtifact && !isArtifactOpen
 
   // Final safety: ensure messages are sorted and deduped before rendering
-  const displayedMessages = sortMessagesChronologically(dedupeMessages(messages))
+  const displayedMessages = useMemo(() => processMessages(messages), [messages])
 
   return (
     <div className="h-screen bg-[#0A0A0F] flex overflow-hidden">
