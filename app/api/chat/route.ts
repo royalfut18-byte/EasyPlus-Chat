@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { streamBedrockResponse, getModelCost } from '@/lib/ai/bedrock'
+import { needsWebSearch, searchWeb } from '@/lib/ai/web-search'
 import type { ChatMessage } from '@/types/models'
 
-export const runtime = 'edge'
+export const runtime = 'nodejs'
 
 type ProfileRow = {
   credits: number
@@ -141,8 +142,37 @@ export async function POST(request: NextRequest) {
       console.log('[Chat API] User message saved to DB')
     }
 
+    // Check if web search is needed
+    const latestUserMessage = messages[messages.length - 1]
+    let messagesToSend = messages as ChatMessage[]
+
+    if (needsWebSearch(latestUserMessage.content)) {
+      console.log('[Chat API] Web search needed for query')
+      const webContext = await searchWeb(latestUserMessage.content)
+
+      if (webContext) {
+        console.log('[Chat API] Web search successful, adding context')
+        // Prepend system message with web search context
+        const systemMessage: ChatMessage = {
+          role: 'user',
+          content: `[CURRENT WEB SEARCH CONTEXT - Use this to answer the user's question. Cite or mention source URLs when relevant. If the context is insufficient, say you could not verify live data.]
+
+${webContext}
+
+---
+
+User's question: ${latestUserMessage.content}`,
+        }
+
+        // Replace the last user message with the enriched version
+        messagesToSend = [...messages.slice(0, -1), systemMessage] as ChatMessage[]
+      } else {
+        console.log('[Chat API] Web search returned no results or is disabled')
+      }
+    }
+
     console.log('[Chat API] Calling Bedrock API...')
-    const stream = await streamBedrockResponse(model, messages as ChatMessage[])
+    const stream = await streamBedrockResponse(model, messagesToSend)
     console.log('[Chat API] Bedrock stream received')
 
     const encoder = new TextEncoder()
