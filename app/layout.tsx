@@ -6,9 +6,13 @@ import { Toaster } from "@/components/ui/toaster"
 const inter = Inter({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
-  title: "Easy Plus AI - One Interface. Every AI.",
+  title: "EasyPlus AI - One Interface. Every AI.",
   description: "Premium multi-model AI chat platform aggregating Claude, Gemini, and ChatGPT",
   keywords: "AI, ChatGPT, Claude, Gemini, AI Chat, Multi-model AI",
+  icons: {
+    icon: "/logo.png",
+    apple: "/logo.png",
+  },
 }
 
 export default function RootLayout({

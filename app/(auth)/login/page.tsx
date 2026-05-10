@@ -66,11 +66,13 @@ export default function LoginPage() {
         className="glass-strong rounded-3xl p-8 w-full max-w-md relative z-10"
       >
         <div className="text-center mb-8">
-          <div className="flex items-center justify-center gap-2 mb-4">
-            <div className="h-12 w-12 rounded-lg gradient-primary flex items-center justify-center text-2xl font-bold">
-              +
-            </div>
-            <span className="font-bold text-2xl gradient-text">Easy Plus AI</span>
+          <div className="flex items-center justify-center gap-3 mb-4">
+            <img
+              src="/logo.png"
+              alt="EasyPlus AI"
+              className="h-14 w-auto object-contain"
+            />
+            <span className="font-bold text-2xl gradient-text">EasyPlus AI</span>
           </div>
           <h1 className="text-3xl font-bold mb-2">Welcome Back</h1>
           <p className="text-gray-400">Sign in to continue your AI journey</p>

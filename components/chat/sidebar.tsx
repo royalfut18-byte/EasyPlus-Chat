@@ -101,10 +101,12 @@ export function Sidebar({
             <div className="p-4 border-b border-white/10">
               <div className="flex items-center gap-3 mb-4">
                 <div className="flex items-center gap-2 flex-1">
-                  <div className="h-8 w-8 rounded-lg gradient-primary flex items-center justify-center text-xl font-bold">
-                    +
-                  </div>
-                  <span className="font-bold text-lg gradient-text">Easy Plus AI</span>
+                  <img
+                    src="/logo.png"
+                    alt="EasyPlus AI"
+                    className="h-8 w-auto object-contain"
+                  />
+                  <span className="font-bold text-lg gradient-text">EasyPlus AI</span>
                 </div>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>

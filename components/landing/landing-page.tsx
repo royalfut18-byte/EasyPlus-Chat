@@ -86,10 +86,11 @@ export function LandingPage() {
           animate={{ opacity: 1, x: 0 }}
           className="flex items-center gap-3"
         >
-          <div className="h-11 w-11 rounded-xl gradient-primary flex items-center justify-center text-2xl font-bold shadow-2xl shadow-purple-500/50 relative">
-            <div className="absolute inset-0 rounded-xl bg-gradient-to-r from-purple-500 to-blue-500 blur-lg opacity-50" />
-            <span className="relative">+</span>
-          </div>
+          <img
+            src="/logo.png"
+            alt="EasyPlus AI"
+            className="h-12 w-auto object-contain"
+          />
           <span className="font-bold text-xl bg-gradient-to-r from-white to-gray-300 bg-clip-text text-transparent">
             EasyPlus AI
           </span>
