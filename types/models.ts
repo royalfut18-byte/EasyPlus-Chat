@@ -49,6 +49,9 @@ export interface Message {
   model: string
   created_at: string
   attachments?: ChatAttachment[]
+  // Local-only metadata for artifact support (not in Supabase)
+  artifact?: Artifact | null
+  displayContent?: string
 }
 
 export interface Artifact {

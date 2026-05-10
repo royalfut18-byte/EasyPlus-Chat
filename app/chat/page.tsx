@@ -15,6 +15,7 @@ import { toast } from '@/components/ui/use-toast'
 import { AI_MODELS } from '@/types/models'
 import { cn } from '@/lib/utils'
 import { parseArtifactFromResponse, dedupeMessages } from '@/lib/artifact-parser'
+import { sortMessagesChronologically, parseArtifactsFromMessages, getStoredArtifact } from '@/lib/message-utils'
 import type { Conversation, Message, ChatAttachment, Artifact } from '@/types/models'
 
 const DEFAULT_PANEL_WIDTH = 560
@@ -182,10 +183,17 @@ export default function ChatPage() {
       }
 
       if (response.ok) {
-        const data = await response.json()
-        setMessages(data)
-        // Update cache
-        setMessageCache(prev => ({ ...prev, [conversationId]: data }))
+        const rawData = await response.json()
+
+        // Sort messages chronologically
+        const sortedData = sortMessagesChronologically(rawData)
+
+        // Parse artifacts from old messages
+        const processedData = parseArtifactsFromMessages(sortedData, conversationId)
+
+        setMessages(processedData)
+        // Update cache with processed messages
+        setMessageCache(prev => ({ ...prev, [conversationId]: processedData }))
       } else {
         setMessages([])
       }
@@ -226,7 +234,9 @@ export default function ChatPage() {
     const cached = messageCache[id]
     if (cached) {
       console.log('[Chat] Using cached messages for:', id)
-      setMessages(cached)
+      // Sort cached messages to ensure correct order
+      const sortedCached = sortMessagesChronologically(cached)
+      setMessages(sortedCached)
       setIsLoadingConversation(false)
     } else {
       // Show empty/loading state immediately
@@ -234,8 +244,14 @@ export default function ChatPage() {
       setIsLoadingConversation(true)
     }
 
-    // Try to load artifact for this conversation
-    const savedArtifact = loadArtifact(id)
+    // Try to load artifact for this conversation (new format)
+    let savedArtifact = loadArtifact(id)
+
+    // If not found, try old format from message-specific storage
+    if (!savedArtifact) {
+      savedArtifact = getStoredArtifact(id)
+    }
+
     if (savedArtifact) {
       setActiveArtifact(savedArtifact)
       // Don't open automatically
@@ -600,8 +616,13 @@ Rules:
     setArtifactMode(!artifactMode)
   }
 
-  const handleOpenArtifact = () => {
-    if (activeArtifact) {
+  const handleOpenArtifact = (artifact?: Artifact) => {
+    // If artifact is provided (from message bubble), use it
+    if (artifact) {
+      setActiveArtifact(artifact)
+      setIsArtifactOpen(true)
+    } else if (activeArtifact) {
+      // Otherwise use current active artifact
       setIsArtifactOpen(true)
     }
   }
@@ -650,7 +671,7 @@ Rules:
                 initial={{ opacity: 0, scale: 0.9 }}
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.9 }}
-                onClick={handleOpenArtifact}
+                onClick={() => handleOpenArtifact()}
                 className="px-3 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 glass hover:bg-white/10 text-gray-300 hover:text-white border border-white/20"
                 title="Reopen latest artifact"
               >
@@ -751,7 +772,8 @@ Rules:
                       model={message.model}
                       attachments={message.attachments}
                       hasArtifact={artifactMessageId === message.id && !!activeArtifact}
-                      onOpenArtifact={artifactMessageId === message.id && activeArtifact ? handleOpenArtifact : undefined}
+                      artifact={message.artifact}
+                      onOpenArtifact={message.artifact ? handleOpenArtifact : (artifactMessageId === message.id && activeArtifact ? handleOpenArtifact : undefined)}
                     />
                   ))}
                   {isLoading && messages[messages.length - 1]?.role !== 'assistant' && (

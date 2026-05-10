@@ -1,7 +1,7 @@
 'use client'
 
 import { motion } from 'framer-motion'
-import { Copy, ThumbsUp, ThumbsDown, RotateCw, FileCode, Sparkles } from 'lucide-react'
+import { Copy, ThumbsUp, ThumbsDown, RotateCw, FileCode, Sparkles, PanelRightOpen } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism'
@@ -15,7 +15,7 @@ import { Button } from '@/components/ui/button'
 import { toast } from '@/components/ui/use-toast'
 import 'katex/dist/katex.min.css'
 
-import type { ChatAttachment } from '@/types/models'
+import type { ChatAttachment, Artifact } from '@/types/models'
 
 interface MessageBubbleProps {
   role: 'user' | 'assistant'
@@ -24,15 +24,17 @@ interface MessageBubbleProps {
   onRegenerate?: () => void
   attachments?: ChatAttachment[]
   hasArtifact?: boolean
-  onOpenArtifact?: () => void
+  artifact?: Artifact | null
+  onOpenArtifact?: (artifact?: Artifact) => void
 }
 
 const ARTIFACT_LOADING_MARKER = '__ARTIFACT_LOADING__'
 
-export function MessageBubble({ role, content, model, onRegenerate, attachments, hasArtifact, onOpenArtifact }: MessageBubbleProps) {
+export function MessageBubble({ role, content, model, onRegenerate, attachments, hasArtifact, artifact, onOpenArtifact }: MessageBubbleProps) {
   const isUser = role === 'user'
   const modelData = model ? AI_MODELS.find((m) => m.id === model) : null
   const isArtifactLoading = !isUser && content === ARTIFACT_LOADING_MARKER
+  const hasArtifactCard = !isUser && (hasArtifact || artifact)
 
   const copyToClipboard = () => {
     navigator.clipboard.writeText(content)
@@ -107,6 +109,45 @@ export function MessageBubble({ role, content, model, onRegenerate, attachments,
                 </div>
                 <span className="text-xs text-gray-400">Preparing preview panel...</span>
               </div>
+            </div>
+          ) : hasArtifactCard && onOpenArtifact ? (
+            <div>
+              <ReactMarkdown
+                remarkPlugins={[remarkGfm, remarkMath]}
+                rehypePlugins={[rehypeKatex]}
+                components={{
+                  h1: ({ children }) => <h1 className="text-2xl font-bold mt-6 mb-4 text-white">{children}</h1>,
+                  h2: ({ children }) => <h2 className="text-xl font-bold mt-5 mb-3 text-white">{children}</h2>,
+                  h3: ({ children }) => <h3 className="text-lg font-semibold mt-4 mb-2 text-white">{children}</h3>,
+                  p: ({ children }) => <p className="mb-4 leading-7 text-gray-100 last:mb-0">{children}</p>,
+                  strong: ({ children }) => <strong className="font-bold text-white">{children}</strong>,
+                }}
+              >
+                {content}
+              </ReactMarkdown>
+              {artifact && (
+                <div className="mt-4 glass-strong p-4 rounded-xl border border-purple-500/30 hover:border-purple-500/50 transition-colors">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3 flex-1 min-w-0">
+                      <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-purple-500/20 to-purple-500/10 flex items-center justify-center shrink-0">
+                        <FileCode className="h-5 w-5 text-purple-400" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-semibold text-white truncate">{artifact.title}</p>
+                        <p className="text-xs text-gray-400 capitalize">{artifact.language} artifact</p>
+                      </div>
+                    </div>
+                    <Button
+                      onClick={() => onOpenArtifact(artifact)}
+                      size="sm"
+                      className="gradient-primary shrink-0"
+                    >
+                      <PanelRightOpen className="h-4 w-4 mr-2" />
+                      Open Artifact
+                    </Button>
+                  </div>
+                </div>
+              )}
             </div>
           ) : (
             <ReactMarkdown
