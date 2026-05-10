@@ -104,7 +104,6 @@ export default function ChatPage() {
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [currentConversation, setCurrentConversation] = useState<Conversation | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
-  const [messageCache, setMessageCache] = useState<Record<string, Message[]>>({})
   const [isLoading, setIsLoading] = useState(false)
   const [isLoadingConversation, setIsLoadingConversation] = useState(false)
   const [userProfile, setUserProfile] = useState<any>(null)
@@ -245,22 +244,18 @@ export default function ChatPage() {
         }
 
         // Process loaded messages: dedupe, sort, parse artifacts
-        const fetchedProcessed = processLoadedMessages(safeFetched, {
+        const processed = processLoadedMessages(safeFetched, {
           conversationId,
           parseArtifacts: true,
         })
 
-        // Get cached messages for this specific conversation
-        const cached = messageCache[conversationId] || []
+        // Filter by conversation ID as final safety
+        const final = processMessages(processed, conversationId)
 
-        // Merge cached and fetched, filtering by conversation ID
-        const merged = processMessages([...cached, ...fetchedProcessed], conversationId)
-
-        setMessages(merged)
-        setMessageCache(prev => ({ ...prev, [conversationId]: merged }))
+        setMessages(final)
 
         // Restore artifact from messages if exists
-        const messageWithArtifact = merged.find(m => m.artifact)
+        const messageWithArtifact = final.find(m => m.artifact)
         if (messageWithArtifact?.artifact) {
           setActiveArtifact(messageWithArtifact.artifact)
           setArtifactMessageId(messageWithArtifact.id)
@@ -323,17 +318,9 @@ export default function ChatPage() {
     setActiveArtifact(null)
     setArtifactMessageId(null)
 
-    // Check if we have cached messages for this specific conversation
-    const cached = messageCache[id]
-    if (cached && cached.length > 0) {
-      // Use cache immediately, filtered by conversation ID
-      setMessages(processMessages(cached, id))
-      setIsLoadingConversation(false)
-    } else {
-      // Clear immediately for clean switch
-      setMessages([])
-      setIsLoadingConversation(true)
-    }
+    // Clear immediately for clean switch - NO CACHE
+    setMessages([])
+    setIsLoadingConversation(true)
 
     // Fetch messages (with sequence check)
     await loadConversationMessages(id, requestSeq)
@@ -342,13 +329,6 @@ export default function ChatPage() {
   const handleDeleteConversation = async (id: string) => {
     const deletedConversation = conversations.find((c) => c.id === id)
     setConversations((prev) => prev.filter((c) => c.id !== id))
-
-    // Clear cache for deleted conversation
-    setMessageCache(prev => {
-      const next = { ...prev }
-      delete next[id]
-      return next
-    })
 
     // Clear artifact for deleted conversation
     try {
@@ -477,12 +457,6 @@ export default function ChatPage() {
           )
         )
 
-        // Cache the user message for this conversation
-        setMessageCache(prev => ({
-          ...prev,
-          [conversation!.id]: processMessages([updatedUserMessage], conversation!.id)
-        }))
-
         setIsCreatingConversation(false)
       } catch (error: any) {
         console.error('[Chat] Failed to create conversation:', error.message)
@@ -520,15 +494,6 @@ export default function ChatPage() {
     }
 
     setMessages((prev) => processMessages([...prev, assistantPlaceholder], sendConversationId))
-
-    // Update cache with placeholder
-    setMessageCache(prev => {
-      const current = prev[sendConversationId] || []
-      return {
-        ...prev,
-        [sendConversationId]: processMessages([...current, assistantPlaceholder], sendConversationId)
-      }
-    })
 
     try {
       // 7. Prepare messages for API (exclude artifact metadata)
@@ -704,18 +669,6 @@ Rules:
           }
         }
       }
-
-      // Update cache with final messages for this conversation
-      setMessageCache(prev => {
-        const current = prev[sendConversationId] || []
-        const updated = selectedConversationIdRef.current === sendConversationId
-          ? messages
-          : processMessages([...current], sendConversationId)
-        return {
-          ...prev,
-          [sendConversationId]: updated
-        }
-      })
 
       loadUserProfile().catch((e) => console.error('[Chat] Profile load failed:', e))
       if (messages.length === 0) {
