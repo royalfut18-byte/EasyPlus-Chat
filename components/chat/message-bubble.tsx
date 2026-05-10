@@ -9,6 +9,7 @@ import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
 import rehypeKatex from 'rehype-katex'
 import { AI_MODELS } from '@/types/models'
+import { AnthropicIcon } from '@/components/icons/anthropic-icon'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { toast } from '@/components/ui/use-toast'
@@ -58,7 +59,13 @@ export function MessageBubble({ role, content, model, onRegenerate, attachments,
       >
         {!isUser && modelData && (
           <div className="flex items-center gap-2 mb-3 pb-3 border-b border-white/10">
-            <span className="text-lg">{modelData.icon}</span>
+            {modelData.provider === 'anthropic' ? (
+              <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-[#d97757]/20 to-[#d97757]/10 flex items-center justify-center">
+                <AnthropicIcon className="w-3.5 h-3.5 text-[#d97757]" />
+              </div>
+            ) : (
+              <span className="text-lg">{modelData.icon}</span>
+            )}
             <span className="text-xs font-medium text-gray-400">{modelData.name}</span>
           </div>
         )}

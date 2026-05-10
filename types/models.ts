@@ -5,7 +5,7 @@ export interface AIModel {
   bedrockModelId: string
   costPerMessage: number
   color: string
-  icon: string
+  icon?: string // Optional: for non-Anthropic models that use emoji
 }
 
 export const AI_MODELS: AIModel[] = [
@@ -15,8 +15,7 @@ export const AI_MODELS: AIModel[] = [
     provider: 'anthropic',
     bedrockModelId: 'au.anthropic.claude-opus-4-6-v1',
     costPerMessage: 50,
-    color: '#FF6B35',
-    icon: '🔥',
+    color: '#d97757', // Anthropic warm neutral
   },
 ]
 

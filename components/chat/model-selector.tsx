@@ -2,6 +2,7 @@
 
 import { motion } from 'framer-motion'
 import { AI_MODELS, type AIModel } from '@/types/models'
+import { AnthropicIcon } from '@/components/icons/anthropic-icon'
 import { cn } from '@/lib/utils'
 
 interface ModelSelectorProps {
@@ -34,7 +35,21 @@ export function ModelSelector({ selectedModel, onSelectModel }: ModelSelectorPro
           whileHover={{ scale: 1.05 }}
           whileTap={{ scale: 0.95 }}
         >
-          <span className="text-lg">{model.icon}</span>
+          {model.provider === 'anthropic' ? (
+            <div className={cn(
+              'w-7 h-7 rounded-lg flex items-center justify-center transition-colors',
+              selectedModel === model.id
+                ? 'bg-gradient-to-br from-[#d97757]/20 to-[#d97757]/10'
+                : 'bg-white/5'
+            )}>
+              <AnthropicIcon className={cn(
+                'w-4 h-4 transition-colors',
+                selectedModel === model.id ? 'text-[#d97757]' : 'text-gray-400'
+              )} />
+            </div>
+          ) : (
+            <span className="text-lg">{model.icon}</span>
+          )}
           <span
             className={cn(
               'transition-colors',
