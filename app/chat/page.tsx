@@ -116,12 +116,7 @@ export default function ChatPage() {
     loadUserProfile()
     loadConversations()
 
-    // Try to restore last artifact
-    const lastArtifact = loadArtifact()
-    if (lastArtifact) {
-      setActiveArtifact(lastArtifact)
-      // Don't open automatically on page load
-    }
+    // Don't restore any artifact on page load - wait for conversation selection
   }, [])
 
   useEffect(() => {
@@ -240,6 +235,13 @@ export default function ChatPage() {
         setMessages(mergedMessages)
         // Update cache with merged messages
         setMessageCache(prev => ({ ...prev, [conversationId]: mergedMessages }))
+
+        // Restore artifact from messages if exists
+        const messageWithArtifact = mergedMessages.find(m => m.artifact)
+        if (messageWithArtifact?.artifact) {
+          setActiveArtifact(messageWithArtifact.artifact)
+          setArtifactMessageId(messageWithArtifact.id)
+        }
       } else {
         setMessages([])
       }
@@ -266,6 +268,11 @@ export default function ChatPage() {
 
   const handleNewChat = () => {
     if (!currentConversation && messages.length === 0) return
+
+    // Increment sequence to invalidate any pending requests
+    ++conversationRequestSeqRef.current
+    selectedConversationIdRef.current = null
+
     setCurrentConversation(null)
     setMessages([])
     setActiveArtifact(null)
@@ -314,20 +321,9 @@ export default function ChatPage() {
       setIsLoadingConversation(true)
     }
 
-    // Try to load artifact for this conversation (new format)
-    let savedArtifact = loadArtifact(id)
-
-    // If not found, try old format from message-specific storage
-    if (!savedArtifact) {
-      savedArtifact = getStoredArtifact(id)
-    }
-
-    if (savedArtifact) {
-      setActiveArtifact(savedArtifact)
-      // Don't open automatically
-    } else {
-      setActiveArtifact(null)
-    }
+    // Clear artifact when switching - will be restored from messages if it exists
+    setActiveArtifact(null)
+    setArtifactMessageId(null)
 
     // Fetch messages in background (with sequence check)
     await loadConversationMessages(id, requestSeq)
@@ -765,7 +761,7 @@ Rules:
   }
 
   const isRequestInProgress = isLoading || isCreatingConversation || isSendingRef.current
-  const showReopenButton = activeArtifact && !isArtifactOpen
+  const showReopenButton = currentConversation && activeArtifact && !isArtifactOpen
 
   // Final safety: ensure messages are sorted and deduped before rendering
   const displayedMessages = sortMessagesChronologically(dedupeMessages(messages))
