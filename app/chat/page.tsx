@@ -217,17 +217,30 @@ export default function ChatPage() {
       })
 
       if (response.status === 402) {
+        const errorData = await response.json().catch(() => ({}))
         toast({
           title: 'Insufficient credits',
-          description: 'Please top up your credits to continue',
+          description: errorData.error || 'Please top up your credits to continue',
           variant: 'destructive',
         })
         setIsLoading(false)
+        isSendingRef.current = false
         return
       }
 
       if (!response.ok) {
-        throw new Error('Failed to send message')
+        let errorMessage = 'Failed to send message'
+        try {
+          const errorData = await response.json()
+          errorMessage = errorData.error || errorMessage
+          console.error('[Chat] API error:', {
+            status: response.status,
+            error: errorData,
+          })
+        } catch (e) {
+          console.error('[Chat] Failed to parse error response:', e)
+        }
+        throw new Error(errorMessage)
       }
 
       const reader = response.body?.getReader()
@@ -261,11 +274,11 @@ export default function ChatPage() {
 
       loadUserProfile()
       loadConversations()
-    } catch (error) {
-      console.error('Send message error:', error)
+    } catch (error: any) {
+      console.error('[Chat] Send message error:', error)
       toast({
         title: 'Error',
-        description: 'Failed to send message',
+        description: error.message || 'Failed to send message',
         variant: 'destructive',
       })
     } finally {
