@@ -137,32 +137,42 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
         animate={{ x: 0 }}
         exit={{ x: '100%' }}
         transition={{ type: 'spring', damping: 30, stiffness: 300 }}
-        className="fixed top-0 right-0 h-full glass-strong border-l border-white/10 z-50 flex shadow-2xl"
+        className="fixed top-0 right-0 h-full glass-strong border-l border-white/10 z-50 shadow-2xl"
         style={{
           width: isMobile ? '100%' : `${currentWidth}px`,
+          position: 'relative',
         }}
       >
-        {/* Resize Handle - Desktop Only */}
+        {/* Resize Handle - Desktop Only - Full Height */}
         {!isMobile && (
           <div
             className={cn(
-              'absolute left-0 top-0 bottom-0 w-2 cursor-col-resize z-10 flex items-center justify-center',
-              'hover:bg-purple-500/20 transition-colors group',
-              isResizing && 'bg-purple-500/30'
+              'absolute left-0 top-0 bottom-0 w-3 cursor-col-resize flex items-center justify-center group',
+              'hover:bg-purple-500/10 transition-colors',
+              isResizing && 'bg-purple-500/20'
             )}
+            style={{
+              zIndex: 100,
+              pointerEvents: 'auto',
+            }}
             onPointerDown={handleResizeStart}
           >
-            <div className="absolute left-0 w-1 h-full bg-purple-500/0 group-hover:bg-purple-500/50 transition-colors" />
+            {/* Vertical line spanning full height */}
             <div className={cn(
-              'opacity-0 group-hover:opacity-100 transition-opacity',
+              'absolute left-1 w-px h-full bg-purple-500/40 transition-colors',
+              'group-hover:bg-purple-400/60',
+              isResizing && 'bg-purple-400'
+            )} />
+            {/* Centered grip indicator */}
+            <div className={cn(
+              'absolute top-1/2 left-0.5 -translate-y-1/2 w-1.5 h-16 rounded-full bg-purple-400/60 transition-opacity',
+              'opacity-0 group-hover:opacity-100',
               isResizing && 'opacity-100'
-            )}>
-              <GripVertical className="h-5 w-5 text-purple-400" />
-            </div>
+            )} />
           </div>
         )}
 
-        <div className="flex flex-col flex-1" style={{ marginLeft: isMobile ? 0 : '8px' }}>
+        <div className="flex flex-col h-full" style={{ paddingLeft: isMobile ? 0 : '12px' }}>
           {/* Header */}
           <div className="glass border-b border-white/10 p-4 flex items-center justify-between">
             <div className="flex-1 min-w-0">
