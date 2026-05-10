@@ -1,7 +1,7 @@
 'use client'
 
 import { motion } from 'framer-motion'
-import { Copy, ThumbsUp, ThumbsDown, RotateCw } from 'lucide-react'
+import { Copy, ThumbsUp, ThumbsDown, RotateCw, FileCode, Sparkles } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism'
@@ -26,9 +26,12 @@ interface MessageBubbleProps {
   onOpenArtifact?: () => void
 }
 
+const ARTIFACT_LOADING_MARKER = '__ARTIFACT_LOADING__'
+
 export function MessageBubble({ role, content, model, onRegenerate, attachments, hasArtifact, onOpenArtifact }: MessageBubbleProps) {
   const isUser = role === 'user'
   const modelData = model ? AI_MODELS.find((m) => m.id === model) : null
+  const isArtifactLoading = !isUser && content === ARTIFACT_LOADING_MARKER
 
   const copyToClipboard = () => {
     navigator.clipboard.writeText(content)
@@ -80,6 +83,24 @@ export function MessageBubble({ role, content, model, onRegenerate, attachments,
         )}>
           {isUser ? (
             content ? <p className="mb-0 whitespace-pre-wrap break-words">{content}</p> : null
+          ) : isArtifactLoading ? (
+            <div className="flex items-center gap-3 py-2">
+              <div className="relative">
+                <FileCode className="h-6 w-6 text-purple-400 animate-pulse" />
+                <div className="absolute inset-0 bg-purple-500/20 blur-lg animate-pulse" />
+              </div>
+              <div className="flex flex-col gap-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-white font-medium">Creating artifact</span>
+                  <div className="flex gap-1">
+                    <div className="w-1.5 h-1.5 bg-purple-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                    <div className="w-1.5 h-1.5 bg-purple-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                    <div className="w-1.5 h-1.5 bg-purple-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                  </div>
+                </div>
+                <span className="text-xs text-gray-400">Preparing preview panel...</span>
+              </div>
+            </div>
           ) : (
             <ReactMarkdown
               remarkPlugins={[remarkGfm, remarkMath]}

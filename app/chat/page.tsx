@@ -17,8 +17,11 @@ import { cn } from '@/lib/utils'
 import { parseArtifactFromResponse, dedupeMessages } from '@/lib/artifact-parser'
 import type { Conversation, Message, ChatAttachment, Artifact } from '@/types/models'
 
-const DEFAULT_PANEL_WIDTH = 520
+const DEFAULT_PANEL_WIDTH = 560
 const PANEL_WIDTH_KEY = 'easyplus-artifact-panel-width'
+
+// Special loading marker for artifact mode
+const ARTIFACT_LOADING_MARKER = '__ARTIFACT_LOADING__'
 
 // Generate a smart conversation title from the first user message
 function generateConversationTitle(message: string): string {
@@ -290,11 +293,12 @@ export default function ChatPage() {
     }
 
     // Create assistant placeholder with stable ID
+    // If artifact mode, use special loading marker
     const assistantPlaceholder: Message = {
       id: assistantMessageId,
       conversation_id: conversation.id,
       role: 'assistant',
-      content: '',
+      content: artifactModeAtSendRef.current ? ARTIFACT_LOADING_MARKER : '',
       model: selectedModel,
       created_at: new Date().toISOString(),
     }
@@ -512,9 +516,7 @@ Rules:
 
   const handlePanelWidthChange = (width: number) => {
     setArtifactPanelWidth(width)
-    if (typeof window !== 'undefined') {
-      localStorage.setItem(PANEL_WIDTH_KEY, width.toString())
-    }
+    // Width is already saved in localStorage by the panel component
   }
 
   if (!userProfile) {
@@ -541,11 +543,10 @@ Rules:
 
       <main
         className={cn(
-          'flex-1 flex flex-col ml-0 md:ml-80 transition-all duration-300',
-          isArtifactOpen && `md:mr-[${artifactPanelWidth}px]`
+          'flex-1 flex flex-col ml-0 md:ml-80 transition-all duration-300'
         )}
         style={{
-          marginRight: isArtifactOpen && window.innerWidth >= 768 ? `${artifactPanelWidth}px` : undefined,
+          marginRight: isArtifactOpen && typeof window !== 'undefined' && window.innerWidth >= 768 ? `${artifactPanelWidth}px` : undefined,
         }}
       >
         <div className="flex items-center justify-between flex-wrap gap-2 border-b border-white/10 bg-[#0A0A0F]/90 backdrop-blur-xl">

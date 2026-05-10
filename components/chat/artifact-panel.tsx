@@ -18,71 +18,76 @@ interface ArtifactPanelProps {
   onWidthChange?: (width: number) => void
 }
 
-const DEFAULT_WIDTH = 520
 const MIN_WIDTH = 380
-const MAX_WIDTH_VW = 70
+const MAX_WIDTH_PERCENT = 0.75
 
-export function ArtifactPanel({ artifact, isOpen, onClose, width = DEFAULT_WIDTH, onWidthChange }: ArtifactPanelProps) {
+export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthChange }: ArtifactPanelProps) {
   const [activeTab, setActiveTab] = useState<'preview' | 'code'>('preview')
   const [isResizing, setIsResizing] = useState(false)
-  const [panelWidth, setPanelWidth] = useState(width)
-  const resizeRef = useRef<{ startX: number; startWidth: number } | null>(null)
+  const [currentWidth, setCurrentWidth] = useState(width)
+  const panelRef = useRef<HTMLDivElement>(null)
+  const isMobile = typeof window !== 'undefined' && window.innerWidth < 768
 
   useEffect(() => {
-    setPanelWidth(width)
+    setCurrentWidth(width)
   }, [width])
 
   useEffect(() => {
     if (!isResizing) return
 
-    const handleMouseMove = (e: MouseEvent) => {
-      if (!resizeRef.current) return
+    const handlePointerMove = (e: PointerEvent) => {
+      e.preventDefault()
 
-      const deltaX = resizeRef.current.startX - e.clientX
-      const newWidth = Math.max(
-        MIN_WIDTH,
-        Math.min(
-          (window.innerWidth * MAX_WIDTH_VW) / 100,
-          resizeRef.current.startWidth + deltaX
-        )
-      )
+      // Calculate new width: distance from pointer to right edge of window
+      const newWidth = window.innerWidth - e.clientX
 
-      setPanelWidth(newWidth)
-      onWidthChange?.(newWidth)
+      // Clamp width
+      const maxWidth = window.innerWidth * MAX_WIDTH_PERCENT
+      const clampedWidth = Math.max(MIN_WIDTH, Math.min(newWidth, maxWidth))
+
+      setCurrentWidth(clampedWidth)
     }
 
-    const handleMouseUp = () => {
+    const handlePointerUp = (e: PointerEvent) => {
+      e.preventDefault()
       setIsResizing(false)
-      resizeRef.current = null
-      document.body.style.cursor = ''
+
+      // Restore user select
       document.body.style.userSelect = ''
+      document.body.style.cursor = ''
+
+      // Save to localStorage and notify parent
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('easyplus-artifact-panel-width', currentWidth.toString())
+      }
+      onWidthChange?.(currentWidth)
     }
 
-    document.addEventListener('mousemove', handleMouseMove)
-    document.addEventListener('mouseup', handleMouseUp)
+    // Add listeners to document for smooth dragging
+    document.addEventListener('pointermove', handlePointerMove)
+    document.addEventListener('pointerup', handlePointerUp)
 
     return () => {
-      document.removeEventListener('mousemove', handleMouseMove)
-      document.removeEventListener('mouseup', handleMouseUp)
+      document.removeEventListener('pointermove', handlePointerMove)
+      document.removeEventListener('pointerup', handlePointerUp)
     }
-  }, [isResizing, onWidthChange])
+  }, [isResizing, currentWidth, onWidthChange])
 
-  const handleResizeStart = (e: React.MouseEvent) => {
+  const handleResizeStart = (e: React.PointerEvent) => {
     e.preventDefault()
+    e.stopPropagation()
+
     setIsResizing(true)
-    resizeRef.current = {
-      startX: e.clientX,
-      startWidth: panelWidth,
-    }
-    document.body.style.cursor = 'col-resize'
+
+    // Prevent text selection during resize
     document.body.style.userSelect = 'none'
+    document.body.style.cursor = 'col-resize'
   }
 
   if (!artifact || !isOpen) return null
 
   const canPreview = artifact.language === 'html'
   const isReact = artifact.language === 'tsx' || artifact.language === 'jsx'
-  const defaultTab = canPreview ? 'preview' : 'code'
   const currentTab = canPreview || isReact ? activeTab : 'code'
 
   const handleCopy = () => {
@@ -127,28 +132,37 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = DEFAULT_WIDTH
   return (
     <AnimatePresence>
       <motion.div
+        ref={panelRef}
         initial={{ x: '100%' }}
         animate={{ x: 0 }}
         exit={{ x: '100%' }}
         transition={{ type: 'spring', damping: 30, stiffness: 300 }}
         className="fixed top-0 right-0 h-full glass-strong border-l border-white/10 z-50 flex shadow-2xl"
         style={{
-          width: window.innerWidth < 768 ? '100%' : `${panelWidth}px`,
+          width: isMobile ? '100%' : `${currentWidth}px`,
         }}
       >
         {/* Resize Handle - Desktop Only */}
-        {window.innerWidth >= 768 && (
+        {!isMobile && (
           <div
-            className="absolute left-0 top-0 bottom-0 w-1 hover:w-2 bg-purple-500/0 hover:bg-purple-500/30 cursor-col-resize transition-all group z-10"
-            onMouseDown={handleResizeStart}
+            className={cn(
+              'absolute left-0 top-0 bottom-0 w-2 cursor-col-resize z-10 flex items-center justify-center',
+              'hover:bg-purple-500/20 transition-colors group',
+              isResizing && 'bg-purple-500/30'
+            )}
+            onPointerDown={handleResizeStart}
           >
-            <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity">
-              <GripVertical className="h-6 w-6 text-purple-400" />
+            <div className="absolute left-0 w-1 h-full bg-purple-500/0 group-hover:bg-purple-500/50 transition-colors" />
+            <div className={cn(
+              'opacity-0 group-hover:opacity-100 transition-opacity',
+              isResizing && 'opacity-100'
+            )}>
+              <GripVertical className="h-5 w-5 text-purple-400" />
             </div>
           </div>
         )}
 
-        <div className="flex flex-col flex-1">
+        <div className="flex flex-col flex-1" style={{ marginLeft: isMobile ? 0 : '8px' }}>
           {/* Header */}
           <div className="glass border-b border-white/10 p-4 flex items-center justify-between">
             <div className="flex-1 min-w-0">
