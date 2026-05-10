@@ -107,6 +107,8 @@ export default function ChatPage() {
   const artifactModeAtSendRef = useRef(false)
   const loadingConversationIdRef = useRef<string | null>(null)
   const abortControllerRef = useRef<AbortController | null>(null)
+  const selectedConversationIdRef = useRef<string | null>(null)
+  const conversationRequestSeqRef = useRef(0)
   const router = useRouter()
   const supabase = createClient()
 
@@ -159,7 +161,7 @@ export default function ChatPage() {
     }
   }
 
-  const loadConversationMessages = async (conversationId: string) => {
+  const loadConversationMessages = async (conversationId: string, requestSeq: number) => {
     // Abort previous request if still loading
     if (abortControllerRef.current) {
       abortControllerRef.current.abort()
@@ -177,10 +179,24 @@ export default function ChatPage() {
         signal: controller.signal,
       })
 
-      // Ignore response if we've moved to a different conversation
-      if (loadingConversationIdRef.current !== conversationId) {
+      // Triple check: ignore if stale
+      if (selectedConversationIdRef.current !== conversationId) {
         if (process.env.NODE_ENV !== 'production') {
-          console.log('[Chat] Ignoring stale response for:', conversationId)
+          console.log('[Chat] Ignoring stale response - conversation changed')
+        }
+        return
+      }
+
+      if (conversationRequestSeqRef.current !== requestSeq) {
+        if (process.env.NODE_ENV !== 'production') {
+          console.log('[Chat] Ignoring stale response - sequence mismatch')
+        }
+        return
+      }
+
+      if (controller.signal.aborted) {
+        if (process.env.NODE_ENV !== 'production') {
+          console.log('[Chat] Request was aborted')
         }
         return
       }
@@ -210,7 +226,8 @@ export default function ChatPage() {
         setMessages([])
       }
     } finally {
-      if (loadingConversationIdRef.current === conversationId) {
+      // Only clear loading if this conversation is still selected
+      if (selectedConversationIdRef.current === conversationId) {
         setIsLoadingConversation(false)
         loadingConversationIdRef.current = null
       }
@@ -229,6 +246,10 @@ export default function ChatPage() {
   const handleSelectConversation = async (id: string) => {
     const conv = conversations.find((c) => c.id === id)
     if (!conv) return
+
+    // Increment sequence and mark this conversation as selected FIRST
+    const requestSeq = ++conversationRequestSeqRef.current
+    selectedConversationIdRef.current = id
 
     // IMMEDIATELY update UI - don't wait for fetch
     setCurrentConversation(conv)
@@ -269,8 +290,8 @@ export default function ChatPage() {
       setActiveArtifact(null)
     }
 
-    // Fetch messages in background (with cache and abort)
-    await loadConversationMessages(id)
+    // Fetch messages in background (with sequence check)
+    await loadConversationMessages(id, requestSeq)
   }
 
   const handleDeleteConversation = async (id: string) => {
@@ -687,6 +708,9 @@ Rules:
   const isRequestInProgress = isLoading || isCreatingConversation || isSendingRef.current
   const showReopenButton = activeArtifact && !isArtifactOpen
 
+  // Final safety: ensure messages are sorted and deduped before rendering
+  const displayedMessages = sortMessagesChronologically(dedupeMessages(messages))
+
   return (
     <div className="h-screen bg-[#0A0A0F] flex overflow-hidden">
       <Sidebar
@@ -742,7 +766,7 @@ Rules:
         <div className="flex-1 overflow-y-auto px-4 md:px-6 py-6 md:py-8 scrollbar-thin">
           <div className="max-w-4xl mx-auto">
             <AnimatePresence mode="popLayout">
-              {messages.length === 0 && !isLoadingConversation ? (
+              {displayedMessages.length === 0 && !isLoadingConversation ? (
                 <motion.div
                   key="empty"
                   initial={{ opacity: 0, y: 10 }}
@@ -783,7 +807,7 @@ Rules:
                     ))}
                   </div>
                 </motion.div>
-              ) : isLoadingConversation && messages.length === 0 ? (
+              ) : isLoadingConversation && displayedMessages.length === 0 ? (
                 <motion.div
                   key="loading"
                   initial={{ opacity: 0 }}
@@ -805,7 +829,7 @@ Rules:
                 </motion.div>
               ) : (
                 <>
-                  {messages.map((message) => (
+                  {displayedMessages.map((message) => (
                     <MessageBubble
                       key={message.id}
                       role={message.role}
@@ -817,21 +841,6 @@ Rules:
                       onOpenArtifact={message.artifact ? handleOpenArtifact : (artifactMessageId === message.id && activeArtifact ? handleOpenArtifact : undefined)}
                     />
                   ))}
-                  {isLoading && messages[messages.length - 1]?.role !== 'assistant' && (
-                    <motion.div
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      className="flex justify-start mb-6"
-                    >
-                      <div className="glass p-4 rounded-2xl">
-                        <div className="flex gap-2">
-                          <div className="w-2 h-2 bg-purple-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                          <div className="w-2 h-2 bg-purple-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                          <div className="w-2 h-2 bg-purple-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-                        </div>
-                      </div>
-                    </motion.div>
-                  )}
                 </>
               )}
             </AnimatePresence>
