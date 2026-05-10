@@ -87,13 +87,13 @@ export function LandingPage() {
           animate={{ opacity: 1, x: 0 }}
           className="flex items-center gap-3"
         >
-          <div className="relative w-14 h-14 flex-shrink-0">
+          <div className="h-14 w-14 rounded-2xl overflow-hidden bg-white flex items-center justify-center flex-shrink-0 shadow-lg">
             <Image
               src="/logo.png"
               alt="EasyPlus AI"
               width={56}
               height={56}
-              className="object-contain"
+              className="h-12 w-12 object-contain"
               priority
             />
           </div>
@@ -502,12 +502,18 @@ export function LandingPage() {
         <div className="max-w-7xl mx-auto px-6">
           <div className="flex flex-col md:flex-row justify-between items-center gap-6">
             <div className="flex items-center gap-3">
-              <div className="h-9 w-9 rounded-lg gradient-primary flex items-center justify-center text-xl font-bold shadow-lg">
-                +
+              <div className="h-10 w-10 rounded-xl overflow-hidden bg-white flex items-center justify-center flex-shrink-0 shadow-lg">
+                <Image
+                  src="/logo.png"
+                  alt="EasyPlus AI"
+                  width={40}
+                  height={40}
+                  className="h-8 w-8 object-contain"
+                />
               </div>
               <div className="text-left">
                 <div className="font-semibold text-sm">EasyPlus AI</div>
-                <div className="text-xs text-gray-500">© 2024 All rights reserved</div>
+                <div className="text-xs text-gray-500">© 2026 All rights reserved</div>
               </div>
             </div>
             <div className="flex items-center gap-2 text-sm text-gray-400">

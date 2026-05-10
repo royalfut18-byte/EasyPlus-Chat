@@ -68,13 +68,13 @@ export default function LoginPage() {
       >
         <div className="text-center mb-8">
           <div className="flex items-center justify-center gap-4 mb-4">
-            <div className="relative w-20 h-20 flex-shrink-0">
+            <div className="h-24 w-24 rounded-2xl overflow-hidden bg-white flex items-center justify-center flex-shrink-0 shadow-xl border border-white/20">
               <Image
                 src="/logo.png"
                 alt="EasyPlus AI"
-                width={80}
-                height={80}
-                className="object-contain"
+                width={96}
+                height={96}
+                className="h-20 w-20 object-contain"
                 priority
               />
             </div>

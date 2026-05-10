@@ -102,13 +102,13 @@ export function Sidebar({
             <div className="p-4 border-b border-white/10">
               <div className="flex items-center gap-3 mb-4">
                 <div className="flex items-center gap-3 flex-1">
-                  <div className="relative w-12 h-12 flex-shrink-0">
+                  <div className="h-14 w-14 rounded-2xl overflow-hidden bg-white flex items-center justify-center flex-shrink-0 border border-white/10">
                     <Image
                       src="/logo.png"
                       alt="EasyPlus AI"
-                      width={48}
-                      height={48}
-                      className="object-contain"
+                      width={56}
+                      height={56}
+                      className="h-12 w-12 object-contain"
                       priority
                     />
                   </div>

@@ -437,14 +437,24 @@ export default function ChatPage() {
         setCurrentConversation(conversation)
         setConversations((prev) => [conversation!, ...prev])
 
+        // Mark this as the selected conversation
+        selectedConversationIdRef.current = conversation!.id
+
         // Update user message with real conversation ID
+        const updatedUserMessage = { ...userMessage, conversation_id: conversation!.id }
         setMessages((prev) =>
           dedupeMessages(
             prev.map((m) =>
-              m.id === clientUserMessageId ? { ...m, conversation_id: conversation!.id } : m
+              m.id === clientUserMessageId ? updatedUserMessage : m
             )
           )
         )
+
+        // Immediately cache the optimistic user message so it persists if user switches away
+        setMessageCache((prev) => ({
+          ...prev,
+          [conversation!.id]: [updatedUserMessage],
+        }))
 
         setIsCreatingConversation(false)
       } catch (error: any) {
@@ -480,6 +490,16 @@ export default function ChatPage() {
     }
 
     setMessages((prev) => dedupeMessages([...prev, assistantPlaceholder]))
+
+    // Update cache with optimistic messages (user + placeholder) so they persist if user switches away
+    setMessageCache((prev) => {
+      const currentCached = prev[conversation.id] || []
+      const updatedMessages = dedupeMessages([...currentCached, assistantPlaceholder])
+      return {
+        ...prev,
+        [conversation.id]: updatedMessages,
+      }
+    })
 
     try {
       // 7. Prepare messages for API (exclude artifact metadata)
