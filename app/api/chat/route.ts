@@ -37,11 +37,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { model, messages, conversationId } = await request.json()
+    const { model, messages, conversationId, artifactMode } = await request.json()
 
     if (!model || !messages || !Array.isArray(messages)) {
       console.error('[Chat API] Invalid request params')
       return NextResponse.json({ error: 'Invalid request' }, { status: 400 })
+    }
+
+    // Log artifact mode (not the content)
+    if (artifactMode) {
+      console.log('[Chat API] Artifact mode enabled for this request')
     }
 
     const { data: profile, error: profileError } = await db

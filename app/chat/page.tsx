@@ -14,15 +14,14 @@ import { ArtifactPanel } from '@/components/chat/artifact-panel'
 import { toast } from '@/components/ui/use-toast'
 import { AI_MODELS } from '@/types/models'
 import { cn } from '@/lib/utils'
+import { parseArtifactFromResponse, dedupeMessages } from '@/lib/artifact-parser'
 import type { Conversation, Message, ChatAttachment, Artifact } from '@/types/models'
 
 // Generate a smart conversation title from the first user message
 function generateConversationTitle(message: string): string {
-  // Remove common filler words
   const fillers = /^(what is|what's|can you|please|could you|tell me|explain|search the web|latest|give me|show me|find)\s+/i
   let title = message.replace(fillers, '')
 
-  // Take first 50 characters and find last complete word
   if (title.length > 50) {
     title = title.substring(0, 50)
     const lastSpace = title.lastIndexOf(' ')
@@ -31,7 +30,6 @@ function generateConversationTitle(message: string): string {
     }
   }
 
-  // Capitalize first letter of each major word
   title = title
     .split(' ')
     .map((word, index) => {
@@ -42,38 +40,8 @@ function generateConversationTitle(message: string): string {
     })
     .join(' ')
 
-  // Remove trailing punctuation
   title = title.replace(/[.,;:!?]+$/, '')
-
   return title || 'New Chat'
-}
-
-// Parse artifacts from assistant messages
-function parseArtifact(content: string): { artifact: Artifact | null; cleanContent: string } {
-  const artifactRegex = /```artifact:(\w+):([^\n]+)\n([\s\S]*?)```/
-  const match = content.match(artifactRegex)
-
-  if (!match) {
-    return { artifact: null, cleanContent: content }
-  }
-
-  const [fullMatch, language, title, code] = match
-
-  const artifact: Artifact = {
-    id: `artifact-${Date.now()}`,
-    title: title.trim(),
-    language: language as any,
-    code: code.trim(),
-    createdAt: new Date().toISOString(),
-  }
-
-  // Remove artifact block from content and add a reference
-  const cleanContent = content.replace(
-    fullMatch,
-    `\n**✨ Artifact created: ${artifact.title}**\n\n_Click "Open Artifact" to view the ${language} code._\n`
-  )
-
-  return { artifact, cleanContent }
 }
 
 export default function ChatPage() {
@@ -85,9 +53,11 @@ export default function ChatPage() {
   const [userProfile, setUserProfile] = useState<any>(null)
   const [isCreatingConversation, setIsCreatingConversation] = useState(false)
   const [artifactMode, setArtifactMode] = useState(false)
-  const [currentArtifact, setCurrentArtifact] = useState<Artifact | null>(null)
+  const [activeArtifact, setActiveArtifact] = useState<Artifact | null>(null)
+  const [artifactMessageId, setArtifactMessageId] = useState<string | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const isSendingRef = useRef(false)
+  const lastUserPromptRef = useRef<string>('')
   const router = useRouter()
   const supabase = createClient()
 
@@ -112,11 +82,9 @@ export default function ChatPage() {
         return
       }
 
-      // Use helper to ensure profile exists
       const profile = await ensureProfile(supabase, user.id)
       setUserProfile(profile)
     } catch (error) {
-      // Set fallback to prevent infinite loading
       setUserProfile({ credits: 1000 })
     }
   }
@@ -124,14 +92,13 @@ export default function ChatPage() {
   const loadConversations = async () => {
     try {
       const response = await fetch('/api/conversations', {
-        signal: AbortSignal.timeout(10000), // 10 second timeout
+        signal: AbortSignal.timeout(10000),
       })
       if (response.ok) {
         const data = await response.json()
         setConversations(data)
       }
     } catch (error) {
-      // Continue even if conversations fail to load
       setConversations([])
     }
   }
@@ -151,12 +118,11 @@ export default function ChatPage() {
   }
 
   const handleNewChat = () => {
-    // Don't create blank chats - only clear UI to draft state
-    // If already in a blank state, do nothing
     if (!currentConversation && messages.length === 0) return
-
     setCurrentConversation(null)
     setMessages([])
+    setActiveArtifact(null)
+    setArtifactMessageId(null)
   }
 
   const handleSelectConversation = async (id: string) => {
@@ -164,23 +130,23 @@ export default function ChatPage() {
     if (conv) {
       setCurrentConversation(conv)
       setSelectedModel(conv.model_used)
+      setActiveArtifact(null)
+      setArtifactMessageId(null)
       await loadConversationMessages(id)
     }
   }
 
   const handleDeleteConversation = async (id: string) => {
-    // Store the conversation in case we need to restore it
     const deletedConversation = conversations.find((c) => c.id === id)
-
-    // IMMEDIATELY update UI (optimistic delete)
     setConversations((prev) => prev.filter((c) => c.id !== id))
 
     if (currentConversation?.id === id) {
       setCurrentConversation(null)
       setMessages([])
+      setActiveArtifact(null)
+      setArtifactMessageId(null)
     }
 
-    // Send delete request in background
     try {
       const response = await fetch(`/api/conversations/${id}`, {
         method: 'DELETE',
@@ -195,7 +161,6 @@ export default function ChatPage() {
         description: 'The conversation has been removed',
       })
     } catch (error: any) {
-      // Restore conversation on error
       if (deletedConversation) {
         setConversations((prev) => [deletedConversation, ...prev].sort((a, b) =>
           new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
@@ -211,23 +176,26 @@ export default function ChatPage() {
   }
 
   const handleSendMessage = async (content: string, attachments?: ChatAttachment[]) => {
-    // Trim and validate input
     const trimmedContent = content.trim()
     if (!trimmedContent && (!attachments || attachments.length === 0)) {
       return
     }
 
-    // Prevent duplicate sends
+    // CRITICAL: Prevent duplicate sends
     if (isSendingRef.current) {
       return
     }
-
     isSendingRef.current = true
 
-    // Create optimistic user message with temporary ID
-    const tempMessageId = `temp-${Date.now()}`
+    // Store user prompt for artifact parsing
+    lastUserPromptRef.current = trimmedContent
+
+    // Generate stable IDs
+    const userMessageId = `user-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+    const assistantMessageId = `assistant-${Date.now() + 1}-${Math.random().toString(36).substr(2, 9)}`
+
     const userMessage: Message = {
-      id: tempMessageId,
+      id: userMessageId,
       conversation_id: currentConversation?.id || 'temp',
       role: 'user',
       content: trimmedContent,
@@ -236,11 +204,11 @@ export default function ChatPage() {
       attachments,
     }
 
-    // IMMEDIATELY show user message in UI (optimistic update)
-    setMessages((prev) => [...prev, userMessage])
+    // IMMEDIATELY show user message
+    setMessages((prev) => dedupeMessages([...prev, userMessage]))
     setIsLoading(true)
 
-    // Create conversation in background if needed (first message)
+    // Create conversation if needed
     let conversation = currentConversation
     if (!conversation) {
       setIsCreatingConversation(true)
@@ -261,15 +229,13 @@ export default function ChatPage() {
         }
 
         conversation = await response.json()
-
-        // Optimistically update conversation state and sidebar
         setCurrentConversation(conversation)
         setConversations((prev) => [conversation!, ...prev])
 
-        // Update the temporary message with real conversation ID
+        // Update user message with real conversation ID
         setMessages((prev) =>
           prev.map((m) =>
-            m.id === tempMessageId ? { ...m, conversation_id: conversation!.id } : m
+            m.id === userMessageId ? { ...m, conversation_id: conversation!.id } : m
           )
         )
 
@@ -280,8 +246,7 @@ export default function ChatPage() {
           description: 'Failed to create conversation',
           variant: 'destructive',
         })
-        // Remove optimistic message on error
-        setMessages((prev) => prev.filter((m) => m.id !== tempMessageId))
+        setMessages((prev) => prev.filter((m) => m.id !== userMessageId))
         setIsCreatingConversation(false)
         setIsLoading(false)
         isSendingRef.current = false
@@ -290,15 +255,15 @@ export default function ChatPage() {
     }
 
     if (!conversation) {
-      setMessages((prev) => prev.filter((m) => m.id !== tempMessageId))
+      setMessages((prev) => prev.filter((m) => m.id !== userMessageId))
       setIsLoading(false)
       isSendingRef.current = false
       return
     }
 
-    // Create assistant message upfront for error handling
-    const assistantMessage: Message = {
-      id: (Date.now() + 1).toString(),
+    // Create assistant placeholder
+    const assistantPlaceholder: Message = {
+      id: assistantMessageId,
       conversation_id: conversation.id,
       role: 'assistant',
       content: '',
@@ -306,32 +271,35 @@ export default function ChatPage() {
       created_at: new Date().toISOString(),
     }
 
+    // IMMEDIATELY add assistant placeholder
+    setMessages((prev) => dedupeMessages([...prev, assistantPlaceholder]))
+
     try {
-      // Prepare messages with artifact mode instruction if enabled
+      // Prepare messages for API
       const messagesToSend = [...messages, userMessage].map((m) => ({
         role: m.role,
         content: m.content,
         attachments: m.attachments,
       }))
 
-      // Add artifact mode system instruction
+      // Add artifact mode instruction
       if (artifactMode) {
         messagesToSend.unshift({
           role: 'user',
           content: `[ARTIFACT MODE ENABLED]
 
-If the user asks for buildable code/UI artifacts (landing pages, HTML/CSS files, React components, games, dashboards, UI mockups, etc.), return a short normal explanation, then return the artifact using this exact format:
+When the user asks for buildable code/UI artifacts (landing pages, HTML/CSS files, React components, games, dashboards, UI mockups, brackets, calculators, etc.), return a short explanation, then include exactly one artifact block in this exact format:
 
-\`\`\`artifact:language:title
+\`\`\`artifact:html:Title
 CODE_HERE
 \`\`\`
 
 Rules:
-- Use artifact language values like html, tsx, jsx, javascript, css, python, markdown, text.
-- For full webpage previews, prefer a complete single-file html artifact with inline CSS/JS.
-- For React components, use tsx or jsx.
-- Do not include secrets or env vars in artifacts.
-- If no artifact is needed, answer normally without the artifact block.
+- Use language values: html, tsx, jsx, javascript, css, python, markdown, text.
+- For complete webpages/previews, prefer a full single-file HTML document with inline CSS and JS.
+- Do NOT output raw HTML outside the artifact block.
+- Do NOT include secrets, API keys, or env vars.
+- If no artifact is needed, answer normally.
 
 ---`,
           attachments: undefined,
@@ -345,6 +313,7 @@ Rules:
           model: selectedModel,
           messages: messagesToSend,
           conversationId: conversation.id,
+          artifactMode,
         }),
       })
 
@@ -355,6 +324,7 @@ Rules:
           description: errorData.error || 'Please top up your credits to continue',
           variant: 'destructive',
         })
+        setMessages((prev) => prev.filter((m) => m.id !== assistantMessageId))
         setIsLoading(false)
         isSendingRef.current = false
         return
@@ -366,7 +336,7 @@ Rules:
           const errorData = await response.json()
           errorMessage = errorData.error || errorMessage
         } catch (e) {
-          // Failed to parse error
+          // ignore
         }
         throw new Error(errorMessage)
       }
@@ -375,8 +345,7 @@ Rules:
       const decoder = new TextDecoder()
       let assistantContent = ''
 
-      setMessages((prev) => [...prev, assistantMessage])
-
+      // Stream response
       while (reader) {
         const { done, value } = await reader.read()
         if (done) break
@@ -384,36 +353,43 @@ Rules:
         const chunk = decoder.decode(value)
         assistantContent += chunk
 
+        // Update message in real-time
         setMessages((prev) =>
           prev.map((m) =>
-            m.id === assistantMessage.id ? { ...m, content: assistantContent } : m
+            m.id === assistantMessageId ? { ...m, content: assistantContent } : m
           )
         )
       }
 
-      // Parse artifact if artifact mode is enabled
+      // CRITICAL: Parse artifact AFTER streaming completes
       if (artifactMode && assistantContent) {
-        const { artifact, cleanContent } = parseArtifact(assistantContent)
+        const { artifact, cleanContent } = parseArtifactFromResponse(
+          assistantContent,
+          artifactMode,
+          lastUserPromptRef.current
+        )
+
         if (artifact) {
-          setCurrentArtifact(artifact)
           // Update message with clean content
           setMessages((prev) =>
             prev.map((m) =>
-              m.id === assistantMessage.id ? { ...m, content: cleanContent } : m
+              m.id === assistantMessageId ? { ...m, content: cleanContent } : m
             )
           )
+
+          // Open artifact panel
+          setActiveArtifact(artifact)
+          setArtifactMessageId(assistantMessageId)
         }
       }
 
-      // Refresh user profile and conversations in background (non-blocking)
+      // Background tasks
       loadUserProfile()
-      // Only reload conversations if it was the first message (to get updated title)
-      if (messages.length === 1) {
+      if (messages.length === 0) {
         loadConversations()
       }
     } catch (error: any) {
-      // Remove assistant message on error
-      setMessages((prev) => prev.filter((m) => m.id !== assistantMessage.id))
+      setMessages((prev) => prev.filter((m) => m.id === assistantMessageId))
       toast({
         title: 'Error',
         description: error.message || 'Failed to send message',
@@ -423,6 +399,15 @@ Rules:
       setIsLoading(false)
       isSendingRef.current = false
     }
+  }
+
+  const handleOpenArtifact = (messageId: string) => {
+    const message = messages.find((m) => m.id === messageId)
+    if (message && artifactMessageId === messageId && activeArtifact) {
+      // Artifact already exists for this message
+      return
+    }
+    // Otherwise, could re-parse if needed, but for now just show existing
   }
 
   if (!userProfile) {
@@ -445,8 +430,8 @@ Rules:
       />
 
       <main className={cn(
-        'flex-1 flex flex-col ml-0 md:ml-80 transition-all',
-        currentArtifact && 'md:mr-[40%] lg:mr-[40%]'
+        'flex-1 flex flex-col ml-0 md:ml-80 transition-all duration-300',
+        activeArtifact && 'md:mr-[45%]'
       )}>
         <div className="flex items-center justify-between flex-wrap gap-2 border-b border-white/10 bg-[#0A0A0F]/90 backdrop-blur-xl">
           <div className="flex-1 min-w-0">
@@ -499,7 +484,7 @@ Rules:
                       <motion.button
                         key={i}
                         onClick={() => handleSendMessage(prompt.text)}
-                        disabled={isLoading || isCreatingConversation}
+                        disabled={isLoading || isCreatingConversation || isSendingRef.current}
                         className="glass-strong p-4 md:p-5 rounded-xl text-left hover:glow-border hover:bg-white/5 transition-all disabled:opacity-50 disabled:cursor-not-allowed group"
                         whileHover={{ scale: 1.02, y: -2 }}
                         whileTap={{ scale: 0.98 }}
@@ -521,9 +506,11 @@ Rules:
                       content={message.content}
                       model={message.model}
                       attachments={message.attachments}
+                      hasArtifact={artifactMessageId === message.id && !!activeArtifact}
+                      onOpenArtifact={activeArtifact && artifactMessageId === message.id ? () => {} : undefined}
                     />
                   ))}
-                  {isLoading && (
+                  {isLoading && messages[messages.length - 1]?.role !== 'assistant' && (
                     <motion.div
                       initial={{ opacity: 0 }}
                       animate={{ opacity: 1 }}
@@ -547,12 +534,18 @@ Rules:
 
         <ChatInput
           onSend={handleSendMessage}
-          disabled={isLoading || isCreatingConversation}
+          disabled={isLoading || isCreatingConversation || isSendingRef.current}
           isLoading={isLoading || isCreatingConversation}
         />
       </main>
 
-      <ArtifactPanel artifact={currentArtifact} onClose={() => setCurrentArtifact(null)} />
+      <ArtifactPanel
+        artifact={activeArtifact}
+        onClose={() => {
+          setActiveArtifact(null)
+          setArtifactMessageId(null)
+        }}
+      />
     </div>
   )
 }

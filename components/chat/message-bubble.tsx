@@ -14,17 +14,19 @@ import { Button } from '@/components/ui/button'
 import { toast } from '@/components/ui/use-toast'
 import 'katex/dist/katex.min.css'
 
+import type { ChatAttachment } from '@/types/models'
+
 interface MessageBubbleProps {
   role: 'user' | 'assistant'
   content: string
   model?: string
   onRegenerate?: () => void
   attachments?: ChatAttachment[]
+  hasArtifact?: boolean
+  onOpenArtifact?: () => void
 }
 
-import type { ChatAttachment } from '@/types/models'
-
-export function MessageBubble({ role, content, model, onRegenerate, attachments }: MessageBubbleProps) {
+export function MessageBubble({ role, content, model, onRegenerate, attachments, hasArtifact, onOpenArtifact }: MessageBubbleProps) {
   const isUser = role === 'user'
   const modelData = model ? AI_MODELS.find((m) => m.id === model) : null
 
