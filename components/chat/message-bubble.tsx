@@ -34,16 +34,19 @@ const ASSISTANT_LOADING_MARKER = '__ASSISTANT_LOADING__'
 export function MessageBubble({ role, content, model, onRegenerate, attachments, hasArtifact, artifact, onOpenArtifact }: MessageBubbleProps) {
   const isUser = role === 'user'
   const modelData = model ? AI_MODELS.find((m) => m.id === model) : null
-  const isArtifactLoading = !isUser && content === ARTIFACT_LOADING_MARKER
-  const isAssistantLoading = !isUser && content === ASSISTANT_LOADING_MARKER
-  const hasArtifactCard = !isUser && (hasArtifact || artifact)
+  const safeContent = content || ''
+  const isArtifactLoading = !isUser && safeContent === ARTIFACT_LOADING_MARKER
+  const isAssistantLoading = !isUser && safeContent === ASSISTANT_LOADING_MARKER
+  const hasArtifactCard = !isUser && (hasArtifact || (artifact && artifact.title && artifact.code))
 
   const copyToClipboard = () => {
-    navigator.clipboard.writeText(content)
-    toast({
-      title: 'Copied to clipboard',
-      description: 'Message content copied successfully',
-    })
+    if (typeof navigator !== 'undefined' && navigator.clipboard) {
+      navigator.clipboard.writeText(safeContent)
+      toast({
+        title: 'Copied to clipboard',
+        description: 'Message content copied successfully',
+      })
+    }
   }
 
   return (
@@ -93,7 +96,7 @@ export function MessageBubble({ role, content, model, onRegenerate, attachments,
           isUser ? 'prose-sm' : 'prose-base'
         )}>
           {isUser ? (
-            content ? <p className="mb-0 whitespace-pre-wrap break-words">{content}</p> : null
+            safeContent ? <p className="mb-0 whitespace-pre-wrap break-words">{safeContent}</p> : null
           ) : isArtifactLoading ? (
             <div className="flex items-center gap-3 py-2">
               <div className="relative">
@@ -140,9 +143,9 @@ export function MessageBubble({ role, content, model, onRegenerate, attachments,
                   strong: ({ children }) => <strong className="font-bold text-white">{children}</strong>,
                 }}
               >
-                {content}
+                {safeContent}
               </ReactMarkdown>
-              {artifact && (
+              {artifact && artifact.title && (
                 <div className="mt-4 glass-strong p-4 rounded-xl border border-purple-500/30 hover:border-purple-500/50 transition-colors">
                   <div className="flex items-center justify-between gap-3">
                     <div className="flex items-center gap-3 flex-1 min-w-0">
@@ -166,7 +169,7 @@ export function MessageBubble({ role, content, model, onRegenerate, attachments,
                 </div>
               )}
             </div>
-          ) : content ? (
+          ) : safeContent ? (
             <ReactMarkdown
               remarkPlugins={[remarkGfm, remarkMath]}
               rehypePlugins={[rehypeKatex]}
@@ -244,7 +247,7 @@ export function MessageBubble({ role, content, model, onRegenerate, attachments,
                 hr: () => <hr className="my-6 border-white/20" />,
               }}
             >
-              {content}
+              {safeContent}
             </ReactMarkdown>
           ) : (
             <div className="flex items-center gap-3 py-2">

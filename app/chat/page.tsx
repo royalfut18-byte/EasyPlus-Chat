@@ -29,6 +29,8 @@ const LAST_ARTIFACT_KEY = 'easyplus:lastArtifact'
 
 // Save artifact to localStorage
 function saveArtifact(artifact: Artifact, conversationId?: string) {
+  if (typeof window === 'undefined') return
+
   try {
     const data = JSON.stringify(artifact)
     localStorage.setItem(LAST_ARTIFACT_KEY, data)
@@ -42,16 +44,33 @@ function saveArtifact(artifact: Artifact, conversationId?: string) {
 
 // Load artifact from localStorage
 function loadArtifact(conversationId?: string): Artifact | null {
+  if (typeof window === 'undefined') return null
+
   try {
     const key = conversationId ? getArtifactKey(conversationId) : LAST_ARTIFACT_KEY
     const data = localStorage.getItem(key)
-    if (data) {
-      return JSON.parse(data) as Artifact
+    if (!data) return null
+
+    const parsed = JSON.parse(data)
+    // Validate artifact has required fields
+    if (parsed && parsed.title && parsed.language && parsed.code) {
+      return parsed as Artifact
     }
+
+    // Invalid artifact, remove it
+    localStorage.removeItem(key)
+    return null
   } catch (e) {
     console.error('[Artifact] Failed to load from localStorage:', e)
+    // Try to remove corrupted data
+    try {
+      const key = conversationId ? getArtifactKey(conversationId) : LAST_ARTIFACT_KEY
+      localStorage.removeItem(key)
+    } catch (e2) {
+      // Ignore
+    }
+    return null
   }
-  return null
 }
 
 function generateConversationTitle(message: string): string {
@@ -94,13 +113,7 @@ export default function ChatPage() {
   const [activeArtifact, setActiveArtifact] = useState<Artifact | null>(null)
   const [isArtifactOpen, setIsArtifactOpen] = useState(false)
   const [artifactMessageId, setArtifactMessageId] = useState<string | null>(null)
-  const [artifactPanelWidth, setArtifactPanelWidth] = useState(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem(PANEL_WIDTH_KEY)
-      return saved ? parseInt(saved, 10) : DEFAULT_PANEL_WIDTH
-    }
-    return DEFAULT_PANEL_WIDTH
-  })
+  const [artifactPanelWidth, setArtifactPanelWidth] = useState(DEFAULT_PANEL_WIDTH)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const isSendingRef = useRef(false)
   const lastUserPromptRef = useRef<string>('')
@@ -114,6 +127,19 @@ export default function ChatPage() {
   useEffect(() => {
     loadUserProfile()
     loadConversations()
+
+    // Load panel width from localStorage
+    try {
+      const saved = localStorage.getItem(PANEL_WIDTH_KEY)
+      if (saved) {
+        const width = parseInt(saved, 10)
+        if (!isNaN(width) && width > 0) {
+          setArtifactPanelWidth(width)
+        }
+      }
+    } catch (e) {
+      // Ignore localStorage errors
+    }
 
     // Don't restore any artifact on page load - wait for conversation selection
   }, [])
