@@ -19,9 +19,12 @@ interface MessageBubbleProps {
   content: string
   model?: string
   onRegenerate?: () => void
+  attachments?: ChatAttachment[]
 }
 
-export function MessageBubble({ role, content, model, onRegenerate }: MessageBubbleProps) {
+import type { ChatAttachment } from '@/types/models'
+
+export function MessageBubble({ role, content, model, onRegenerate, attachments }: MessageBubbleProps) {
   const isUser = role === 'user'
   const modelData = model ? AI_MODELS.find((m) => m.id === model) : null
 
@@ -55,12 +58,26 @@ export function MessageBubble({ role, content, model, onRegenerate }: MessageBub
           </div>
         )}
 
+        {attachments && attachments.length > 0 && (
+          <div className="flex flex-wrap gap-2 mb-3">
+            {attachments.map((attachment, index) => (
+              <img
+                key={index}
+                src={attachment.dataUrl}
+                alt={attachment.name}
+                className="max-w-xs max-h-64 rounded-lg border border-white/20 object-contain cursor-pointer hover:opacity-80 transition-opacity"
+                onClick={() => window.open(attachment.dataUrl, '_blank')}
+              />
+            ))}
+          </div>
+        )}
+
         <div className={cn(
           'message-content prose prose-invert max-w-none',
           isUser ? 'prose-sm' : 'prose-base'
         )}>
           {isUser ? (
-            <p className="mb-0 whitespace-pre-wrap break-words">{content}</p>
+            content ? <p className="mb-0 whitespace-pre-wrap break-words">{content}</p> : null
           ) : (
             <ReactMarkdown
               remarkPlugins={[remarkGfm, remarkMath]}

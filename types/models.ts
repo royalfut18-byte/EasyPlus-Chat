@@ -20,9 +20,17 @@ export const AI_MODELS: AIModel[] = [
   },
 ]
 
+export interface ChatAttachment {
+  type: 'image'
+  name: string
+  mimeType: string
+  dataUrl: string
+}
+
 export interface ChatMessage {
   role: 'user' | 'assistant'
   content: string
+  attachments?: ChatAttachment[]
 }
 
 export interface Conversation {
@@ -41,4 +49,14 @@ export interface Message {
   content: string
   model: string
   created_at: string
+  attachments?: ChatAttachment[]
+}
+
+export interface Artifact {
+  id: string
+  title: string
+  language: 'html' | 'tsx' | 'jsx' | 'javascript' | 'css' | 'python' | 'markdown' | 'text'
+  code: string
+  explanation?: string
+  createdAt: string
 }

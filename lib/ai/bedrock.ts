@@ -21,10 +21,42 @@ export async function streamBedrockResponse(
 
   const bedrockMessages = messages
     .filter((message) => message.role === 'user' || message.role === 'assistant')
-    .map((message) => ({
-      role: message.role,
-      content: [{ text: message.content }],
-    }))
+    .map((message) => {
+      const content: any[] = []
+
+      // Add images if present
+      if (message.attachments && message.attachments.length > 0) {
+        for (const attachment of message.attachments) {
+          if (attachment.type === 'image') {
+            // Extract base64 data from data URL
+            const base64Match = attachment.dataUrl.match(/^data:([^;]+);base64,(.+)$/)
+            if (base64Match) {
+              const mimeType = base64Match[1]
+              const base64Data = base64Match[2]
+
+              content.push({
+                type: 'image',
+                source: {
+                  type: 'base64',
+                  media_type: mimeType,
+                  data: base64Data,
+                },
+              })
+            }
+          }
+        }
+      }
+
+      // Add text content
+      if (message.content) {
+        content.push({ text: message.content })
+      }
+
+      return {
+        role: message.role,
+        content: content.length > 0 ? content : [{ text: message.content || '' }],
+      }
+    })
 
   const endpoint = `https://bedrock-runtime.${region}.amazonaws.com/model/${model.bedrockModelId}/converse`
 

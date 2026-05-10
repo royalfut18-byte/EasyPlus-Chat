@@ -3,16 +3,18 @@
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Sparkles } from 'lucide-react'
+import { Sparkles, Box } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { ensureProfile } from '@/lib/supabase/ensure-profile'
 import { ModelSelector } from '@/components/chat/model-selector'
 import { MessageBubble } from '@/components/chat/message-bubble'
 import { ChatInput } from '@/components/chat/chat-input'
 import { Sidebar } from '@/components/chat/sidebar'
+import { ArtifactPanel } from '@/components/chat/artifact-panel'
 import { toast } from '@/components/ui/use-toast'
 import { AI_MODELS } from '@/types/models'
-import type { Conversation, Message } from '@/types/models'
+import { cn } from '@/lib/utils'
+import type { Conversation, Message, ChatAttachment, Artifact } from '@/types/models'
 
 // Generate a smart conversation title from the first user message
 function generateConversationTitle(message: string): string {
@@ -46,6 +48,34 @@ function generateConversationTitle(message: string): string {
   return title || 'New Chat'
 }
 
+// Parse artifacts from assistant messages
+function parseArtifact(content: string): { artifact: Artifact | null; cleanContent: string } {
+  const artifactRegex = /```artifact:(\w+):([^\n]+)\n([\s\S]*?)```/
+  const match = content.match(artifactRegex)
+
+  if (!match) {
+    return { artifact: null, cleanContent: content }
+  }
+
+  const [fullMatch, language, title, code] = match
+
+  const artifact: Artifact = {
+    id: `artifact-${Date.now()}`,
+    title: title.trim(),
+    language: language as any,
+    code: code.trim(),
+    createdAt: new Date().toISOString(),
+  }
+
+  // Remove artifact block from content and add a reference
+  const cleanContent = content.replace(
+    fullMatch,
+    `\n**✨ Artifact created: ${artifact.title}**\n\n_Click "Open Artifact" to view the ${language} code._\n`
+  )
+
+  return { artifact, cleanContent }
+}
+
 export default function ChatPage() {
   const [selectedModel, setSelectedModel] = useState(AI_MODELS[0].id)
   const [conversations, setConversations] = useState<Conversation[]>([])
@@ -54,6 +84,8 @@ export default function ChatPage() {
   const [isLoading, setIsLoading] = useState(false)
   const [userProfile, setUserProfile] = useState<any>(null)
   const [isCreatingConversation, setIsCreatingConversation] = useState(false)
+  const [artifactMode, setArtifactMode] = useState(false)
+  const [currentArtifact, setCurrentArtifact] = useState<Artifact | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const isSendingRef = useRef(false)
   const router = useRouter()
@@ -178,10 +210,10 @@ export default function ChatPage() {
     }
   }
 
-  const handleSendMessage = async (content: string) => {
+  const handleSendMessage = async (content: string, attachments?: ChatAttachment[]) => {
     // Trim and validate input
     const trimmedContent = content.trim()
-    if (!trimmedContent) {
+    if (!trimmedContent && (!attachments || attachments.length === 0)) {
       return
     }
 
@@ -201,6 +233,7 @@ export default function ChatPage() {
       content: trimmedContent,
       model: selectedModel,
       created_at: new Date().toISOString(),
+      attachments,
     }
 
     // IMMEDIATELY show user message in UI (optimistic update)
@@ -274,15 +307,43 @@ export default function ChatPage() {
     }
 
     try {
+      // Prepare messages with artifact mode instruction if enabled
+      const messagesToSend = [...messages, userMessage].map((m) => ({
+        role: m.role,
+        content: m.content,
+        attachments: m.attachments,
+      }))
+
+      // Add artifact mode system instruction
+      if (artifactMode) {
+        messagesToSend.unshift({
+          role: 'user',
+          content: `[ARTIFACT MODE ENABLED]
+
+If the user asks for buildable code/UI artifacts (landing pages, HTML/CSS files, React components, games, dashboards, UI mockups, etc.), return a short normal explanation, then return the artifact using this exact format:
+
+\`\`\`artifact:language:title
+CODE_HERE
+\`\`\`
+
+Rules:
+- Use artifact language values like html, tsx, jsx, javascript, css, python, markdown, text.
+- For full webpage previews, prefer a complete single-file html artifact with inline CSS/JS.
+- For React components, use tsx or jsx.
+- Do not include secrets or env vars in artifacts.
+- If no artifact is needed, answer normally without the artifact block.
+
+---`,
+          attachments: undefined,
+        })
+      }
+
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           model: selectedModel,
-          messages: [...messages, userMessage].map((m) => ({
-            role: m.role,
-            content: m.content,
-          })),
+          messages: messagesToSend,
           conversationId: conversation.id,
         }),
       })
@@ -330,6 +391,20 @@ export default function ChatPage() {
         )
       }
 
+      // Parse artifact if artifact mode is enabled
+      if (artifactMode && assistantContent) {
+        const { artifact, cleanContent } = parseArtifact(assistantContent)
+        if (artifact) {
+          setCurrentArtifact(artifact)
+          // Update message with clean content
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === assistantMessage.id ? { ...m, content: cleanContent } : m
+            )
+          )
+        }
+      }
+
       // Refresh user profile and conversations in background (non-blocking)
       loadUserProfile()
       // Only reload conversations if it was the first message (to get updated title)
@@ -369,8 +444,29 @@ export default function ChatPage() {
         userProfile={userProfile}
       />
 
-      <main className="flex-1 flex flex-col ml-0 md:ml-80">
-        <ModelSelector selectedModel={selectedModel} onSelectModel={setSelectedModel} />
+      <main className={cn(
+        'flex-1 flex flex-col ml-0 md:ml-80 transition-all',
+        currentArtifact && 'md:mr-[40%] lg:mr-[40%]'
+      )}>
+        <div className="flex items-center justify-between flex-wrap gap-2 border-b border-white/10 bg-[#0A0A0F]/90 backdrop-blur-xl">
+          <div className="flex-1 min-w-0">
+            <ModelSelector selectedModel={selectedModel} onSelectModel={setSelectedModel} />
+          </div>
+          <div className="px-4 py-2">
+            <button
+              onClick={() => setArtifactMode(!artifactMode)}
+              className={cn(
+                'px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2',
+                artifactMode
+                  ? 'bg-purple-500/20 text-purple-400 border border-purple-500/50 glow-border'
+                  : 'glass hover:bg-white/10 text-gray-400'
+              )}
+            >
+              <Box className="h-4 w-4" />
+              Artifacts {artifactMode && '✓'}
+            </button>
+          </div>
+        </div>
 
         <div className="flex-1 overflow-y-auto px-4 md:px-6 py-6 md:py-8 scrollbar-thin">
           <div className="max-w-4xl mx-auto">
@@ -424,6 +520,7 @@ export default function ChatPage() {
                       role={message.role}
                       content={message.content}
                       model={message.model}
+                      attachments={message.attachments}
                     />
                   ))}
                   {isLoading && (
@@ -454,6 +551,8 @@ export default function ChatPage() {
           isLoading={isLoading || isCreatingConversation}
         />
       </main>
+
+      <ArtifactPanel artifact={currentArtifact} onClose={() => setCurrentArtifact(null)} />
     </div>
   )
 }
