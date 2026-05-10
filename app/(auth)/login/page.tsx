@@ -3,7 +3,6 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import Image from 'next/image'
 import { motion } from 'framer-motion'
 import { Mail, Lock, Loader2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
@@ -11,6 +10,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { toast } from '@/components/ui/use-toast'
+import { Logo } from '@/components/brand/logo'
 
 export default function LoginPage() {
   const [email, setEmail] = useState('')
@@ -67,18 +67,8 @@ export default function LoginPage() {
         className="glass-strong rounded-3xl p-8 w-full max-w-md relative z-10"
       >
         <div className="text-center mb-8">
-          <div className="flex items-center justify-center gap-4 mb-4">
-            <div className="h-24 w-24 rounded-2xl overflow-hidden bg-white flex items-center justify-center flex-shrink-0 shadow-xl border border-white/20">
-              <Image
-                src="/logo.png"
-                alt="EasyPlus AI"
-                width={96}
-                height={96}
-                className="h-20 w-20 object-contain"
-                priority
-              />
-            </div>
-            <span className="font-bold text-2xl gradient-text">EasyPlus AI</span>
+          <div className="flex items-center justify-center mb-4">
+            <Logo size="xl" showText />
           </div>
           <h1 className="text-3xl font-bold mb-2">Welcome Back</h1>
           <p className="text-gray-400">Sign in to continue your AI journey</p>

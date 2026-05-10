@@ -2,7 +2,6 @@
 
 import { motion, useAnimation } from 'framer-motion'
 import { useEffect } from 'react'
-import Image from 'next/image'
 import {
   Shield,
   Zap,
@@ -21,6 +20,7 @@ import {
 } from 'lucide-react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
+import { Logo } from '@/components/brand/logo'
 
 export function LandingPage() {
   return (
@@ -85,21 +85,8 @@ export function LandingPage() {
         <motion.div
           initial={{ opacity: 0, x: -20 }}
           animate={{ opacity: 1, x: 0 }}
-          className="flex items-center gap-3"
         >
-          <div className="h-14 w-14 rounded-2xl overflow-hidden bg-white flex items-center justify-center flex-shrink-0 shadow-lg">
-            <Image
-              src="/logo.png"
-              alt="EasyPlus AI"
-              width={56}
-              height={56}
-              className="h-12 w-12 object-contain"
-              priority
-            />
-          </div>
-          <span className="font-bold text-xl bg-gradient-to-r from-white to-gray-300 bg-clip-text text-transparent">
-            EasyPlus AI
-          </span>
+          <Logo size="md" showText />
         </motion.div>
         <motion.div
           initial={{ opacity: 0, x: 20 }}
@@ -502,15 +489,7 @@ export function LandingPage() {
         <div className="max-w-7xl mx-auto px-6">
           <div className="flex flex-col md:flex-row justify-between items-center gap-6">
             <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-xl overflow-hidden bg-white flex items-center justify-center flex-shrink-0 shadow-lg">
-                <Image
-                  src="/logo.png"
-                  alt="EasyPlus AI"
-                  width={40}
-                  height={40}
-                  className="h-8 w-8 object-contain"
-                />
-              </div>
+              <Logo size="sm" />
               <div className="text-left">
                 <div className="font-semibold text-sm">EasyPlus AI</div>
                 <div className="text-xs text-gray-500">© 2026 All rights reserved</div>

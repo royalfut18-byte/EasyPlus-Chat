@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import Image from 'next/image'
 import {
   PlusCircle,
   MessageSquare,
@@ -27,6 +26,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { cn, formatCredits } from '@/lib/utils'
+import { Logo } from '@/components/brand/logo'
 import type { Conversation } from '@/types/models'
 
 interface SidebarProps {
@@ -101,18 +101,8 @@ export function Sidebar({
           >
             <div className="p-4 border-b border-white/10">
               <div className="flex items-center gap-3 mb-4">
-                <div className="flex items-center gap-3 flex-1">
-                  <div className="h-14 w-14 rounded-2xl overflow-hidden bg-white flex items-center justify-center flex-shrink-0 border border-white/10">
-                    <Image
-                      src="/logo.png"
-                      alt="EasyPlus AI"
-                      width={56}
-                      height={56}
-                      className="h-12 w-12 object-contain"
-                      priority
-                    />
-                  </div>
-                  <span className="font-bold text-lg gradient-text">EasyPlus AI</span>
+                <div className="flex-1">
+                  <Logo size="lg" showText />
                 </div>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>

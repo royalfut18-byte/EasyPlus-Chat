@@ -214,18 +214,32 @@ export default function ChatPage() {
         }
 
         // Process loaded messages: dedupe, sort, parse artifacts
-        const processedData = processLoadedMessages(rawData, {
+        const fetchedProcessed = processLoadedMessages(rawData, {
           conversationId,
           parseArtifacts: true,
         })
 
+        // Merge with cached optimistic messages to preserve unsaved messages
+        const cachedMessages = messageCache[conversationId] || []
+        const mergedMessages = processLoadedMessages([...cachedMessages, ...fetchedProcessed], {
+          conversationId,
+          parseArtifacts: false, // Already parsed
+        })
+
         if (process.env.NODE_ENV !== 'production') {
-          console.log('[ChatSwitch]', { conversationId, requestSeq, action: 'applied messages', count: processedData.length })
+          console.log('[ChatSwitch]', {
+            conversationId,
+            requestSeq,
+            action: 'applied messages',
+            cached: cachedMessages.length,
+            fetched: fetchedProcessed.length,
+            merged: mergedMessages.length
+          })
         }
 
-        setMessages(processedData)
-        // Update cache with processed messages
-        setMessageCache(prev => ({ ...prev, [conversationId]: processedData }))
+        setMessages(mergedMessages)
+        // Update cache with merged messages
+        setMessageCache(prev => ({ ...prev, [conversationId]: mergedMessages }))
       } else {
         setMessages([])
       }
