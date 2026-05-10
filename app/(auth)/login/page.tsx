@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import Image from 'next/image'
 import { motion } from 'framer-motion'
 import { Mail, Lock, Loader2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
@@ -66,12 +67,17 @@ export default function LoginPage() {
         className="glass-strong rounded-3xl p-8 w-full max-w-md relative z-10"
       >
         <div className="text-center mb-8">
-          <div className="flex items-center justify-center gap-3 mb-4">
-            <img
-              src="/logo.png"
-              alt="EasyPlus AI"
-              className="h-14 w-auto object-contain"
-            />
+          <div className="flex items-center justify-center gap-4 mb-4">
+            <div className="relative w-20 h-20 flex-shrink-0">
+              <Image
+                src="/logo.png"
+                alt="EasyPlus AI"
+                width={80}
+                height={80}
+                className="object-contain"
+                priority
+              />
+            </div>
             <span className="font-bold text-2xl gradient-text">EasyPlus AI</span>
           </div>
           <h1 className="text-3xl font-bold mb-2">Welcome Back</h1>

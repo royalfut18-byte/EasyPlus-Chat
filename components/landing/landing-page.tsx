@@ -2,6 +2,7 @@
 
 import { motion, useAnimation } from 'framer-motion'
 import { useEffect } from 'react'
+import Image from 'next/image'
 import {
   Shield,
   Zap,
@@ -86,11 +87,16 @@ export function LandingPage() {
           animate={{ opacity: 1, x: 0 }}
           className="flex items-center gap-3"
         >
-          <img
-            src="/logo.png"
-            alt="EasyPlus AI"
-            className="h-12 w-auto object-contain"
-          />
+          <div className="relative w-14 h-14 flex-shrink-0">
+            <Image
+              src="/logo.png"
+              alt="EasyPlus AI"
+              width={56}
+              height={56}
+              className="object-contain"
+              priority
+            />
+          </div>
           <span className="font-bold text-xl bg-gradient-to-r from-white to-gray-300 bg-clip-text text-transparent">
             EasyPlus AI
           </span>

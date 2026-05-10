@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import Image from 'next/image'
 import {
   PlusCircle,
   MessageSquare,
@@ -100,12 +101,17 @@ export function Sidebar({
           >
             <div className="p-4 border-b border-white/10">
               <div className="flex items-center gap-3 mb-4">
-                <div className="flex items-center gap-2 flex-1">
-                  <img
-                    src="/logo.png"
-                    alt="EasyPlus AI"
-                    className="h-8 w-auto object-contain"
-                  />
+                <div className="flex items-center gap-3 flex-1">
+                  <div className="relative w-12 h-12 flex-shrink-0">
+                    <Image
+                      src="/logo.png"
+                      alt="EasyPlus AI"
+                      width={48}
+                      height={48}
+                      className="object-contain"
+                      priority
+                    />
+                  </div>
                   <span className="font-bold text-lg gradient-text">EasyPlus AI</span>
                 </div>
                 <DropdownMenu>
