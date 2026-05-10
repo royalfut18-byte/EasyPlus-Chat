@@ -104,6 +104,7 @@ export default function ChatPage() {
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [currentConversation, setCurrentConversation] = useState<Conversation | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
+  const [messageCache, setMessageCache] = useState<Record<string, Message[]>>({})
   const [isLoading, setIsLoading] = useState(false)
   const [isLoadingConversation, setIsLoadingConversation] = useState(false)
   const [userProfile, setUserProfile] = useState<any>(null)
@@ -229,16 +230,37 @@ export default function ChatPage() {
           return
         }
 
+        // Filter to only messages for this conversation (safety check)
+        const safeFetched = Array.isArray(rawData)
+          ? rawData.filter(m => m?.conversation_id === conversationId)
+          : []
+
+        // Warn if we filtered any out
+        if (process.env.NODE_ENV !== 'production' && safeFetched.length !== rawData.length) {
+          console.warn('[Chat] API returned messages from wrong conversation', {
+            conversationId,
+            expected: rawData.length,
+            filtered: safeFetched.length
+          })
+        }
+
         // Process loaded messages: dedupe, sort, parse artifacts
-        const processed = processLoadedMessages(rawData, {
+        const fetchedProcessed = processLoadedMessages(safeFetched, {
           conversationId,
           parseArtifacts: true,
         })
 
-        setMessages(processed)
+        // Get cached messages for this specific conversation
+        const cached = messageCache[conversationId] || []
+
+        // Merge cached and fetched, filtering by conversation ID
+        const merged = processMessages([...cached, ...fetchedProcessed], conversationId)
+
+        setMessages(merged)
+        setMessageCache(prev => ({ ...prev, [conversationId]: merged }))
 
         // Restore artifact from messages if exists
-        const messageWithArtifact = processed.find(m => m.artifact)
+        const messageWithArtifact = merged.find(m => m.artifact)
         if (messageWithArtifact?.artifact) {
           setActiveArtifact(messageWithArtifact.artifact)
           setArtifactMessageId(messageWithArtifact.id)
@@ -300,8 +322,18 @@ export default function ChatPage() {
     setIsArtifactOpen(false)
     setActiveArtifact(null)
     setArtifactMessageId(null)
-    setMessages([]) // Clear immediately for clean switch
-    setIsLoadingConversation(true)
+
+    // Check if we have cached messages for this specific conversation
+    const cached = messageCache[id]
+    if (cached && cached.length > 0) {
+      // Use cache immediately, filtered by conversation ID
+      setMessages(processMessages(cached, id))
+      setIsLoadingConversation(false)
+    } else {
+      // Clear immediately for clean switch
+      setMessages([])
+      setIsLoadingConversation(true)
+    }
 
     // Fetch messages (with sequence check)
     await loadConversationMessages(id, requestSeq)
@@ -310,6 +342,13 @@ export default function ChatPage() {
   const handleDeleteConversation = async (id: string) => {
     const deletedConversation = conversations.find((c) => c.id === id)
     setConversations((prev) => prev.filter((c) => c.id !== id))
+
+    // Clear cache for deleted conversation
+    setMessageCache(prev => {
+      const next = { ...prev }
+      delete next[id]
+      return next
+    })
 
     // Clear artifact for deleted conversation
     try {
@@ -394,7 +433,9 @@ export default function ChatPage() {
     }
 
     // 4. Add optimistic user message exactly once with processing
-    setMessages((prev) => processMessages([...prev, userMessage]))
+    // Use current conversation ID or temp for filtering
+    const tempConvId = currentConversation?.id || 'temp'
+    setMessages((prev) => processMessages([...prev, userMessage], tempConvId))
     setIsLoading(true)
 
     let conversation = currentConversation
@@ -431,9 +472,16 @@ export default function ChatPage() {
           processMessages(
             prev.map((m) =>
               m.id === clientUserMessageId ? updatedUserMessage : m
-            )
+            ),
+            conversation!.id
           )
         )
+
+        // Cache the user message for this conversation
+        setMessageCache(prev => ({
+          ...prev,
+          [conversation!.id]: processMessages([updatedUserMessage], conversation!.id)
+        }))
 
         setIsCreatingConversation(false)
       } catch (error: any) {
@@ -443,7 +491,7 @@ export default function ChatPage() {
           description: 'Failed to create conversation',
           variant: 'destructive',
         })
-        setMessages((prev) => processMessages(prev.filter((m) => m.id !== clientUserMessageId)))
+        setMessages((prev) => processMessages(prev.filter((m) => m.id !== clientUserMessageId), tempConvId))
         setIsCreatingConversation(false)
         setIsLoading(false)
         isSendingRef.current = false
@@ -452,23 +500,35 @@ export default function ChatPage() {
     }
 
     if (!conversation) {
-      setMessages((prev) => processMessages(prev.filter((m) => m.id !== clientUserMessageId)))
+      setMessages((prev) => processMessages(prev.filter((m) => m.id !== clientUserMessageId), tempConvId))
       setIsLoading(false)
       isSendingRef.current = false
       return
     }
 
+    // Capture conversation ID for this send - used throughout to prevent mixing
+    const sendConversationId = conversation.id
+
     // 6. Add assistant placeholder exactly once with correct timestamp
     const assistantPlaceholder: Message = {
       id: clientAssistantMessageId,
-      conversation_id: conversation.id,
+      conversation_id: sendConversationId,
       role: 'assistant',
       content: requestArtifactMode ? ARTIFACT_LOADING_MARKER : ASSISTANT_LOADING_MARKER,
       model: selectedModel,
       created_at: assistantCreatedAt, // Use the +1ms timestamp
     }
 
-    setMessages((prev) => processMessages([...prev, assistantPlaceholder]))
+    setMessages((prev) => processMessages([...prev, assistantPlaceholder], sendConversationId))
+
+    // Update cache with placeholder
+    setMessageCache(prev => {
+      const current = prev[sendConversationId] || []
+      return {
+        ...prev,
+        [sendConversationId]: processMessages([...current, assistantPlaceholder], sendConversationId)
+      }
+    })
 
     try {
       // 7. Prepare messages for API (exclude artifact metadata)
@@ -521,15 +581,19 @@ Rules:
           description: errorData.error || 'Please top up your credits to continue',
           variant: 'destructive',
         })
-        setMessages((prev) =>
-          processMessages(
-            prev.map((m) =>
-              m.id === clientAssistantMessageId
-                ? { ...m, content: 'Error: Insufficient credits. Please top up to continue.' }
-                : m
+        // Only update if still on this conversation
+        if (selectedConversationIdRef.current === sendConversationId) {
+          setMessages((prev) =>
+            processMessages(
+              prev.map((m) =>
+                m.id === clientAssistantMessageId
+                  ? { ...m, content: 'Error: Insufficient credits. Please top up to continue.' }
+                  : m
+              ),
+              sendConversationId
             )
           )
-        )
+        }
         setIsLoading(false)
         setIsCreatingConversation(false)
         isSendingRef.current = false
@@ -559,14 +623,17 @@ Rules:
         const chunk = decoder.decode(value)
         assistantContent += chunk
 
-        // Update by ID only - no new messages
-        setMessages((prev) =>
-          processMessages(
-            prev.map((m) =>
-              m.id === clientAssistantMessageId ? { ...m, content: assistantContent } : m
+        // Update by ID only - no new messages, only if still on this conversation
+        if (selectedConversationIdRef.current === sendConversationId) {
+          setMessages((prev) =>
+            processMessages(
+              prev.map((m) =>
+                m.id === clientAssistantMessageId ? { ...m, content: assistantContent } : m
+              ),
+              sendConversationId
             )
           )
-        )
+        }
       }
 
       if (process.env.NODE_ENV !== 'production') {
@@ -575,15 +642,18 @@ Rules:
 
       if (!assistantContent || assistantContent.trim() === '') {
         console.error('[Chat] Empty response from API')
-        setMessages((prev) =>
-          processMessages(
-            prev.map((m) =>
-              m.id === clientAssistantMessageId
-                ? { ...m, content: 'Error: Received empty response from AI.' }
-                : m
+        if (selectedConversationIdRef.current === sendConversationId) {
+          setMessages((prev) =>
+            processMessages(
+              prev.map((m) =>
+                m.id === clientAssistantMessageId
+                  ? { ...m, content: 'Error: Received empty response from AI.' }
+                  : m
+              ),
+              sendConversationId
             )
           )
-        )
+        }
         setIsLoading(false)
         setIsCreatingConversation(false)
         isSendingRef.current = false
@@ -608,22 +678,26 @@ Rules:
             finalContent = `I created an artifact for you: **${artifact.title}**.`
           }
 
-          setMessages((prev) =>
-            processMessages(
-              prev.map((m) =>
-                m.id === clientAssistantMessageId
-                  ? { ...m, content: finalContent, artifact }
-                  : m
+          // Only update if still on this conversation
+          if (selectedConversationIdRef.current === sendConversationId) {
+            setMessages((prev) =>
+              processMessages(
+                prev.map((m) =>
+                  m.id === clientAssistantMessageId
+                    ? { ...m, content: finalContent, artifact }
+                    : m
+                ),
+                sendConversationId
               )
             )
-          )
 
-          setActiveArtifact(artifact)
-          setIsArtifactOpen(true)
-          setArtifactMessageId(clientAssistantMessageId)
+            setActiveArtifact(artifact)
+            setIsArtifactOpen(true)
+            setArtifactMessageId(clientAssistantMessageId)
+          }
 
           // Save artifact to localStorage
-          saveArtifact(artifact, conversation.id)
+          saveArtifact(artifact, sendConversationId)
         } else {
           if (process.env.NODE_ENV !== 'production') {
             console.log('[Chat] No artifact detected, showing normal response')
@@ -631,21 +705,36 @@ Rules:
         }
       }
 
+      // Update cache with final messages for this conversation
+      setMessageCache(prev => {
+        const current = prev[sendConversationId] || []
+        const updated = selectedConversationIdRef.current === sendConversationId
+          ? messages
+          : processMessages([...current], sendConversationId)
+        return {
+          ...prev,
+          [sendConversationId]: updated
+        }
+      })
+
       loadUserProfile().catch((e) => console.error('[Chat] Profile load failed:', e))
       if (messages.length === 0) {
         loadConversations().catch((e) => console.error('[Chat] Conversations load failed:', e))
       }
     } catch (error: any) {
       console.error('[Chat] Send message error:', error.message)
-      setMessages((prev) =>
-        processMessages(
-          prev.map((m) =>
-            m.id === clientAssistantMessageId
-              ? { ...m, content: `Sorry, something went wrong: ${error.message}` }
-              : m
+      if (selectedConversationIdRef.current === sendConversationId) {
+        setMessages((prev) =>
+          processMessages(
+            prev.map((m) =>
+              m.id === clientAssistantMessageId
+                ? { ...m, content: `Sorry, something went wrong: ${error.message}` }
+                : m
+            ),
+            sendConversationId
           )
         )
-      )
+      }
       toast({
         title: 'Error',
         description: error.message || 'Failed to send message',
@@ -712,8 +801,9 @@ Rules:
   const isRequestInProgress = isLoading || isCreatingConversation || isSendingRef.current
   const showReopenButton = currentConversation && activeArtifact && !isArtifactOpen
 
-  // Process messages before rendering - simple direct call, no useMemo complexity
-  const displayedMessages = processMessages(messages)
+  // Process messages before rendering - filter by current conversation ID as final safety
+  const activeConversationId = currentConversation?.id || null
+  const displayedMessages = processMessages(messages, activeConversationId)
 
   return (
     <div className="h-screen bg-[#0A0A0F] flex overflow-hidden">

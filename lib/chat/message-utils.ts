@@ -76,12 +76,43 @@ export function dedupeMessages(messages: Message[]): Message[] {
 }
 
 /**
- * Process messages: dedupe then sort
+ * Filter messages by conversation ID
+ */
+function filterMessagesForConversation(messages: Message[], conversationId: string | null): Message[] {
+  if (!conversationId) return []
+  if (!Array.isArray(messages)) return []
+
+  return messages.filter(m => {
+    if (!m) return false
+    // Must match conversation ID exactly
+    return m.conversation_id === conversationId
+  })
+}
+
+/**
+ * Process messages: filter by conversation, dedupe, then sort
  * Use this everywhere to ensure consistency
  */
-export function processMessages(messages: Message[]): Message[] {
+export function processMessages(messages: Message[], conversationId?: string | null): Message[] {
   if (!Array.isArray(messages)) return []
-  return sortMessagesChronologically(dedupeMessages(messages))
+
+  // If conversation ID provided, filter first to prevent message mixing
+  const filtered = conversationId
+    ? filterMessagesForConversation(messages, conversationId)
+    : messages
+
+  // Warn in dev if we filtered out messages from wrong conversation
+  if (process.env.NODE_ENV !== 'production' && conversationId && filtered.length !== messages.length) {
+    const wrongCount = messages.length - filtered.length
+    console.warn('[Chat] Filtered out messages from wrong conversation', {
+      conversationId,
+      wrongCount,
+      totalMessages: messages.length,
+      filteredMessages: filtered.length
+    })
+  }
+
+  return sortMessagesChronologically(dedupeMessages(filtered))
 }
 
 /**
