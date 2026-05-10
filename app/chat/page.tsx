@@ -19,11 +19,39 @@ import type { Conversation, Message, ChatAttachment, Artifact } from '@/types/mo
 
 const DEFAULT_PANEL_WIDTH = 560
 const PANEL_WIDTH_KEY = 'easyplus-artifact-panel-width'
-
-// Special loading marker for artifact mode
 const ARTIFACT_LOADING_MARKER = '__ARTIFACT_LOADING__'
 
-// Generate a smart conversation title from the first user message
+// Artifact persistence keys
+const getArtifactKey = (conversationId: string) => `easyplus:artifact:${conversationId}`
+const LAST_ARTIFACT_KEY = 'easyplus:lastArtifact'
+
+// Save artifact to localStorage
+function saveArtifact(artifact: Artifact, conversationId?: string) {
+  try {
+    const data = JSON.stringify(artifact)
+    localStorage.setItem(LAST_ARTIFACT_KEY, data)
+    if (conversationId) {
+      localStorage.setItem(getArtifactKey(conversationId), data)
+    }
+  } catch (e) {
+    console.error('[Artifact] Failed to save to localStorage:', e)
+  }
+}
+
+// Load artifact from localStorage
+function loadArtifact(conversationId?: string): Artifact | null {
+  try {
+    const key = conversationId ? getArtifactKey(conversationId) : LAST_ARTIFACT_KEY
+    const data = localStorage.getItem(key)
+    if (data) {
+      return JSON.parse(data) as Artifact
+    }
+  } catch (e) {
+    console.error('[Artifact] Failed to load from localStorage:', e)
+  }
+  return null
+}
+
 function generateConversationTitle(message: string): string {
   const fillers = /^(what is|what's|can you|please|could you|tell me|explain|search the web|latest|give me|show me|find)\s+/i
   let title = message.replace(fillers, '')
@@ -55,7 +83,9 @@ export default function ChatPage() {
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [currentConversation, setCurrentConversation] = useState<Conversation | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
+  const [messageCache, setMessageCache] = useState<Record<string, Message[]>>({})
   const [isLoading, setIsLoading] = useState(false)
+  const [isLoadingConversation, setIsLoadingConversation] = useState(false)
   const [userProfile, setUserProfile] = useState<any>(null)
   const [isCreatingConversation, setIsCreatingConversation] = useState(false)
   const [artifactMode, setArtifactMode] = useState(false)
@@ -73,12 +103,21 @@ export default function ChatPage() {
   const isSendingRef = useRef(false)
   const lastUserPromptRef = useRef<string>('')
   const artifactModeAtSendRef = useRef(false)
+  const loadingConversationIdRef = useRef<string | null>(null)
+  const abortControllerRef = useRef<AbortController | null>(null)
   const router = useRouter()
   const supabase = createClient()
 
   useEffect(() => {
     loadUserProfile()
     loadConversations()
+
+    // Try to restore last artifact
+    const lastArtifact = loadArtifact()
+    if (lastArtifact) {
+      setActiveArtifact(lastArtifact)
+      // Don't open automatically on page load
+    }
   }, [])
 
   useEffect(() => {
@@ -119,16 +158,49 @@ export default function ChatPage() {
   }
 
   const loadConversationMessages = async (conversationId: string) => {
+    // Abort previous request if still loading
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort()
+    }
+
+    // Create new abort controller for this request
+    const controller = new AbortController()
+    abortControllerRef.current = controller
+    loadingConversationIdRef.current = conversationId
+
     try {
+      setIsLoadingConversation(true)
+
       const response = await fetch(`/api/conversations/${conversationId}`, {
-        signal: AbortSignal.timeout(10000),
+        signal: controller.signal,
       })
+
+      // Ignore response if we've moved to a different conversation
+      if (loadingConversationIdRef.current !== conversationId) {
+        console.log('[Chat] Ignoring stale response for:', conversationId)
+        return
+      }
+
       if (response.ok) {
         const data = await response.json()
         setMessages(data)
+        // Update cache
+        setMessageCache(prev => ({ ...prev, [conversationId]: data }))
+      } else {
+        setMessages([])
       }
-    } catch (error) {
-      setMessages([])
+    } catch (error: any) {
+      if (error.name === 'AbortError') {
+        console.log('[Chat] Request aborted for:', conversationId)
+      } else {
+        console.error('[Chat] Failed to load messages:', error)
+        setMessages([])
+      }
+    } finally {
+      if (loadingConversationIdRef.current === conversationId) {
+        setIsLoadingConversation(false)
+        loadingConversationIdRef.current = null
+      }
     }
   }
 
@@ -143,19 +215,55 @@ export default function ChatPage() {
 
   const handleSelectConversation = async (id: string) => {
     const conv = conversations.find((c) => c.id === id)
-    if (conv) {
-      setCurrentConversation(conv)
-      setSelectedModel(conv.model_used)
-      setActiveArtifact(null)
-      setIsArtifactOpen(false)
-      setArtifactMessageId(null)
-      await loadConversationMessages(id)
+    if (!conv) return
+
+    // IMMEDIATELY update UI - don't wait for fetch
+    setCurrentConversation(conv)
+    setSelectedModel(conv.model_used)
+    setIsArtifactOpen(false) // Close artifact panel when switching
+
+    // Try to load cached messages first
+    const cached = messageCache[id]
+    if (cached) {
+      console.log('[Chat] Using cached messages for:', id)
+      setMessages(cached)
+      setIsLoadingConversation(false)
+    } else {
+      // Show empty/loading state immediately
+      setMessages([])
+      setIsLoadingConversation(true)
     }
+
+    // Try to load artifact for this conversation
+    const savedArtifact = loadArtifact(id)
+    if (savedArtifact) {
+      setActiveArtifact(savedArtifact)
+      // Don't open automatically
+    } else {
+      setActiveArtifact(null)
+    }
+
+    // Fetch messages in background (with cache and abort)
+    await loadConversationMessages(id)
   }
 
   const handleDeleteConversation = async (id: string) => {
     const deletedConversation = conversations.find((c) => c.id === id)
     setConversations((prev) => prev.filter((c) => c.id !== id))
+
+    // Clear cache for deleted conversation
+    setMessageCache(prev => {
+      const next = { ...prev }
+      delete next[id]
+      return next
+    })
+
+    // Clear artifact for deleted conversation
+    try {
+      localStorage.removeItem(getArtifactKey(id))
+    } catch (e) {
+      // ignore
+    }
 
     if (currentConversation?.id === id) {
       setCurrentConversation(null)
@@ -199,20 +307,15 @@ export default function ChatPage() {
       return
     }
 
-    // CRITICAL: Prevent duplicate sends - must be FIRST
     if (isSendingRef.current) {
       console.log('[Chat] Duplicate send blocked')
       return
     }
     isSendingRef.current = true
 
-    // Capture artifact mode at send time
     artifactModeAtSendRef.current = artifactMode
-
-    // Store user prompt for artifact parsing
     lastUserPromptRef.current = trimmedContent
 
-    // Generate stable IDs using crypto
     const userMessageId = typeof crypto !== 'undefined' && crypto.randomUUID
       ? `user-${crypto.randomUUID()}`
       : `user-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
@@ -230,7 +333,6 @@ export default function ChatPage() {
       attachments,
     }
 
-    // IMMEDIATELY show user message (once only)
     setMessages((prev) => {
       const exists = prev.some(m => m.id === userMessageId)
       if (exists) return prev
@@ -238,7 +340,6 @@ export default function ChatPage() {
     })
     setIsLoading(true)
 
-    // Create conversation if needed
     let conversation = currentConversation
     if (!conversation) {
       setIsCreatingConversation(true)
@@ -262,7 +363,6 @@ export default function ChatPage() {
         setCurrentConversation(conversation)
         setConversations((prev) => [conversation!, ...prev])
 
-        // Update user message with real conversation ID (no duplication)
         setMessages((prev) =>
           prev.map((m) =>
             m.id === userMessageId ? { ...m, conversation_id: conversation!.id } : m
@@ -292,8 +392,6 @@ export default function ChatPage() {
       return
     }
 
-    // Create assistant placeholder with stable ID
-    // If artifact mode, use special loading marker
     const assistantPlaceholder: Message = {
       id: assistantMessageId,
       conversation_id: conversation.id,
@@ -303,7 +401,6 @@ export default function ChatPage() {
       created_at: new Date().toISOString(),
     }
 
-    // IMMEDIATELY add assistant placeholder (once only)
     setMessages((prev) => {
       const exists = prev.some(m => m.id === assistantMessageId)
       if (exists) return prev
@@ -311,7 +408,6 @@ export default function ChatPage() {
     })
 
     try {
-      // Prepare messages for API (do NOT include the new user message in context - it's not in old messages yet)
       const contextMessages = messages.filter(m => m.role === 'user' || m.role === 'assistant')
       const messagesToSend = [...contextMessages, userMessage].map((m) => ({
         role: m.role,
@@ -319,7 +415,6 @@ export default function ChatPage() {
         attachments: m.attachments,
       }))
 
-      // Add artifact mode instruction (use captured value)
       if (artifactModeAtSendRef.current) {
         messagesToSend.unshift({
           role: 'user',
@@ -361,7 +456,6 @@ Rules:
           description: errorData.error || 'Please top up your credits to continue',
           variant: 'destructive',
         })
-        // Update placeholder with error instead of removing
         setMessages((prev) =>
           prev.map((m) =>
             m.id === assistantMessageId
@@ -390,7 +484,6 @@ Rules:
       const decoder = new TextDecoder()
       let assistantContent = ''
 
-      // Stream response and update in real-time
       while (reader) {
         const { done, value } = await reader.read()
         if (done) break
@@ -398,7 +491,6 @@ Rules:
         const chunk = decoder.decode(value)
         assistantContent += chunk
 
-        // Update message by ID - functional update
         setMessages((prev) =>
           prev.map((m) =>
             m.id === assistantMessageId ? { ...m, content: assistantContent } : m
@@ -406,10 +498,8 @@ Rules:
         )
       }
 
-      // CRITICAL: Handle final content after streaming
       console.log('[Chat] Stream complete, content length:', assistantContent.length)
 
-      // If content is empty, show error
       if (!assistantContent || assistantContent.trim() === '') {
         console.error('[Chat] Empty response from API')
         setMessages((prev) =>
@@ -425,7 +515,6 @@ Rules:
         return
       }
 
-      // Parse artifact AFTER streaming completes
       if (artifactModeAtSendRef.current) {
         const { artifact, cleanContent } = parseArtifactFromResponse(
           assistantContent,
@@ -436,25 +525,24 @@ Rules:
         if (artifact) {
           console.log('[Chat] Artifact detected:', artifact.title)
 
-          // Ensure clean content is not empty
           let finalContent = cleanContent.trim()
           if (!finalContent) {
             finalContent = `I created an artifact for you: **${artifact.title}**.`
           }
 
-          // Update message with clean content
           setMessages((prev) =>
             prev.map((m) =>
               m.id === assistantMessageId ? { ...m, content: finalContent } : m
             )
           )
 
-          // Open artifact panel
           setActiveArtifact(artifact)
           setIsArtifactOpen(true)
           setArtifactMessageId(assistantMessageId)
+
+          // Save artifact to localStorage
+          saveArtifact(artifact, conversation.id)
         } else {
-          // No artifact, ensure content is shown
           console.log('[Chat] No artifact detected, showing normal response')
           setMessages((prev) =>
             prev.map((m) =>
@@ -463,7 +551,6 @@ Rules:
           )
         }
       } else {
-        // Normal mode, ensure content is shown
         setMessages((prev) =>
           prev.map((m) =>
             m.id === assistantMessageId ? { ...m, content: assistantContent } : m
@@ -471,14 +558,21 @@ Rules:
         )
       }
 
-      // Background tasks (non-blocking)
+      // Update cache with new messages
+      setMessageCache(prev => ({
+        ...prev,
+        [conversation!.id]: [...messages, userMessage, {
+          ...assistantPlaceholder,
+          content: assistantContent
+        }]
+      }))
+
       loadUserProfile().catch(e => console.error('[Chat] Profile load failed:', e))
       if (messages.length === 0) {
         loadConversations().catch(e => console.error('[Chat] Conversations load failed:', e))
       }
     } catch (error: any) {
       console.error('[Chat] Send message error:', error.message)
-      // Update assistant message with error instead of removing
       setMessages((prev) =>
         prev.map((m) =>
           m.id === assistantMessageId
@@ -492,7 +586,6 @@ Rules:
         variant: 'destructive',
       })
     } finally {
-      // ALWAYS reset loading states
       setIsLoading(false)
       setIsCreatingConversation(false)
       isSendingRef.current = false
@@ -501,7 +594,6 @@ Rules:
   }
 
   const handleToggleArtifactMode = () => {
-    // Only allow toggle when not loading
     if (isLoading || isCreatingConversation || isSendingRef.current) {
       return
     }
@@ -516,7 +608,6 @@ Rules:
 
   const handlePanelWidthChange = (width: number) => {
     setArtifactPanelWidth(width)
-    // Width is already saved in localStorage by the panel component
   }
 
   if (!userProfile) {
@@ -554,7 +645,6 @@ Rules:
             <ModelSelector selectedModel={selectedModel} onSelectModel={setSelectedModel} />
           </div>
           <div className="px-4 py-2 flex items-center gap-2">
-            {/* Reopen Artifact Button */}
             {showReopenButton && (
               <motion.button
                 initial={{ opacity: 0, scale: 0.9 }}
@@ -569,7 +659,6 @@ Rules:
               </motion.button>
             )}
 
-            {/* Artifacts Toggle */}
             <button
               onClick={handleToggleArtifactMode}
               disabled={isRequestInProgress}
@@ -591,7 +680,7 @@ Rules:
         <div className="flex-1 overflow-y-auto px-4 md:px-6 py-6 md:py-8 scrollbar-thin">
           <div className="max-w-4xl mx-auto">
             <AnimatePresence mode="popLayout">
-              {messages.length === 0 ? (
+              {messages.length === 0 && !isLoadingConversation ? (
                 <motion.div
                   key="empty"
                   initial={{ opacity: 0, y: 10 }}
@@ -631,6 +720,26 @@ Rules:
                       </motion.button>
                     ))}
                   </div>
+                </motion.div>
+              ) : isLoadingConversation && messages.length === 0 ? (
+                <motion.div
+                  key="loading"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  className="space-y-4 mt-8"
+                >
+                  {[1, 2].map((i) => (
+                    <div key={i} className={cn('flex', i % 2 === 0 ? 'justify-start' : 'justify-end')}>
+                      <div className={cn(
+                        'rounded-2xl p-4 md:p-6 animate-pulse',
+                        i % 2 === 0 ? 'w-full glass' : 'max-w-[70%] gradient-primary'
+                      )}>
+                        <div className="h-4 bg-white/20 rounded w-3/4 mb-2" />
+                        <div className="h-4 bg-white/20 rounded w-1/2" />
+                      </div>
+                    </div>
+                  ))}
                 </motion.div>
               ) : (
                 <>
