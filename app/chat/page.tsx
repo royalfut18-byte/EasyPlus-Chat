@@ -786,6 +786,10 @@ Rules:
     setArtifactPanelWidth(width)
   }
 
+  // Final safety: ensure messages are sorted and deduped before rendering
+  // MUST be before any conditional return to follow React hooks rules
+  const displayedMessages = useMemo(() => processMessages(messages), [messages])
+
   if (!userProfile) {
     return (
       <div className="min-h-screen bg-[#0A0A0F] flex items-center justify-center">
@@ -796,9 +800,6 @@ Rules:
 
   const isRequestInProgress = isLoading || isCreatingConversation || isSendingRef.current
   const showReopenButton = currentConversation && activeArtifact && !isArtifactOpen
-
-  // Final safety: ensure messages are sorted and deduped before rendering
-  const displayedMessages = useMemo(() => processMessages(messages), [messages])
 
   return (
     <div className="h-screen bg-[#0A0A0F] flex overflow-hidden">
