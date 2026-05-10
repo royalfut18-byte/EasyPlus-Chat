@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   PlusCircle,
@@ -53,6 +53,15 @@ export function Sidebar({
   const [isOpen, setIsOpen] = useState(true)
   const router = useRouter()
   const supabase = createClient()
+
+  // Prefetch common routes for faster navigation
+  useEffect(() => {
+    router.prefetch('/dashboard')
+    router.prefetch('/billing')
+    if (userProfile.role === 'admin') {
+      router.prefetch('/admin')
+    }
+  }, [router, userProfile.role])
 
   const handleSignOut = async () => {
     await supabase.auth.signOut()

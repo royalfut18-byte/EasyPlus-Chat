@@ -14,20 +14,7 @@ type ProfileRow = {
 
 export async function POST(request: NextRequest) {
   try {
-    console.log('[Chat API] Starting request')
-
-    // Validate environment variables
     const awsToken = process.env.AWS_BEARER_TOKEN_BEDROCK
-    const awsRegion = process.env.AWS_REGION
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-    const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-
-    console.log('[Chat API] Environment check:', {
-      hasAwsToken: !!awsToken,
-      awsRegion: awsRegion || 'not set',
-      hasSupabaseUrl: !!supabaseUrl,
-      hasSupabaseKey: !!supabaseKey,
-    })
 
     if (!awsToken) {
       console.error('[Chat API] FATAL: AWS_BEARER_TOKEN_BEDROCK is not set')
@@ -50,18 +37,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    console.log('[Chat API] User authenticated:', user.id)
-
     const { model, messages, conversationId } = await request.json()
 
-    console.log('[Chat API] Request params:', {
-      model,
-      messageCount: messages?.length,
-      conversationId: conversationId || 'none',
-    })
-
     if (!model || !messages || !Array.isArray(messages)) {
-      console.error('[Chat API] Invalid request params:', { model, hasMessages: !!messages })
+      console.error('[Chat API] Invalid request params')
       return NextResponse.json({ error: 'Invalid request' }, { status: 400 })
     }
 
@@ -86,12 +65,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Profile not found' }, { status: 404 })
     }
 
-    console.log('[Chat API] User credits:', typedProfile.credits)
-    console.log('[Chat API] User role:', typedProfile.role)
-    console.log('[Chat API] Unlimited credits:', typedProfile.unlimited_credits)
-
     const cost = getModelCost(model)
-    console.log('[Chat API] Model cost:', cost)
 
     // Check if user has unlimited credits (admin or unlimited_credits flag)
     const hasUnlimitedCredits = typedProfile.role === 'admin' || typedProfile.unlimited_credits === true
@@ -99,72 +73,47 @@ export async function POST(request: NextRequest) {
     if (!hasUnlimitedCredits) {
       // Normal credit check for regular users
       if (typedProfile.credits < cost) {
-        console.warn('[Chat API] Insufficient credits:', {
-          userCredits: typedProfile.credits,
-          cost,
-        })
         return NextResponse.json(
           { error: 'Insufficient credits', credits: typedProfile.credits },
           { status: 402 }
         )
       }
 
-      // Deduct credits for regular users
-      const { error: updateError } = await db
-        .from('profiles')
-        .update({ credits: typedProfile.credits - cost })
-        .eq('user_id', user.id)
+      // Deduct credits and log transaction in parallel (non-blocking optimizations)
+      const [updateResult, transactionResult] = await Promise.allSettled([
+        db
+          .from('profiles')
+          .update({ credits: typedProfile.credits - cost })
+          .eq('user_id', user.id),
+        db.from('credit_transactions').insert({
+          user_id: user.id,
+          amount: -cost,
+          type: 'deduction',
+          description: `Message sent using ${model}`,
+        }),
+      ])
 
-      if (updateError) {
-        console.error('[Chat API] Failed to update credits:', updateError)
-        throw new Error(`Failed to update credits: ${updateError.message}`)
+      if (updateResult.status === 'rejected' || (updateResult.value as any).error) {
+        console.error('[Chat API] Failed to update credits:', updateResult)
+        throw new Error('Failed to update credits')
       }
 
-      // Log transaction for regular users
-      const { error: transactionError } = await db.from('credit_transactions').insert({
-        user_id: user.id,
-        amount: -cost,
-        type: 'deduction',
-        description: `Message sent using ${model}`,
-      })
-
-      if (transactionError) {
-        console.error('[Chat API] Failed to create transaction:', transactionError)
-        throw new Error(`Failed to create transaction: ${transactionError.message}`)
+      // Transaction logging is non-critical, just log if it fails but don't block
+      if (transactionResult.status === 'rejected') {
+        console.error('[Chat API] Failed to log transaction (non-critical):', transactionResult)
       }
-
-      console.log('[Chat API] Credits deducted successfully')
-    } else {
-      console.log('[Chat API] User has unlimited credits - skipping deduction')
     }
 
     const userMessage = messages[messages.length - 1]
-    if (conversationId) {
-      const { error: messageError } = await db.from('messages').insert({
-        conversation_id: conversationId,
-        role: 'user',
-        content: userMessage.content,
-        model,
-      })
-
-      if (messageError) {
-        console.error('[Chat API] Failed to insert user message:', messageError)
-        throw new Error(`Failed to save user message: ${messageError.message}`)
-      }
-
-      console.log('[Chat API] User message saved to DB')
-    }
 
     // Check if web search is needed
     const latestUserMessage = messages[messages.length - 1]
     let messagesToSend = messages as ChatMessage[]
 
     if (needsWebSearch(latestUserMessage.content)) {
-      console.log('[Chat API] Web search needed for query')
       const webContext = await searchWeb(latestUserMessage.content)
 
       if (webContext) {
-        console.log('[Chat API] Web search successful, adding context')
         // Prepend system message with web search context
         const systemMessage: ChatMessage = {
           role: 'user',
@@ -179,14 +128,10 @@ User's question: ${latestUserMessage.content}`,
 
         // Replace the last user message with the enriched version
         messagesToSend = [...messages.slice(0, -1), systemMessage] as ChatMessage[]
-      } else {
-        console.log('[Chat API] Web search returned no results or is disabled')
       }
     }
 
-    console.log('[Chat API] Calling Bedrock API...')
     const stream = await streamBedrockResponse(model, messagesToSend)
-    console.log('[Chat API] Bedrock stream received')
 
     const encoder = new TextEncoder()
     const decoder = new TextDecoder()
@@ -200,25 +145,25 @@ User's question: ${latestUserMessage.content}`,
       },
       async flush() {
         if (conversationId && fullResponse) {
-          const { error: assistantMessageError } = await db.from('messages').insert({
-            conversation_id: conversationId,
-            role: 'assistant',
-            content: fullResponse,
-            model,
-          })
-
-          if (assistantMessageError) {
-            console.error('Failed to save assistant message:', assistantMessageError)
-          }
-
-          const { error: conversationUpdateError } = await db
-            .from('conversations')
-            .update({ updated_at: new Date().toISOString() })
-            .eq('id', conversationId)
-
-          if (conversationUpdateError) {
-            console.error('Failed to update conversation:', conversationUpdateError)
-          }
+          // Save user and assistant messages + update conversation in parallel
+          await Promise.allSettled([
+            db.from('messages').insert({
+              conversation_id: conversationId,
+              role: 'user',
+              content: userMessage.content,
+              model,
+            }),
+            db.from('messages').insert({
+              conversation_id: conversationId,
+              role: 'assistant',
+              content: fullResponse,
+              model,
+            }),
+            db
+              .from('conversations')
+              .update({ updated_at: new Date().toISOString() })
+              .eq('id', conversationId),
+          ])
         }
       },
     })

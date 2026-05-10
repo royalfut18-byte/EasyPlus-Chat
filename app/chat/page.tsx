@@ -76,7 +76,6 @@ export default function ChatPage() {
       } = await supabase.auth.getUser()
 
       if (userError || !user) {
-        console.error('Auth error:', userError)
         router.push('/login')
         return
       }
@@ -85,7 +84,6 @@ export default function ChatPage() {
       const profile = await ensureProfile(supabase, user.id)
       setUserProfile(profile)
     } catch (error) {
-      console.error('Failed to load user profile:', error)
       // Set fallback to prevent infinite loading
       setUserProfile({ credits: 1000 })
     }
@@ -101,7 +99,6 @@ export default function ChatPage() {
         setConversations(data)
       }
     } catch (error) {
-      console.error('Failed to load conversations:', error)
       // Continue even if conversations fail to load
       setConversations([])
     }
@@ -117,7 +114,6 @@ export default function ChatPage() {
         setMessages(data)
       }
     } catch (error) {
-      console.error('Failed to load messages:', error)
       setMessages([])
     }
   }
@@ -141,20 +137,44 @@ export default function ChatPage() {
   }
 
   const handleDeleteConversation = async (id: string) => {
-    const response = await fetch(`/api/conversations/${id}`, {
-      method: 'DELETE',
-    })
+    // Store the conversation in case we need to restore it
+    const deletedConversation = conversations.find((c) => c.id === id)
 
-    if (response.ok) {
+    // IMMEDIATELY update UI (optimistic delete)
+    setConversations((prev) => prev.filter((c) => c.id !== id))
+
+    if (currentConversation?.id === id) {
+      setCurrentConversation(null)
+      setMessages([])
+    }
+
+    // Send delete request in background
+    try {
+      const response = await fetch(`/api/conversations/${id}`, {
+        method: 'DELETE',
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to delete conversation')
+      }
+
       toast({
         title: 'Conversation deleted',
         description: 'The conversation has been removed',
       })
-      if (currentConversation?.id === id) {
-        setCurrentConversation(null)
-        setMessages([])
+    } catch (error: any) {
+      // Restore conversation on error
+      if (deletedConversation) {
+        setConversations((prev) => [deletedConversation, ...prev].sort((a, b) =>
+          new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
+        ))
       }
-      loadConversations()
+
+      toast({
+        title: 'Error',
+        description: 'Failed to delete conversation',
+        variant: 'destructive',
+      })
     }
   }
 
@@ -166,18 +186,32 @@ export default function ChatPage() {
     }
 
     // Prevent duplicate sends
-    if (isSendingRef.current || isLoading || isCreatingConversation) {
+    if (isSendingRef.current) {
       return
     }
 
     isSendingRef.current = true
 
-    // Create conversation if needed (first message)
+    // Create optimistic user message with temporary ID
+    const tempMessageId = `temp-${Date.now()}`
+    const userMessage: Message = {
+      id: tempMessageId,
+      conversation_id: currentConversation?.id || 'temp',
+      role: 'user',
+      content: trimmedContent,
+      model: selectedModel,
+      created_at: new Date().toISOString(),
+    }
+
+    // IMMEDIATELY show user message in UI (optimistic update)
+    setMessages((prev) => [...prev, userMessage])
+    setIsLoading(true)
+
+    // Create conversation in background if needed (first message)
     let conversation = currentConversation
     if (!conversation) {
       setIsCreatingConversation(true)
       try {
-        // Generate smart title from first user message
         const title = generateConversationTitle(trimmedContent)
 
         const response = await fetch('/api/conversations', {
@@ -194,38 +228,50 @@ export default function ChatPage() {
         }
 
         conversation = await response.json()
+
+        // Optimistically update conversation state and sidebar
         setCurrentConversation(conversation)
-        await loadConversations()
+        setConversations((prev) => [conversation!, ...prev])
+
+        // Update the temporary message with real conversation ID
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === tempMessageId ? { ...m, conversation_id: conversation!.id } : m
+          )
+        )
+
         setIsCreatingConversation(false)
-      } catch (error) {
-        console.error('Failed to create conversation:', error)
+      } catch (error: any) {
         toast({
           title: 'Error',
           description: 'Failed to create conversation',
           variant: 'destructive',
         })
+        // Remove optimistic message on error
+        setMessages((prev) => prev.filter((m) => m.id !== tempMessageId))
         setIsCreatingConversation(false)
+        setIsLoading(false)
         isSendingRef.current = false
         return
       }
     }
 
     if (!conversation) {
+      setMessages((prev) => prev.filter((m) => m.id !== tempMessageId))
+      setIsLoading(false)
       isSendingRef.current = false
       return
     }
 
-    const userMessage: Message = {
-      id: Date.now().toString(),
+    // Create assistant message upfront for error handling
+    const assistantMessage: Message = {
+      id: (Date.now() + 1).toString(),
       conversation_id: conversation.id,
-      role: 'user',
-      content: trimmedContent,
+      role: 'assistant',
+      content: '',
       model: selectedModel,
       created_at: new Date().toISOString(),
     }
-
-    setMessages((prev) => [...prev, userMessage])
-    setIsLoading(true)
 
     try {
       const response = await fetch('/api/chat', {
@@ -258,12 +304,8 @@ export default function ChatPage() {
         try {
           const errorData = await response.json()
           errorMessage = errorData.error || errorMessage
-          console.error('[Chat] API error:', {
-            status: response.status,
-            error: errorData,
-          })
         } catch (e) {
-          console.error('[Chat] Failed to parse error response:', e)
+          // Failed to parse error
         }
         throw new Error(errorMessage)
       }
@@ -271,15 +313,6 @@ export default function ChatPage() {
       const reader = response.body?.getReader()
       const decoder = new TextDecoder()
       let assistantContent = ''
-
-      const assistantMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        conversation_id: conversation.id,
-        role: 'assistant',
-        content: '',
-        model: selectedModel,
-        created_at: new Date().toISOString(),
-      }
 
       setMessages((prev) => [...prev, assistantMessage])
 
@@ -297,10 +330,15 @@ export default function ChatPage() {
         )
       }
 
+      // Refresh user profile and conversations in background (non-blocking)
       loadUserProfile()
-      loadConversations()
+      // Only reload conversations if it was the first message (to get updated title)
+      if (messages.length === 1) {
+        loadConversations()
+      }
     } catch (error: any) {
-      console.error('[Chat] Send message error:', error)
+      // Remove assistant message on error
+      setMessages((prev) => prev.filter((m) => m.id !== assistantMessage.id))
       toast({
         title: 'Error',
         description: error.message || 'Failed to send message',
