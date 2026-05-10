@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef, useMemo } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Sparkles, Box, PanelRightOpen } from 'lucide-react'
@@ -104,7 +104,6 @@ export default function ChatPage() {
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [currentConversation, setCurrentConversation] = useState<Conversation | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
-  const [messageCache, setMessageCache] = useState<Record<string, Message[]>>({})
   const [isLoading, setIsLoading] = useState(false)
   const [isLoadingConversation, setIsLoadingConversation] = useState(false)
   const [userProfile, setUserProfile] = useState<any>(null)
@@ -227,41 +226,19 @@ export default function ChatPage() {
           conversationRequestSeqRef.current !== requestSeq ||
           controller.signal.aborted
         ) {
-          if (process.env.NODE_ENV !== 'production') {
-            console.log('[ChatSwitch]', { conversationId, requestSeq, action: 'ignored before apply' })
-          }
           return
         }
 
         // Process loaded messages: dedupe, sort, parse artifacts
-        const fetchedProcessed = processLoadedMessages(rawData, {
+        const processed = processLoadedMessages(rawData, {
           conversationId,
           parseArtifacts: true,
         })
 
-        // Merge with cached optimistic messages to preserve unsaved messages
-        const cachedMessages = messageCache[conversationId] || []
-
-        // Combine and process: dedupe + sort
-        const mergedMessages = processMessages([...cachedMessages, ...fetchedProcessed])
-
-        if (process.env.NODE_ENV !== 'production') {
-          console.log('[ChatSwitch]', {
-            conversationId,
-            requestSeq,
-            action: 'applied messages',
-            cached: cachedMessages.length,
-            fetched: fetchedProcessed.length,
-            merged: mergedMessages.length
-          })
-        }
-
-        setMessages(mergedMessages)
-        // Update cache with processed merged messages
-        setMessageCache(prev => ({ ...prev, [conversationId]: mergedMessages }))
+        setMessages(processed)
 
         // Restore artifact from messages if exists
-        const messageWithArtifact = mergedMessages.find(m => m.artifact)
+        const messageWithArtifact = processed.find(m => m.artifact)
         if (messageWithArtifact?.artifact) {
           setActiveArtifact(messageWithArtifact.artifact)
           setArtifactMessageId(messageWithArtifact.id)
@@ -308,56 +285,31 @@ export default function ChatPage() {
     const conv = conversations.find((c) => c.id === id)
     if (!conv) return
 
-    // Increment sequence and mark this conversation as selected FIRST
+    // Mark this conversation as selected
     const requestSeq = ++conversationRequestSeqRef.current
     selectedConversationIdRef.current = id
-
-    if (process.env.NODE_ENV !== 'production') {
-      console.log('[ChatSwitch]', { id, requestSeq, action: 'start' })
-    }
 
     // Abort any previous request
     if (abortControllerRef.current) {
       abortControllerRef.current.abort()
     }
 
-    // IMMEDIATELY update UI - don't wait for fetch
+    // IMMEDIATELY update UI
     setCurrentConversation(conv)
     setSelectedModel(conv.model_used)
-    setIsArtifactOpen(false) // Close artifact panel when switching
-    setActiveArtifact(null) // Clear artifact - will be restored from messages
+    setIsArtifactOpen(false)
+    setActiveArtifact(null)
     setArtifactMessageId(null)
+    setMessages([]) // Clear immediately for clean switch
+    setIsLoadingConversation(true)
 
-    // Try to load cached messages first
-    const cached = messageCache[id]
-    if (cached && cached.length > 0) {
-      if (process.env.NODE_ENV !== 'production') {
-        console.log('[ChatSwitch]', { id, requestSeq, action: 'using cache', count: cached.length })
-      }
-      // Process cached messages to ensure correct order
-      const processed = processMessages(cached)
-      setMessages(processed)
-      setIsLoadingConversation(false)
-    } else {
-      // Show empty/loading state immediately
-      setMessages([])
-      setIsLoadingConversation(true)
-    }
-
-    // Fetch messages in background (with sequence check)
+    // Fetch messages (with sequence check)
     await loadConversationMessages(id, requestSeq)
   }
 
   const handleDeleteConversation = async (id: string) => {
     const deletedConversation = conversations.find((c) => c.id === id)
     setConversations((prev) => prev.filter((c) => c.id !== id))
-
-    // Clear cache for deleted conversation
-    setMessageCache(prev => {
-      const next = { ...prev }
-      delete next[id]
-      return next
-    })
 
     // Clear artifact for deleted conversation
     try {
@@ -483,12 +435,6 @@ export default function ChatPage() {
           )
         )
 
-        // Immediately cache the optimistic user message so it persists if user switches away
-        setMessageCache((prev) => ({
-          ...prev,
-          [conversation!.id]: processMessages([updatedUserMessage]),
-        }))
-
         setIsCreatingConversation(false)
       } catch (error: any) {
         console.error('[Chat] Failed to create conversation:', error.message)
@@ -523,16 +469,6 @@ export default function ChatPage() {
     }
 
     setMessages((prev) => processMessages([...prev, assistantPlaceholder]))
-
-    // Update cache with optimistic messages (user + placeholder) so they persist if user switches away
-    setMessageCache((prev) => {
-      const currentCached = prev[conversation.id] || []
-      const updatedMessages = processMessages([...currentCached, assistantPlaceholder])
-      return {
-        ...prev,
-        [conversation.id]: updatedMessages,
-      }
-    })
 
     try {
       // 7. Prepare messages for API (exclude artifact metadata)
@@ -695,27 +631,6 @@ Rules:
         }
       }
 
-      // Update cache with processed messages (use functional state to avoid stale closure)
-      setMessages((currentMessages) => {
-        const updatedMessages = processMessages([...currentMessages])
-
-        // Only update cache and visible messages if still on this conversation
-        if (selectedConversationIdRef.current === conversation!.id) {
-          setMessageCache((prev) => ({
-            ...prev,
-            [conversation!.id]: updatedMessages,
-          }))
-          return updatedMessages
-        }
-
-        // If switched away, only update cache, don't change visible messages
-        setMessageCache((prev) => ({
-          ...prev,
-          [conversation!.id]: updatedMessages,
-        }))
-        return currentMessages
-      })
-
       loadUserProfile().catch((e) => console.error('[Chat] Profile load failed:', e))
       if (messages.length === 0) {
         loadConversations().catch((e) => console.error('[Chat] Conversations load failed:', e))
@@ -786,10 +701,6 @@ Rules:
     setArtifactPanelWidth(width)
   }
 
-  // Final safety: ensure messages are sorted and deduped before rendering
-  // MUST be before any conditional return to follow React hooks rules
-  const displayedMessages = useMemo(() => processMessages(messages), [messages])
-
   if (!userProfile) {
     return (
       <div className="min-h-screen bg-[#0A0A0F] flex items-center justify-center">
@@ -800,6 +711,9 @@ Rules:
 
   const isRequestInProgress = isLoading || isCreatingConversation || isSendingRef.current
   const showReopenButton = currentConversation && activeArtifact && !isArtifactOpen
+
+  // Process messages before rendering - simple direct call, no useMemo complexity
+  const displayedMessages = processMessages(messages)
 
   return (
     <div className="h-screen bg-[#0A0A0F] flex overflow-hidden">
