@@ -150,25 +150,49 @@ User's question: ${latestUserMessage.content}`,
       },
       async flush() {
         if (conversationId && fullResponse) {
-          // Save user and assistant messages + update conversation in parallel
-          await Promise.allSettled([
-            db.from('messages').insert({
-              conversation_id: conversationId,
-              role: 'user',
-              content: userMessage.content,
-              model,
-            }),
-            db.from('messages').insert({
-              conversation_id: conversationId,
-              role: 'assistant',
-              content: fullResponse,
-              model,
-            }),
-            db
-              .from('conversations')
-              .update({ updated_at: new Date().toISOString() })
-              .eq('id', conversationId),
-          ])
+          // Get max order_index for this conversation
+          const { data: maxOrderData } = await db
+            .from('messages')
+            .select('order_index')
+            .eq('conversation_id', conversationId)
+            .order('order_index', { ascending: false })
+            .limit(1)
+            .single()
+
+          const maxOrder = maxOrderData?.order_index || 0
+          const nextOrder = (typeof maxOrder === 'number' ? maxOrder : 0) + 1
+
+          // IMPORTANT: Save user message FIRST, then assistant message
+          // User message gets order_index N, assistant gets N+1
+          const userResult = await db.from('messages').insert({
+            conversation_id: conversationId,
+            role: 'user',
+            content: userMessage.content,
+            model,
+            order_index: nextOrder,
+          })
+
+          if (userResult.error) {
+            console.error('[Chat API] Failed to save user message:', userResult.error)
+          }
+
+          const assistantResult = await db.from('messages').insert({
+            conversation_id: conversationId,
+            role: 'assistant',
+            content: fullResponse,
+            model,
+            order_index: nextOrder + 1,
+          })
+
+          if (assistantResult.error) {
+            console.error('[Chat API] Failed to save assistant message:', assistantResult.error)
+          }
+
+          // Update conversation timestamp
+          await db
+            .from('conversations')
+            .update({ updated_at: new Date().toISOString() })
+            .eq('id', conversationId)
         }
       },
     })

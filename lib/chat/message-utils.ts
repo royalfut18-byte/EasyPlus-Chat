@@ -3,12 +3,21 @@ import { parseArtifactFromResponse } from '../artifact-parser'
 
 /**
  * Sort messages chronologically: oldest first, newest last
+ * Respects order_index as primary sort key
  */
 export function sortMessagesChronologically(messages: Message[]): Message[] {
   if (!Array.isArray(messages)) return []
 
   return [...messages].sort((a, b) => {
-    // Primary sort: created_at ascending (oldest first)
+    // Primary sort: order_index ascending (nulls last)
+    const orderA = typeof a?.order_index === 'number' ? a.order_index : Number.MAX_SAFE_INTEGER
+    const orderB = typeof b?.order_index === 'number' ? b.order_index : Number.MAX_SAFE_INTEGER
+
+    if (orderA !== orderB) {
+      return orderA - orderB
+    }
+
+    // Secondary sort: created_at ascending (oldest first)
     const timeA = new Date(a?.created_at || 0).getTime()
     const timeB = new Date(b?.created_at || 0).getTime()
 
@@ -16,12 +25,12 @@ export function sortMessagesChronologically(messages: Message[]): Message[] {
       return timeA - timeB
     }
 
-    // Secondary sort: user before assistant when times are equal
+    // Tertiary sort: user before assistant when times are equal
     if (a?.role !== b?.role) {
       return a?.role === 'user' ? -1 : 1
     }
 
-    // Tertiary sort: by id for stability
+    // Quaternary sort: by id for stability
     return String(a?.id || '').localeCompare(String(b?.id || ''))
   })
 }
@@ -90,6 +99,54 @@ function filterMessagesForConversation(messages: Message[], conversationId: stri
 }
 
 /**
+ * Repair message order for old chats with bad timestamps
+ * If assistant appears before user with close timestamps, swap them
+ */
+function repairMessageOrder(messages: Message[]): Message[] {
+  if (!Array.isArray(messages) || messages.length < 2) return messages
+
+  const result = [...messages]
+  let i = 0
+
+  while (i < result.length - 1) {
+    const current = result[i]
+    const next = result[i + 1]
+
+    // If current is assistant and next is user with close timestamps
+    if (
+      current?.role === 'assistant' &&
+      next?.role === 'user' &&
+      current.created_at &&
+      next.created_at
+    ) {
+      const timeDiff = Math.abs(
+        new Date(current.created_at).getTime() - new Date(next.created_at).getTime()
+      )
+
+      // If timestamps are within 10 seconds, swap them
+      if (timeDiff <= 10000) {
+        if (process.env.NODE_ENV !== 'production') {
+          console.log('[Chat] Repairing message order: swapping assistant/user pair', {
+            assistantId: current.id,
+            userId: next.id,
+            timeDiff,
+          })
+        }
+        // Swap
+        result[i] = next
+        result[i + 1] = current
+        i += 2 // Skip both to avoid re-swapping
+        continue
+      }
+    }
+
+    i++
+  }
+
+  return result
+}
+
+/**
  * Process messages: filter by conversation, dedupe, then sort
  * Use this everywhere to ensure consistency
  */
@@ -112,7 +169,9 @@ export function processMessages(messages: Message[], conversationId?: string | n
     })
   }
 
-  return sortMessagesChronologically(dedupeMessages(filtered))
+  // Dedupe, sort, then repair any remaining order issues
+  const sorted = sortMessagesChronologically(dedupeMessages(filtered))
+  return repairMessageOrder(sorted)
 }
 
 /**

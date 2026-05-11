@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import type { Message } from '@/types/models'
 
 export async function GET(
   request: NextRequest,
@@ -16,15 +17,39 @@ export async function GET(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { data: messages, error } = await supabase
+    const { data: rawMessages, error } = await supabase
       .from('messages')
       .select('*')
       .eq('conversation_id', id)
-      .order('created_at', { ascending: true })
 
     if (error) throw error
 
-    return NextResponse.json(messages)
+    // Cast to Message[] and filter to only this conversation (safety check)
+    const messages = (rawMessages || []) as Message[]
+    const filtered = messages.filter(m => m?.conversation_id === id)
+
+    // Server-side sort with robust tie-breaking
+    filtered.sort((a, b) => {
+      // 1. Sort by order_index first (nulls last)
+      const ai = typeof a.order_index === 'number' ? a.order_index : Number.MAX_SAFE_INTEGER
+      const bi = typeof b.order_index === 'number' ? b.order_index : Number.MAX_SAFE_INTEGER
+      if (ai !== bi) return ai - bi
+
+      // 2. Sort by created_at
+      const at = new Date(a.created_at || 0).getTime()
+      const bt = new Date(b.created_at || 0).getTime()
+      if (at !== bt) return at - bt
+
+      // 3. User before assistant on tie
+      const roleRank = (role: string) => role === 'user' ? 0 : role === 'assistant' ? 1 : 2
+      const rr = roleRank(a.role) - roleRank(b.role)
+      if (rr !== 0) return rr
+
+      // 4. Sort by id for stability
+      return String(a.id || '').localeCompare(String(b.id || ''))
+    })
+
+    return NextResponse.json(filtered)
   } catch (error: any) {
     console.error('Messages GET error:', error)
     return NextResponse.json({ error: error.message }, { status: 500 })
