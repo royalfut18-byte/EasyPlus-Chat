@@ -9,20 +9,24 @@ interface LogoProps {
 
 const sizeConfig = {
   sm: {
-    container: 'h-10 w-10',
-    image: 32,
+    container: 'h-11 w-11',
+    imageSize: 64,
+    scale: 'scale-[1.55]',
   },
   md: {
     container: 'h-12 w-12',
-    image: 40,
+    imageSize: 72,
+    scale: 'scale-[1.55]',
   },
   lg: {
     container: 'h-16 w-16',
-    image: 56,
+    imageSize: 96,
+    scale: 'scale-[1.55]',
   },
   xl: {
-    container: 'h-16 w-16',
-    image: 56,
+    container: 'h-20 w-20',
+    imageSize: 120,
+    scale: 'scale-[1.55]',
   },
 }
 
@@ -40,9 +44,9 @@ export function Logo({ size = 'md', showText = false, className }: LogoProps) {
         <Image
           src="/logo.png"
           alt="EasyPlus AI"
-          width={config.image}
-          height={config.image}
-          className="object-contain"
+          width={config.imageSize}
+          height={config.imageSize}
+          className={cn('object-contain', config.scale)}
           priority
         />
       </div>
