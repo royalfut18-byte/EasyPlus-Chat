@@ -29,6 +29,7 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
   const [previewDevice, setPreviewDevice] = useState<'desktop' | 'tablet' | 'mobile'>('desktop')
   const [refreshKey, setRefreshKey] = useState(0)
   const panelRef = useRef<HTMLDivElement>(null)
+  const iframeRef = useRef<HTMLIFrameElement>(null)
 
   useEffect(() => {
     const checkMobile = () => setIsMobile(window.innerWidth < 768)
@@ -246,24 +247,37 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
           </div>
         ) : currentTab === 'preview' ? (
           canPreview ? (
-            <div className="flex-1 min-h-0 h-full overflow-hidden flex items-center justify-center p-4">
+            <div className="flex-1 min-h-0 h-full overflow-hidden flex flex-col items-center justify-center p-4">
+              {/* Interactive hint for games/apps */}
+              <div className="text-center mb-2">
+                <p className="text-xs text-gray-400">
+                  Click inside preview to interact • Press keys for controls
+                </p>
+              </div>
               <div
-                className="bg-white rounded-xl shadow-2xl overflow-hidden border border-gray-200 transition-all duration-300"
+                className="bg-white rounded-xl shadow-2xl overflow-hidden border border-gray-200 transition-all duration-300 cursor-pointer"
                 style={{
                   width: previewDevice === 'mobile' ? '375px' : previewDevice === 'tablet' ? '768px' : '100%',
                   maxWidth: '100%',
-                  height: previewDevice === 'desktop' ? '100%' : 'auto',
-                  maxHeight: '100%',
+                  height: previewDevice === 'desktop' ? 'calc(100% - 28px)' : 'auto',
+                  maxHeight: previewDevice === 'desktop' ? '100%' : 'calc(100% - 28px)',
                 }}
+                onClick={() => iframeRef.current?.focus()}
               >
                 <iframe
+                  ref={iframeRef}
                   key={refreshKey}
                   srcDoc={artifact.code}
                   title={artifact.title}
-                  sandbox="allow-scripts allow-forms allow-modals allow-popups"
-                  className="w-full h-full border-0"
+                  sandbox="allow-scripts allow-forms allow-modals allow-popups allow-pointer-lock"
+                  className="w-full h-full border-0 bg-white pointer-events-auto"
                   style={{
-                    minHeight: previewDevice !== 'desktop' ? '600px' : undefined
+                    minHeight: previewDevice !== 'desktop' ? '600px' : undefined,
+                  }}
+                  tabIndex={0}
+                  onLoad={() => {
+                    // Auto-focus iframe after load for keyboard controls
+                    setTimeout(() => iframeRef.current?.focus(), 100)
                   }}
                 />
               </div>
