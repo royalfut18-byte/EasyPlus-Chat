@@ -17,7 +17,7 @@ export function ModelSelector({ selectedModel, onSelectModel }: ModelSelectorPro
     return name
       .replace('Claude Opus', 'Claude')
       .replace('Claude Sonnet', 'Claude')
-      .replace('Gemini 3.1 Pro Preview', 'Gemini 3.1')
+      .replace('Gemini 2.5 Flash', 'Gemini 2.5')
   }
 
   const getModelIcon = (model: AIModel) => {

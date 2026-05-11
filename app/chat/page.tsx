@@ -470,7 +470,7 @@ export default function ChatPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           prompt,
-          model: 'nano-banana-2',
+          model: 'nano-banana',
           aspectRatio: imageAspectRatio,
           recentMessages,
           conversationId: sendConversationId,

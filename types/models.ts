@@ -19,11 +19,11 @@ export const AI_MODELS: AIModel[] = [
     color: '#d97757', // Anthropic warm neutral
   },
   {
-    id: 'gemini-3.1-pro-preview',
-    name: 'Gemini 3.1 Pro Preview',
+    id: 'gemini-2.5-flash',
+    name: 'Gemini 2.5 Flash',
     provider: 'google',
-    geminiModelId: 'gemini-3.1-pro-preview',
-    costPerMessage: 30,
+    geminiModelId: 'gemini-2.5-flash',
+    costPerMessage: 15,
     color: '#4285f4', // Google blue
   },
 ]

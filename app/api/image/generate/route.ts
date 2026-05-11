@@ -12,20 +12,16 @@ type ProfileRow = {
 
 type ImageGenerationRequest = {
   prompt: string
-  model?: 'nano-banana-2' | 'nano-banana-pro'
+  model?: 'nano-banana'
   aspectRatio?: '1:1' | '16:9' | '9:16' | '4:3'
   recentMessages?: Array<{ role: string; content: string }>
   conversationId?: string
 }
 
 const IMAGE_MODEL_CONFIG = {
-  'nano-banana-2': {
-    modelId: 'gemini-2.0-flash-exp',
-    cost: 150,
-  },
-  'nano-banana-pro': {
-    modelId: 'gemini-2.0-flash-exp',
-    cost: 300,
+  'nano-banana': {
+    modelId: 'gemini-2.5-flash-image',
+    cost: 100,
   },
 }
 
@@ -97,7 +93,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body: ImageGenerationRequest = await request.json()
-    const { prompt, model = 'nano-banana-2', aspectRatio = '1:1', recentMessages, conversationId } = body
+    const { prompt, model = 'nano-banana', aspectRatio = '1:1', recentMessages, conversationId } = body
 
     if (!prompt || !prompt.trim()) {
       return NextResponse.json({ error: 'Prompt is required' }, { status: 400 })
@@ -239,8 +235,25 @@ export async function POST(request: NextRequest) {
       message: error.message,
       stack: error.stack,
     })
+
+    // Handle quota/rate limit errors gracefully
+    if (error.message?.includes('quota') || error.message?.includes('rate limit') || error.message?.includes('429')) {
+      return NextResponse.json(
+        { error: 'Gemini free-tier quota is exhausted or unavailable. Try again later or switch to Claude for image analysis.' },
+        { status: 429 }
+      )
+    }
+
+    // Handle unsupported model errors
+    if (error.message?.includes('not found') || error.message?.includes('does not exist') || error.message?.includes('not supported')) {
+      return NextResponse.json(
+        { error: 'Free image generation is not available for this API key/model. Use Claude for image analysis or enable billing for Gemini image generation.' },
+        { status: 503 }
+      )
+    }
+
     return NextResponse.json(
-      { error: error.message || 'Image generation failed' },
+      { error: 'Image generation failed. Please try again later.' },
       { status: 500 }
     )
   }

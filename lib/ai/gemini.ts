@@ -155,6 +155,12 @@ export async function streamGeminiResponse(
       stack: error.stack,
     })
 
-    throw new Error(`Gemini API failed: ${error.message}`)
+    // Handle quota/rate limit errors gracefully
+    if (error.message?.includes('quota') || error.message?.includes('rate limit') || error.message?.includes('429')) {
+      throw new Error('Gemini free-tier quota is exhausted or unavailable. Try again later or switch to Claude.')
+    }
+
+    // Generic error message
+    throw new Error('Gemini API request failed. Please try again or switch to Claude.')
   }
 }
