@@ -20,7 +20,7 @@ export const AI_MODELS: AIModel[] = [
   },
   {
     id: 'gemini-2.5-flash',
-    name: 'Gemini 2.5 Flash',
+    name: 'Gemini 3.1 Pro',
     provider: 'google',
     geminiModelId: 'gemini-2.5-flash',
     costPerMessage: 15,

@@ -124,9 +124,22 @@ export async function streamGeminiResponse(
       console.log('[Gemini] Sending last message with', lastMessage.parts?.length || 0, 'parts')
     }
 
-    // Start chat with history
+    // Start chat with history and system instruction
     const chat = geminiModel.startChat({
       history,
+      systemInstruction: {
+        role: 'user',
+        parts: [
+          {
+            text: `You are ${model.name}, currently powered by Google. You are a helpful and knowledgeable assistant. You maintain conversation context and understand follow-up questions by referring to previous messages in the conversation.
+
+IMPORTANT MODEL IDENTITY:
+- If the user asks "what model are you", "which model", "what gemini are u", "what gemini", or similar questions, you MUST answer: "I'm ${model.name}, currently powered by Google."
+- Do not claim to be a different model or deny being Gemini.
+- Be accurate about your model identity.`,
+          },
+        ],
+      },
       generationConfig: {
         maxOutputTokens: 8192,
         temperature: 0.7,
