@@ -1,7 +1,7 @@
 'use client'
 
 import { motion } from 'framer-motion'
-import { Copy, ThumbsUp, ThumbsDown, RotateCw, FileCode, Sparkles, PanelRightOpen, Sparkles as GeminiIcon } from 'lucide-react'
+import { Copy, ThumbsUp, ThumbsDown, RotateCw, FileCode, Sparkles, PanelRightOpen, Sparkles as GeminiIcon, Download } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism'
@@ -88,15 +88,39 @@ export function MessageBubble({ role, content, model, onRegenerate, attachments,
         )}
 
         {attachments && attachments.length > 0 && (
-          <div className="flex flex-wrap gap-2 mb-3">
+          <div className="flex flex-wrap gap-3 mb-3">
             {attachments.map((attachment, index) => (
-              <img
-                key={index}
-                src={attachment.dataUrl}
-                alt={attachment.name}
-                className="max-w-xs max-h-64 rounded-lg border border-white/20 object-contain cursor-pointer hover:opacity-80 transition-opacity"
-                onClick={() => window.open(attachment.dataUrl, '_blank')}
-              />
+              <div key={index} className="relative group">
+                <img
+                  src={attachment.dataUrl}
+                  alt={attachment.name}
+                  className="max-w-full md:max-w-lg max-h-96 rounded-lg border border-white/20 object-contain"
+                />
+                {!isUser && (
+                  <div className="absolute top-2 right-2 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-8 w-8 p-0 bg-black/50 hover:bg-black/70 backdrop-blur-sm"
+                      onClick={() => {
+                        const link = document.createElement('a')
+                        link.href = attachment.dataUrl
+                        link.download = attachment.name || 'generated-image.png'
+                        document.body.appendChild(link)
+                        link.click()
+                        document.body.removeChild(link)
+                        toast({
+                          title: 'Image downloaded',
+                          description: 'The image has been saved to your downloads',
+                        })
+                      }}
+                      title="Download image"
+                    >
+                      <Download className="h-4 w-4 text-white" />
+                    </Button>
+                  </div>
+                )}
+              </div>
             ))}
           </div>
         )}
