@@ -116,13 +116,41 @@ export async function POST(request: NextRequest) {
 
     const userMessage = messages[messages.length - 1]
 
+    // Filter and validate conversation context
+    const isLoadingMarker = (content: string) => {
+      return content === '__ARTIFACT_LOADING__' || content === '__ASSISTANT_LOADING__'
+    }
+
+    // Clean messages: filter out loading markers, empty content, non-user/assistant roles
+    let cleanedMessages = messages
+      .filter((m: ChatMessage) => m.role === 'user' || m.role === 'assistant')
+      .filter((m: ChatMessage) => m.content && !isLoadingMarker(m.content))
+      .slice(-16) // Last 16 messages for reasonable context window
+
     // Check if web search should be used (manual toggle takes priority)
-    const latestUserMessage = messages[messages.length - 1]
-    let messagesToSend = messages as ChatMessage[]
+    const latestUserMessage = cleanedMessages[cleanedMessages.length - 1]
+    let messagesToSend = cleanedMessages as ChatMessage[]
 
     if (webSearchEnabled === true) {
       console.log('[Chat API] Running web search (manual toggle enabled)')
-      const webContext = await searchWeb(latestUserMessage.content)
+
+      // Build contextual search query for follow-up questions
+      let searchQuery = latestUserMessage.content
+
+      // If this is a short follow-up question, add context from previous messages
+      if (latestUserMessage.content.length < 80 && cleanedMessages.length > 1) {
+        // Get last few messages for context (up to 3 previous exchanges)
+        const recentContext = cleanedMessages
+          .slice(-6, -1) // Last 6 messages excluding current
+          .map(m => m.content)
+          .join(' ')
+          .substring(0, 800) // Limit context length
+
+        searchQuery = `${recentContext}\n\nFollow-up: ${latestUserMessage.content}`
+        console.log('[Chat API] Using contextual search query for follow-up')
+      }
+
+      const webContext = await searchWeb(searchQuery)
 
       if (webContext) {
         // Prepend system message with web search context
@@ -138,10 +166,34 @@ User's question: ${latestUserMessage.content}`,
         }
 
         // Replace the last user message with the enriched version
-        messagesToSend = [...messages.slice(0, -1), systemMessage] as ChatMessage[]
+        messagesToSend = [...cleanedMessages.slice(0, -1), systemMessage] as ChatMessage[]
       } else {
         console.warn('[Chat API] Web search returned no results')
       }
+    }
+
+    // Add system instruction for conversation context
+    if (messagesToSend.length > 0) {
+      const systemInstruction: ChatMessage = {
+        role: 'user',
+        content: `[SYSTEM INSTRUCTION]
+You are EasyPlus AI, a helpful assistant. You are having a conversation with a user.
+
+IMPORTANT CONTEXT RULES:
+- Answer using the full conversation history provided above
+- For follow-up questions or pronouns (it, that, this, they, he, she), refer to previous messages in this conversation
+- Maintain topic continuity unless the user explicitly changes subjects
+- If the user asks about "tax" after discussing Jim Chalmers, assume Australian tax policy unless specified otherwise
+- If the user says "their squad" after discussing SRH, understand "their" refers to SRH
+- Do not randomly switch topics, countries, or contexts
+- If web search context conflicts with conversation history, acknowledge both perspectives
+- Be conversational and contextually aware
+
+Now continue the conversation naturally:
+---`,
+      }
+
+      messagesToSend = [systemInstruction, ...messagesToSend]
     }
 
     const stream = await streamBedrockResponse(model, messagesToSend)

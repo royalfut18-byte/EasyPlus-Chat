@@ -131,6 +131,13 @@ export async function streamBedrockResponse(
 
   const endpoint = `https://bedrock-runtime.${region}.amazonaws.com/model/${model.bedrockModelId}/converse`
 
+  // Add system message for better conversation context
+  const systemPrompt = [
+    {
+      text: 'You are EasyPlus AI, a helpful and knowledgeable assistant. You maintain conversation context and understand follow-up questions by referring to previous messages in the conversation.',
+    },
+  ]
+
   const response = await fetch(endpoint, {
     method: 'POST',
     headers: {
@@ -139,6 +146,7 @@ export async function streamBedrockResponse(
     },
     body: JSON.stringify({
       messages: bedrockMessages,
+      system: systemPrompt,
       inferenceConfig: {
         maxTokens: 16384,
         temperature: 0.7,

@@ -500,8 +500,18 @@ export default function ChatPage() {
     setMessages((prev) => processMessages([...prev, assistantPlaceholder], sendConversationId))
 
     try {
-      // 7. Prepare messages for API (exclude artifact metadata)
-      const contextMessages = messages.filter(m => m.role === 'user' || m.role === 'assistant')
+      // 7. Prepare messages for API (exclude artifact metadata and loading markers)
+      const isLoadingMarker = (content: string) => {
+        return content === ARTIFACT_LOADING_MARKER || content === ASSISTANT_LOADING_MARKER
+      }
+
+      // Get recent conversation context (last 16 messages)
+      const contextMessages = messages
+        .filter(m => m.conversation_id === sendConversationId) // Only same conversation
+        .filter(m => m.role === 'user' || m.role === 'assistant')
+        .filter(m => m.content && !isLoadingMarker(m.content)) // Exclude empty and loading markers
+        .slice(-16) // Last 16 messages for context
+
       const messagesToSend = [...contextMessages, userMessage].map((m) => ({
         role: m.role,
         content: m.content,
