@@ -108,6 +108,8 @@ export function AdminUserTable() {
               <th className="pb-3 text-sm font-medium text-gray-400">Email</th>
               <th className="pb-3 text-sm font-medium text-gray-400">Role</th>
               <th className="pb-3 text-sm font-medium text-gray-400">Credits</th>
+              <th className="pb-3 text-sm font-medium text-gray-400">Messages</th>
+              <th className="pb-3 text-sm font-medium text-gray-400">Chats</th>
               <th className="pb-3 text-sm font-medium text-gray-400">Status</th>
               <th className="pb-3 text-sm font-medium text-gray-400">Joined</th>
               <th className="pb-3 text-sm font-medium text-gray-400">Actions</th>
@@ -138,6 +140,12 @@ export function AdminUserTable() {
                   ) : (
                     <span className="text-white">{formatCredits(user.credits)}</span>
                   )}
+                </td>
+                <td className="py-3 text-sm text-white">
+                  {user.message_count || 0}
+                </td>
+                <td className="py-3 text-sm text-white">
+                  {user.conversation_count || 0}
                 </td>
                 <td className="py-3">
                   <span className="text-xs px-2 py-1 rounded-full bg-green-500/20 text-green-300">
