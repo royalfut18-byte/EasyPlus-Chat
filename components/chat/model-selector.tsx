@@ -14,7 +14,10 @@ interface ModelSelectorProps {
 export function ModelSelector({ selectedModel, onSelectModel }: ModelSelectorProps) {
   const getShortName = (name: string) => {
     // Show shorter names on mobile
-    return name.replace('Claude Opus', 'Claude').replace('Claude Sonnet', 'Claude').replace('Gemini 2.5', 'Gemini')
+    return name
+      .replace('Claude Opus', 'Claude')
+      .replace('Claude Sonnet', 'Claude')
+      .replace('Gemini 3.1 Pro Preview', 'Gemini 3.1')
   }
 
   const getModelIcon = (model: AIModel) => {
