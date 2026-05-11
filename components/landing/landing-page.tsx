@@ -13,17 +13,14 @@ import {
   ArrowRight,
   Sparkles,
   Crown,
-  Users,
-  Settings,
-  Infinity as InfinityIcon,
-  Bot,
-  ShieldCheck,
-  CreditCard,
-  UserCog,
+  FileCode,
+  Image as ImageIcon,
 } from 'lucide-react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Logo } from '@/components/brand/logo'
+import { ChatGPTIcon } from '@/components/icons/chatgpt-icon'
+import { AnthropicIcon } from '@/components/icons/anthropic-icon'
 
 export function LandingPage() {
   return (
@@ -355,9 +352,9 @@ export function LandingPage() {
               delay: 0.2,
             },
             {
-              icon: <UserCog className="h-6 w-6" />,
-              title: 'Admin Controls',
-              description: 'Secure workspace with admin-managed permissions',
+              icon: <Shield className="h-6 w-6" />,
+              title: 'Private Workspace',
+              description: 'Secure, invite-only environment for authorized users',
               color: 'from-teal-500 to-green-500',
               delay: 0.3,
             },
@@ -369,9 +366,9 @@ export function LandingPage() {
               delay: 0.4,
             },
             {
-              icon: <CreditCard className="h-6 w-6" />,
-              title: 'Credit Management',
-              description: 'Admin controls with unlimited access options',
+              icon: <Crown className="h-6 w-6" />,
+              title: 'Credit System',
+              description: 'Usage-based credits with flexible allocation',
               color: 'from-yellow-500 to-orange-500',
               delay: 0.5,
             },
@@ -386,61 +383,78 @@ export function LandingPage() {
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
           transition={{ duration: 0.8 }}
-          className="max-w-5xl mx-auto mb-20 md:mb-40 px-4"
+          className="max-w-6xl mx-auto mb-20 md:mb-40 px-4"
         >
           <div className="text-center mb-12 md:mb-16 space-y-3 md:space-y-4">
-            <h2 className="text-3xl md:text-4xl lg:text-5xl font-bold">Admin-Managed Access</h2>
-            <p className="text-base md:text-lg lg:text-xl text-gray-400 max-w-2xl mx-auto">
-              EasyPlus is a private workspace. All accounts are created and managed by your administrator.
+            <h2 className="text-3xl md:text-4xl lg:text-5xl font-bold">One workspace. Multiple AI powers.</h2>
+            <p className="text-base md:text-lg lg:text-xl text-gray-400 max-w-3xl mx-auto">
+              Use ChatGPT 5.5, Claude Opus 4.6, Gemini 3.1 Pro, live web search, image understanding, and interactive artifacts — all inside one private EasyPlus workspace.
             </p>
           </div>
 
-          <motion.div
-            animate={{
-              y: [0, -5, 0],
-            }}
-            transition={{
-              duration: 5,
-              repeat: Infinity,
-              ease: 'easeInOut',
-            }}
-            className="relative"
-          >
-            <div className="absolute -inset-4 bg-gradient-to-r from-green-500/20 via-emerald-500/20 to-teal-500/20 rounded-3xl blur-3xl" />
-
-            <div className="relative glass-strong rounded-2xl border-2 border-white/10 overflow-hidden shadow-2xl">
-              <div className="bg-gradient-to-r from-white/10 to-white/5 p-4 border-b border-white/10">
-                <div className="flex items-center gap-2">
-                  <Shield className="h-5 w-5 text-green-400" />
-                  <span className="font-semibold">Admin Control Panel</span>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {[
+              {
+                icon: <ChatGPTIcon className="h-5 w-5" />,
+                title: 'ChatGPT 5.5',
+                description: 'A powerful OpenAI-style assistant experience for fast answers, writing, reasoning, and everyday tasks.',
+                color: 'text-[#10a37f]',
+                bgGradient: 'from-[#10a37f]/20 to-[#10a37f]/5',
+              },
+              {
+                icon: <AnthropicIcon className="h-5 w-5" />,
+                title: 'Claude Opus 4.6',
+                description: 'Premium reasoning, coding, research, and artifact creation for complex work.',
+                color: 'text-[#d97757]',
+                bgGradient: 'from-[#d97757]/20 to-[#d97757]/5',
+              },
+              {
+                icon: <Sparkles className="h-5 w-5" />,
+                title: 'Gemini 3.1 Pro',
+                description: 'A Google-powered AI experience for fast answers, multimodal help, and lightweight reasoning.',
+                color: 'text-blue-400',
+                bgGradient: 'from-blue-500/20 to-blue-500/5',
+              },
+              {
+                icon: <Globe2 className="h-5 w-5" />,
+                title: 'Web Search',
+                description: 'Search the live web when you need current news, scores, prices, or recent updates.',
+                color: 'text-cyan-400',
+                bgGradient: 'from-cyan-500/20 to-cyan-500/5',
+              },
+              {
+                icon: <FileCode className="h-5 w-5" />,
+                title: 'Artifacts Mode',
+                description: 'Create interactive HTML previews, games, landing pages, dashboards, and code artifacts in a side panel.',
+                color: 'text-purple-400',
+                bgGradient: 'from-purple-500/20 to-purple-500/5',
+              },
+              {
+                icon: <ImageIcon className="h-5 w-5" />,
+                title: 'Image Understanding',
+                description: 'Upload or paste images and ask the AI to analyze, explain, solve, or extract information.',
+                color: 'text-pink-400',
+                bgGradient: 'from-pink-500/20 to-pink-500/5',
+              },
+            ].map((feature, i) => (
+              <motion.div
+                key={i}
+                initial={{ opacity: 0, y: 20 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ delay: i * 0.1 }}
+                className="glass-strong rounded-2xl border border-white/10 p-6 hover:border-white/20 transition-all group"
+              >
+                <div className={`h-12 w-12 rounded-xl bg-gradient-to-br ${feature.bgGradient} border border-white/10 flex items-center justify-center mb-4 ${feature.color}`}>
+                  {feature.icon}
                 </div>
-              </div>
-
-              <div className="p-6 space-y-3">
-                {[
-                  { icon: <Users className="h-4 w-4" />, label: 'Create User Account', color: 'text-blue-400' },
-                  { icon: <UserCog className="h-4 w-4" />, label: 'Set User Role: Admin / User', color: 'text-purple-400' },
-                  { icon: <CreditCard className="h-4 w-4" />, label: 'Allocate Credits', color: 'text-yellow-400' },
-                  { icon: <InfinityIcon className="h-4 w-4" />, label: 'Toggle Unlimited Credits', color: 'text-green-400' },
-                  { icon: <ShieldCheck className="h-4 w-4" />, label: 'Manage Permissions', color: 'text-emerald-400' },
-                ].map((item, i) => (
-                  <motion.div
-                    key={i}
-                    initial={{ opacity: 0, x: -20 }}
-                    whileInView={{ opacity: 1, x: 0 }}
-                    viewport={{ once: true }}
-                    transition={{ delay: i * 0.1 }}
-                    className="flex items-center gap-4 p-4 rounded-xl glass-strong border border-white/10 hover:border-white/20 transition-all"
-                  >
-                    <div className={`h-9 w-9 rounded-lg glass border border-white/10 flex items-center justify-center ${item.color}`}>
-                      {item.icon}
-                    </div>
-                    <span className="text-sm text-gray-200">{item.label}</span>
-                  </motion.div>
-                ))}
-              </div>
-            </div>
-          </motion.div>
+                <h3 className="text-xl font-semibold mb-2">{feature.title}</h3>
+                <p className="text-sm text-gray-400 leading-relaxed">
+                  {feature.description}
+                </p>
+              </motion.div>
+            ))}
+          </div>
         </motion.div>
 
         {/* Final CTA */}
@@ -461,10 +475,10 @@ export function LandingPage() {
               className="space-y-4"
             >
               <h2 className="text-5xl md:text-6xl font-bold">
-                Already approved?
+                Already have access?
               </h2>
               <p className="text-xl text-gray-400 max-w-xl mx-auto">
-                Sign in to access your private AI workspace
+                Sign in to use your private EasyPlus AI workspace.
               </p>
             </motion.div>
 
