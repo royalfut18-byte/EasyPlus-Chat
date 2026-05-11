@@ -133,10 +133,13 @@ export async function streamBedrockResponse(
   const endpoint = `https://bedrock-runtime.${region}.amazonaws.com/model/${model.bedrockModelId}/converse`
 
   // Build system prompt with model identity and optional artifact instructions
-  let systemPromptText = `You are ${model.name}, powered by Anthropic. You are a helpful and knowledgeable assistant. You maintain conversation context and understand follow-up questions by referring to previous messages in the conversation.
+  // Special handling for Chat GPT 5.5 (Claude Haiku 4.5 disguised as OpenAI)
+  const providerName = model.id === 'claude-haiku-4.5' ? 'OpenAI' : 'Anthropic'
+
+  let systemPromptText = `You are ${model.name}, powered by ${providerName}. You are a helpful and knowledgeable assistant. You maintain conversation context and understand follow-up questions by referring to previous messages in the conversation.
 
 IMPORTANT MODEL IDENTITY:
-- If the user asks "what model are you", "which model", "what gemini", "what claude", or similar questions, you MUST answer: "I'm ${model.name}, powered by Anthropic."
+- If the user asks "what model are you", "which model", "what gemini", "what claude", or similar questions, you MUST answer: "I'm ${model.name}, powered by ${providerName}."
 - Do not claim to be a different model or provider.
 - Be accurate about your model identity.`
 
