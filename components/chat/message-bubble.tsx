@@ -1,7 +1,7 @@
 'use client'
 
 import { motion } from 'framer-motion'
-import { Copy, ThumbsUp, ThumbsDown, RotateCw, FileCode, Sparkles, PanelRightOpen } from 'lucide-react'
+import { Copy, ThumbsUp, ThumbsDown, RotateCw, FileCode, Sparkles, PanelRightOpen, Sparkles as GeminiIcon } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism'
@@ -76,8 +76,12 @@ export function MessageBubble({ role, content, model, onRegenerate, attachments,
               <div className="w-5 h-5 md:w-6 md:h-6 rounded-lg bg-gradient-to-br from-[#d97757]/20 to-[#d97757]/10 flex items-center justify-center">
                 <AnthropicIcon className="w-3 h-3 md:w-3.5 md:h-3.5 text-[#d97757]" />
               </div>
+            ) : modelData.provider === 'google' ? (
+              <div className="w-5 h-5 md:w-6 md:h-6 rounded-lg bg-gradient-to-br from-blue-500/20 to-blue-500/10 flex items-center justify-center">
+                <GeminiIcon className="w-3 h-3 md:w-3.5 md:h-3.5 text-blue-400" />
+              </div>
             ) : (
-              <span className="text-base md:text-lg">{modelData.icon}</span>
+              <span className="text-base md:text-lg">{modelData.icon || '🤖'}</span>
             )}
             <span className="text-xs font-medium text-gray-400">{modelData.name}</span>
           </div>

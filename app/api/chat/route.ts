@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { streamBedrockResponse, getModelCost } from '@/lib/ai/bedrock'
+import { streamGeminiResponse } from '@/lib/ai/gemini'
 import { needsWebSearch, searchWeb } from '@/lib/ai/web-search'
+import { AI_MODELS } from '@/types/models'
 import type { ChatMessage } from '@/types/models'
 
 export const runtime = 'nodejs'
@@ -196,7 +198,29 @@ Now continue the conversation naturally:
       messagesToSend = [systemInstruction, ...messagesToSend]
     }
 
-    const stream = await streamBedrockResponse(model, messagesToSend)
+    // Route to appropriate AI provider based on model
+    const selectedModel = AI_MODELS.find((m) => m.id === model)
+
+    if (!selectedModel) {
+      console.error('[Chat API] Unknown model:', model)
+      return NextResponse.json({ error: 'Unknown model' }, { status: 400 })
+    }
+
+    let stream: ReadableStream
+
+    if (selectedModel.provider === 'google') {
+      console.log('[Chat API] Using Gemini provider')
+      stream = await streamGeminiResponse(model, messagesToSend)
+    } else if (selectedModel.provider === 'anthropic') {
+      console.log('[Chat API] Using Bedrock/Claude provider')
+      stream = await streamBedrockResponse(model, messagesToSend)
+    } else {
+      console.error('[Chat API] Unsupported provider:', selectedModel.provider)
+      return NextResponse.json(
+        { error: `Provider ${selectedModel.provider} is not supported` },
+        { status: 400 }
+      )
+    }
 
     const encoder = new TextEncoder()
     const decoder = new TextDecoder()

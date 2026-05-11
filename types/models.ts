@@ -2,7 +2,8 @@ export interface AIModel {
   id: string
   name: string
   provider: 'anthropic' | 'google' | 'openai'
-  bedrockModelId: string
+  bedrockModelId?: string // Optional: only for Bedrock/Claude models
+  geminiModelId?: string // Optional: only for Gemini models
   costPerMessage: number
   color: string
   icon?: string // Optional: for non-Anthropic models that use emoji
@@ -16,6 +17,22 @@ export const AI_MODELS: AIModel[] = [
     bedrockModelId: 'au.anthropic.claude-opus-4-6-v1',
     costPerMessage: 50,
     color: '#d97757', // Anthropic warm neutral
+  },
+  {
+    id: 'gemini-2.5-pro',
+    name: 'Gemini 2.5 Pro',
+    provider: 'google',
+    geminiModelId: 'gemini-2.0-flash-exp',
+    costPerMessage: 35,
+    color: '#4285f4', // Google blue
+  },
+  {
+    id: 'gemini-2.5-flash',
+    name: 'Gemini 2.5 Flash',
+    provider: 'google',
+    geminiModelId: 'gemini-2.0-flash-exp',
+    costPerMessage: 15,
+    color: '#34a853', // Google green
   },
 ]
 
