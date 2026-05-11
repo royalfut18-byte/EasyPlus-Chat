@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { GoogleGenerativeAI } from '@google/generative-ai'
+import { generateImageWithBedrock } from '@/lib/ai/bedrock-image'
 
 export const runtime = 'nodejs'
 
@@ -12,25 +12,20 @@ type ProfileRow = {
 
 type ImageGenerationRequest = {
   prompt: string
-  model?: 'nano-banana'
-  aspectRatio?: '1:1' | '16:9' | '9:16' | '4:3'
+  aspectRatio?: '1:1' | '16:9' | '9:16' | '4:3' | '3:4'
+  numberOfImages?: number
   recentMessages?: Array<{ role: string; content: string }>
   conversationId?: string
 }
 
-const IMAGE_MODEL_CONFIG = {
-  'nano-banana': {
-    modelId: 'gemini-2.5-flash-image',
-    cost: 100,
-  },
-}
+const IMAGE_GENERATION_COST = 100
 
 function buildImageGenerationPrompt(request: ImageGenerationRequest): string {
   const { prompt, recentMessages, aspectRatio } = request
 
   let enrichedPrompt = prompt
 
-  // Add context from recent messages if available
+  // Add context from recent messages if available and relevant
   if (recentMessages && recentMessages.length > 0) {
     const relevantContext = recentMessages
       .slice(-6) // Last 6 messages
@@ -59,7 +54,7 @@ Now generate: ${prompt}`
     }
   }
 
-  // Add aspect ratio hint
+  // Add aspect ratio hint for better composition
   if (aspectRatio && aspectRatio !== '1:1') {
     enrichedPrompt += `\n\nAspect ratio: ${aspectRatio}`
   }
@@ -69,16 +64,6 @@ Now generate: ${prompt}`
 
 export async function POST(request: NextRequest) {
   try {
-    const apiKey = process.env.GEMINI_API_KEY
-
-    if (!apiKey) {
-      console.error('[Image Gen] GEMINI_API_KEY is not set')
-      return NextResponse.json(
-        { error: 'Image generation is not configured' },
-        { status: 500 }
-      )
-    }
-
     const supabase = await createClient()
     const db = supabase as any
 
@@ -93,7 +78,13 @@ export async function POST(request: NextRequest) {
     }
 
     const body: ImageGenerationRequest = await request.json()
-    const { prompt, model = 'nano-banana', aspectRatio = '1:1', recentMessages, conversationId } = body
+    const {
+      prompt,
+      aspectRatio = '1:1',
+      numberOfImages = 1,
+      recentMessages,
+      conversationId,
+    } = body
 
     if (!prompt || !prompt.trim()) {
       return NextResponse.json({ error: 'Prompt is required' }, { status: 400 })
@@ -120,11 +111,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Profile not found' }, { status: 404 })
     }
 
-    const modelConfig = IMAGE_MODEL_CONFIG[model]
-    const cost = modelConfig.cost
+    const cost = IMAGE_GENERATION_COST
 
     // Check if user has unlimited credits
-    const hasUnlimitedCredits = typedProfile.role === 'admin' || typedProfile.unlimited_credits === true
+    const hasUnlimitedCredits =
+      typedProfile.role === 'admin' || typedProfile.unlimited_credits === true
 
     if (!hasUnlimitedCredits) {
       if (typedProfile.credits < cost) {
@@ -144,7 +135,7 @@ export async function POST(request: NextRequest) {
           user_id: user.id,
           amount: -cost,
           type: 'deduction',
-          description: `Image generation using ${model}`,
+          description: 'Image generation using Bedrock Titan v2',
         }),
       ])
 
@@ -165,95 +156,40 @@ export async function POST(request: NextRequest) {
       aspectRatio,
     })
 
-    console.log('[Image Gen] Generating image with model:', modelConfig.modelId)
+    console.log('[Image Gen] Generating with Bedrock Titan v2')
+    console.log('[Image Gen] Aspect ratio:', aspectRatio)
 
-    // Initialize Gemini
-    const genAI = new GoogleGenerativeAI(apiKey)
-    const geminiModel = genAI.getGenerativeModel({ model: modelConfig.modelId })
-
-    // Generate image
-    const result = await geminiModel.generateContent({
-      contents: [{ role: 'user', parts: [{ text: enrichedPrompt }] }],
-      generationConfig: {
-        temperature: 1.0,
-        maxOutputTokens: 8192,
-      },
+    // Generate image using Bedrock Titan
+    const result = await generateImageWithBedrock({
+      prompt: enrichedPrompt,
+      aspectRatio,
+      numberOfImages,
     })
 
-    const response = result.response
-
-    // Check if response contains image data
-    if (!response || !response.candidates || response.candidates.length === 0) {
-      console.error('[Image Gen] No candidates in response')
-      return NextResponse.json({ error: 'No image was returned by the model' }, { status: 500 })
+    if (!result.images || result.images.length === 0) {
+      console.error('[Image Gen] No images returned')
+      return NextResponse.json({ error: 'No images were generated' }, { status: 500 })
     }
 
-    const candidate = response.candidates[0]
-    if (!candidate.content || !candidate.content.parts) {
-      console.error('[Image Gen] No parts in candidate')
-      return NextResponse.json({ error: 'No image was returned by the model' }, { status: 500 })
-    }
+    console.log('[Image Gen] Successfully generated', result.images.length, 'image(s)')
 
-    // Find inline data (image) in response
-    let imageData: string | null = null
-    let mimeType = 'image/png'
-
-    for (const part of candidate.content.parts) {
-      if ((part as any).inlineData) {
-        const inlineData = (part as any).inlineData
-        imageData = inlineData.data
-        mimeType = inlineData.mimeType || 'image/png'
-        break
-      }
-    }
-
-    if (!imageData) {
-      console.error('[Image Gen] No inline data found in response')
-      return NextResponse.json(
-        { error: 'The model returned a text response instead of an image. Try a more specific image generation prompt.' },
-        { status: 500 }
-      )
-    }
-
-    // Convert to data URL
-    const dataUrl = `data:${mimeType};base64,${imageData}`
-
-    console.log('[Image Gen] Image generated successfully')
-
+    // Return first image (can support multiple later)
     return NextResponse.json({
       success: true,
-      image: {
-        dataUrl,
-        mimeType,
-      },
+      image: result.images[0],
       promptUsed: enrichedPrompt,
-      modelUsed: model,
+      modelUsed: 'bedrock-titan-v2',
       aspectRatio,
     })
   } catch (error: any) {
     console.error('[Image Gen] Fatal error:', {
       message: error.message,
-      stack: error.stack,
+      stack: error.stack?.substring(0, 300),
     })
 
-    // Handle quota/rate limit errors gracefully
-    if (error.message?.includes('quota') || error.message?.includes('rate limit') || error.message?.includes('429')) {
-      return NextResponse.json(
-        { error: 'Gemini free-tier quota is exhausted or unavailable. Try again later or switch to Claude for image analysis.' },
-        { status: 429 }
-      )
-    }
-
-    // Handle unsupported model errors
-    if (error.message?.includes('not found') || error.message?.includes('does not exist') || error.message?.includes('not supported')) {
-      return NextResponse.json(
-        { error: 'Free image generation is not available for this API key/model. Use Claude for image analysis or enable billing for Gemini image generation.' },
-        { status: 503 }
-      )
-    }
-
+    // Return clean user-facing error
     return NextResponse.json(
-      { error: 'Image generation failed. Please try again later.' },
+      { error: error.message || 'Image generation failed. Please try again.' },
       { status: 500 }
     )
   }
