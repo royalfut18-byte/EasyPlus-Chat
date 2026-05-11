@@ -219,10 +219,10 @@ Now continue the conversation naturally:
 
     if (selectedModel.provider === 'google') {
       console.log('[Chat API] Using Gemini provider')
-      stream = await streamGeminiResponse(validatedModel, messagesToSend)
+      stream = await streamGeminiResponse(validatedModel, messagesToSend, artifactMode)
     } else if (selectedModel.provider === 'anthropic') {
       console.log('[Chat API] Using Bedrock/Claude provider')
-      stream = await streamBedrockResponse(validatedModel, messagesToSend)
+      stream = await streamBedrockResponse(validatedModel, messagesToSend, artifactMode)
     } else {
       console.error('[Chat API] Unsupported provider:', selectedModel.provider)
       return NextResponse.json(

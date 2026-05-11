@@ -51,12 +51,48 @@ export function parseArtifactFromResponse(
     return { cleanContent: content, artifact: null }
   }
 
-  // CASE A: Explicit artifact block
+  // CASE A1: Explicit artifact block with markdown fence
   const artifactBlockRegex = /```artifact:(\w+):([^\n]+)\n([\s\S]*?)```/
   const artifactMatch = content.match(artifactBlockRegex)
 
   if (artifactMatch) {
     const [fullMatch, language, title, code] = artifactMatch
+
+    const artifact: Artifact = {
+      id: `artifact-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      title: title.trim(),
+      language: language as any,
+      code: code.trim(),
+      createdAt: new Date().toISOString(),
+    }
+
+    // Remove artifact block and replace with clean reference
+    const beforeArtifact = content.substring(0, content.indexOf(fullMatch)).trim()
+    const afterArtifact = content.substring(content.indexOf(fullMatch) + fullMatch.length).trim()
+
+    let cleanContent = ''
+    if (beforeArtifact) {
+      cleanContent += beforeArtifact + '\n\n'
+    }
+    cleanContent += `**✨ Artifact created: ${artifact.title}**\n\n_The ${language} code is now available in the artifact panel on the right._`
+    if (afterArtifact) {
+      cleanContent += '\n\n' + afterArtifact
+    }
+
+    // Ensure cleanContent is never empty
+    if (!cleanContent.trim()) {
+      cleanContent = `I created an artifact for you: **${artifact.title}**.`
+    }
+
+    return { cleanContent, artifact }
+  }
+
+  // CASE A2: Alternative artifact block format (ARTIFACT_BLOCK_START/END)
+  const altArtifactRegex = /ARTIFACT_BLOCK_START\s*\n\s*artifact:(\w+):([^\n]+)\n([\s\S]*?)\nARTIFACT_BLOCK_END/
+  const altArtifactMatch = content.match(altArtifactRegex)
+
+  if (altArtifactMatch) {
+    const [fullMatch, language, title, code] = altArtifactMatch
 
     const artifact: Artifact = {
       id: `artifact-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,

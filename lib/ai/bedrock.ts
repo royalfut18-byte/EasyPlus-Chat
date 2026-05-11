@@ -54,7 +54,8 @@ function dataUrlToBedrockImage(dataUrl: string, mimeType?: string): { format: st
 
 export async function streamBedrockResponse(
   modelId: string,
-  messages: ChatMessage[]
+  messages: ChatMessage[],
+  artifactMode: boolean = false
 ): Promise<ReadableStream> {
   const model = AI_MODELS.find((m) => m.id === modelId)
 
@@ -131,15 +132,70 @@ export async function streamBedrockResponse(
 
   const endpoint = `https://bedrock-runtime.${region}.amazonaws.com/model/${model.bedrockModelId}/converse`
 
-  // Add system message for better conversation context and model identity
-  const systemPrompt = [
-    {
-      text: `You are ${model.name}, powered by Anthropic. You are a helpful and knowledgeable assistant. You maintain conversation context and understand follow-up questions by referring to previous messages in the conversation.
+  // Build system prompt with model identity and optional artifact instructions
+  let systemPromptText = `You are ${model.name}, powered by Anthropic. You are a helpful and knowledgeable assistant. You maintain conversation context and understand follow-up questions by referring to previous messages in the conversation.
 
 IMPORTANT MODEL IDENTITY:
 - If the user asks "what model are you", "which model", "what gemini", "what claude", or similar questions, you MUST answer: "I'm ${model.name}, powered by Anthropic."
 - Do not claim to be a different model or provider.
-- Be accurate about your model identity.`,
+- Be accurate about your model identity.`
+
+  // Add artifact mode instructions if enabled
+  if (artifactMode) {
+    systemPromptText += `
+
+ARTIFACT MODE IS ENABLED:
+If the user asks for code, UI, HTML, CSS, React, a website, game, dashboard, calculator, component, app, or any buildable artifact, you MUST return your response in this format:
+
+1. A brief explanation of what you're creating (1-2 sentences)
+2. EXACTLY ONE artifact block using this format:
+
+\`\`\`artifact:LANGUAGE:Title
+FULL_CODE_HERE
+\`\`\`
+
+Where LANGUAGE is one of: html, tsx, jsx, javascript, css, python
+And Title is a short descriptive title (e.g., "Simple Calculator" or "Flappy Bird Game")
+
+CRITICAL ARTIFACT RULES:
+- For web/UI artifacts, use "html" and create a COMPLETE single-file HTML document with inline CSS and JavaScript
+- Include <!DOCTYPE html>, <html>, <head>, and <body> tags
+- Put all CSS in a <style> tag in the <head>
+- Put all JavaScript in a <script> tag at the end of <body>
+- Do NOT output raw HTML outside the artifact block
+- Do NOT wrap the artifact in a normal markdown code fence
+- Do NOT omit the artifact block if the user asked for something buildable
+- The artifact block MUST use the format: \`\`\`artifact:html:Title
+
+EXAMPLE:
+User: "Make me a simple calculator"
+You should respond:
+"I'll create a simple calculator for you.
+
+\`\`\`artifact:html:Simple Calculator
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Calculator</title>
+  <style>
+    /* CSS here */
+  </style>
+</head>
+<body>
+  <!-- HTML here -->
+  <script>
+    // JavaScript here
+  </script>
+</body>
+</html>
+\`\`\`
+
+The calculator is now ready to use in the artifact panel."`
+  }
+
+  const systemPrompt = [
+    {
+      text: systemPromptText,
     },
   ]
 
