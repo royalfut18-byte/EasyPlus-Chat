@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { streamBedrockResponse, getModelCost } from '@/lib/ai/bedrock'
 import { streamGeminiResponse } from '@/lib/ai/gemini'
-import { needsWebSearch, searchWeb } from '@/lib/ai/web-search'
+import { needsWebSearch, searchWeb, buildWebSearchQuery } from '@/lib/ai/web-search'
 import { AI_MODELS } from '@/types/models'
 import type { ChatMessage } from '@/types/models'
 
@@ -136,21 +136,8 @@ export async function POST(request: NextRequest) {
     if (webSearchEnabled === true) {
       console.log('[Chat API] Running web search (manual toggle enabled)')
 
-      // Build contextual search query for follow-up questions
-      let searchQuery = latestUserMessage.content
-
-      // If this is a short follow-up question, add context from previous messages
-      if (latestUserMessage.content.length < 80 && cleanedMessages.length > 1) {
-        // Get last few messages for context (up to 3 previous exchanges)
-        const recentContext = cleanedMessages
-          .slice(-6, -1) // Last 6 messages excluding current
-          .map(m => m.content)
-          .join(' ')
-          .substring(0, 800) // Limit context length
-
-        searchQuery = `${recentContext}\n\nFollow-up: ${latestUserMessage.content}`
-        console.log('[Chat API] Using contextual search query for follow-up')
-      }
+      // Build smart contextual search query
+      const searchQuery = buildWebSearchQuery(latestUserMessage.content, cleanedMessages)
 
       const webContext = await searchWeb(searchQuery)
 
@@ -158,13 +145,18 @@ export async function POST(request: NextRequest) {
         // Prepend system message with web search context
         const systemMessage: ChatMessage = {
           role: 'user',
-          content: `[CURRENT WEB SEARCH CONTEXT - Use this to answer the user's question. Cite or mention source URLs when relevant. If the context is insufficient, say you could not verify live data.]
+          content: `[WEB SEARCH RESULTS]
+Current user question: "${latestUserMessage.content}"
 
+Web search results for this question:
 ${webContext}
 
 ---
 
-User's question: ${latestUserMessage.content}`,
+INSTRUCTION:
+Answer the current user question using these web search results. Cite or mention source URLs when relevant.
+If the search results are about the wrong topic or insufficient, say you could not find relevant live data.
+Do not answer from unrelated previous conversation context.`,
         }
 
         // Replace the last user message with the enriched version
