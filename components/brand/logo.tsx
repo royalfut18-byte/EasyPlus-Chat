@@ -9,24 +9,20 @@ interface LogoProps {
 
 const sizeConfig = {
   sm: {
-    container: 'h-8 w-8',
-    image: 'h-9 w-9',
-    imageSize: 36,
+    container: 'h-10 w-10',
+    image: 32,
   },
   md: {
-    container: 'h-10 w-10',
-    image: 'h-11 w-11',
-    imageSize: 44,
+    container: 'h-12 w-12',
+    image: 40,
   },
   lg: {
-    container: 'h-12 w-12',
-    image: 'h-13 w-13',
-    imageSize: 52,
+    container: 'h-16 w-16',
+    image: 56,
   },
   xl: {
-    container: 'h-20 w-20',
-    image: 'h-22 w-22',
-    imageSize: 88,
+    container: 'h-16 w-16',
+    image: 56,
   },
 }
 
@@ -34,24 +30,24 @@ export function Logo({ size = 'md', showText = false, className }: LogoProps) {
   const config = sizeConfig[size]
 
   return (
-    <div className={cn('flex items-center gap-3', className)}>
+    <div className={cn('flex items-center gap-2.5', className)}>
       <div
         className={cn(
           config.container,
-          'rounded-2xl overflow-hidden bg-white flex items-center justify-center flex-shrink-0 shadow-lg border border-white/10'
+          'rounded-xl overflow-hidden bg-white flex items-center justify-center flex-shrink-0 shadow-md'
         )}
       >
         <Image
           src="/logo.png"
           alt="EasyPlus AI"
-          width={config.imageSize}
-          height={config.imageSize}
-          className={cn(config.image, 'object-contain scale-[1.15]')}
+          width={config.image}
+          height={config.image}
+          className="object-contain"
           priority
         />
       </div>
       {showText && (
-        <span className="font-bold text-lg gradient-text">EasyPlus AI</span>
+        <span className="font-bold text-base md:text-lg gradient-text whitespace-nowrap">EasyPlus AI</span>
       )}
     </div>
   )

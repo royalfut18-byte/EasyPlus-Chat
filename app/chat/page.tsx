@@ -11,6 +11,7 @@ import { MessageBubble } from '@/components/chat/message-bubble'
 import { ChatInput } from '@/components/chat/chat-input'
 import { Sidebar } from '@/components/chat/sidebar'
 import { ArtifactPanel } from '@/components/chat/artifact-panel'
+import { Logo } from '@/components/brand/logo'
 import { toast } from '@/components/ui/use-toast'
 import { AI_MODELS } from '@/types/models'
 import { cn } from '@/lib/utils'
@@ -74,9 +75,53 @@ function loadArtifact(conversationId?: string): Artifact | null {
 }
 
 function generateConversationTitle(message: string): string {
-  const fillers = /^(what is|what's|can you|please|could you|tell me|explain|search the web|latest|give me|show me|find)\s+/i
-  let title = message.replace(fillers, '')
+  const trimmed = message.trim().toLowerCase()
 
+  // Handle greetings
+  if (/^(hey|hi|hello|yo|sup)[\s!.]*$/.test(trimmed)) {
+    return 'Quick Chat'
+  }
+
+  // Handle model identity questions
+  if (/what (ai|model|gemini|claude|gpt|chatgpt)|which (ai|model)|who are you|what are you/.test(trimmed)) {
+    return 'Model Identity'
+  }
+
+  // Remove common filler phrases
+  let title = message.replace(
+    /^(what is|what's|can you|could you|please|tell me about|tell me|explain|explain to me|search the web for|search for|latest|give me|show me|find|look up|help me with|i need|i want)\s+/i,
+    ''
+  )
+
+  // Handle creation/generation requests
+  const creationMatch = title.match(/^(make|build|create|generate|design|code|write)\s+(me\s+)?(a|an)?\s*(.+?)\s+(website|site|page|game|app|component|tool|calculator|dashboard|bracket)/i)
+  if (creationMatch) {
+    const topic = creationMatch[4] ? creationMatch[4].trim() : ''
+    const type = creationMatch[5].charAt(0).toUpperCase() + creationMatch[5].slice(1).toLowerCase()
+    if (topic) {
+      return `${topic.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')} ${type}`
+    }
+    return `${type} Project`
+  }
+
+  // Handle "X Explained" pattern
+  if (/^explain/i.test(message)) {
+    title = title.replace(/^explain\s+/i, '').trim()
+    if (title.length > 0 && title.length < 40) {
+      return toTitleCase(title) + ' Explained'
+    }
+  }
+
+  // Handle "latest X news"
+  if (/latest.*news/i.test(title)) {
+    title = title.replace(/latest\s+/i, '').replace(/\s+news/i, ' News')
+    return toTitleCase(title)
+  }
+
+  // Remove question words at the start
+  title = title.replace(/^(how|why|when|where|who)\s+(do|does|did|is|are|was|were|can|could|will|would|should)\s+/i, '')
+
+  // Limit length
   if (title.length > 50) {
     title = title.substring(0, 50)
     const lastSpace = title.lastIndexOf(' ')
@@ -85,18 +130,29 @@ function generateConversationTitle(message: string): string {
     }
   }
 
-  title = title
+  // Remove trailing punctuation
+  title = title.replace(/[.,;:!?]+$/, '').trim()
+
+  // If too short or empty, fallback
+  if (!title || title.length < 2) {
+    return 'New Chat'
+  }
+
+  // Title case
+  return toTitleCase(title)
+}
+
+function toTitleCase(str: string): string {
+  return str
     .split(' ')
     .map((word, index) => {
-      if (index === 0 || word.length > 3) {
-        return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
+      // Keep small words lowercase unless they're the first word
+      if (index > 0 && /^(a|an|the|in|on|at|to|for|of|and|or|but|is|are|was|were)$/i.test(word)) {
+        return word.toLowerCase()
       }
-      return word.toLowerCase()
+      return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
     })
     .join(' ')
-
-  title = title.replace(/[.,;:!?]+$/, '')
-  return title || 'New Chat'
 }
 
 export default function ChatPage() {
@@ -902,11 +958,9 @@ Rules:
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -10 }}
                   transition={{ duration: 0.3 }}
-                  className="flex flex-col items-center justify-center h-full min-h-[60vh] text-center space-y-8 px-4"
+                  className="flex flex-col items-center justify-center h-full min-h-[60vh] text-center space-y-6 px-4"
                 >
-                  <div className="h-24 w-24 rounded-3xl gradient-primary flex items-center justify-center shadow-2xl shadow-purple-500/30">
-                    <Sparkles className="h-12 w-12 text-white" />
-                  </div>
+                  <Logo size="lg" className="mb-2" />
                   <div className="space-y-3">
                     <h2 className="text-3xl md:text-4xl font-bold gradient-text">Ready to explore?</h2>
                     <p className="text-gray-400 text-base md:text-lg max-w-md mx-auto">

@@ -102,7 +102,7 @@ export function Sidebar({
             <div className="p-4 border-b border-white/10">
               <div className="flex items-center gap-3 mb-4">
                 <div className="flex-1">
-                  <Logo size="lg" showText />
+                  <Logo size="sm" showText />
                 </div>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>

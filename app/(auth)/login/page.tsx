@@ -68,7 +68,7 @@ export default function LoginPage() {
       >
         <div className="text-center mb-8">
           <div className="flex items-center justify-center mb-4">
-            <Logo size="xl" showText />
+            <Logo size="lg" showText />
           </div>
           <h1 className="text-3xl font-bold mb-2">Welcome Back</h1>
           <p className="text-gray-400">Sign in to continue your AI journey</p>
