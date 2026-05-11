@@ -21,6 +21,7 @@ import { Button } from '@/components/ui/button'
 import { Logo } from '@/components/brand/logo'
 import { ChatGPTIcon } from '@/components/icons/chatgpt-icon'
 import { AnthropicIcon } from '@/components/icons/anthropic-icon'
+import { WorkspacePreview } from './workspace-preview'
 
 export function LandingPage() {
   return (
@@ -456,6 +457,9 @@ export function LandingPage() {
             ))}
           </div>
         </motion.div>
+
+        {/* Workspace Preview */}
+        <WorkspacePreview />
 
         {/* Final CTA */}
         <motion.div
