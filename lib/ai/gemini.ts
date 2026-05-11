@@ -48,13 +48,18 @@ export async function streamGeminiResponse(
       // Add images if present (Gemini format)
       if (message.attachments && message.attachments.length > 0) {
         for (const attachment of message.attachments) {
-          if (attachment.type === 'image') {
+          if (attachment.type === 'image' && attachment.dataUrl) {
             try {
               // Extract base64 data from data URL
               const base64Match = attachment.dataUrl.match(/^data:([^;]+);base64,(.+)$/)
               if (base64Match) {
                 const mimeType = base64Match[1]
                 const base64Data = base64Match[2]
+
+                if (!base64Data) {
+                  console.warn('[Gemini] Empty base64 data in attachment')
+                  continue
+                }
 
                 parts.push({
                   inlineData: {
@@ -66,9 +71,11 @@ export async function streamGeminiResponse(
                 if (process.env.NODE_ENV !== 'production') {
                   console.log('[Gemini] Added image:', {
                     mimeType,
-                    hasData: !!base64Data,
+                    dataPreview: base64Data.substring(0, 50) + '...',
                   })
                 }
+              } else {
+                console.warn('[Gemini] Invalid data URL format:', attachment.dataUrl?.substring(0, 50))
               }
             } catch (error: any) {
               console.error('[Gemini] Failed to process image:', error.message)
@@ -80,6 +87,11 @@ export async function streamGeminiResponse(
       // Add text content
       if (message.content && message.content.trim()) {
         parts.push({ text: message.content })
+      }
+
+      // If we have images but no text, add a default prompt
+      if (parts.length > 0 && parts.some(p => p.inlineData) && !message.content) {
+        parts.push({ text: 'Please analyze this image.' })
       }
 
       // Ensure we always have at least one part
@@ -439,10 +451,15 @@ If it looks basic, improve it before returning the artifact.`
 
     // Handle quota/rate limit errors gracefully
     if (error.message?.includes('quota') || error.message?.includes('rate limit') || error.message?.includes('429')) {
-      throw new Error('Gemini free-tier quota is exhausted or unavailable. Try again later or switch to Claude.')
+      throw new Error('Gemini API quota exhausted. Try again later or switch to Claude.')
+    }
+
+    // Handle resource exhausted
+    if (error.message?.includes('RESOURCE_EXHAUSTED') || error.message?.includes('Resource has been exhausted')) {
+      throw new Error('Gemini API quota exhausted. Try again later or switch to Claude.')
     }
 
     // Generic error message
-    throw new Error('Gemini API request failed. Please try again or switch to Claude.')
+    throw new Error('Gemini API request failed. Try again or switch to Claude.')
   }
 }

@@ -135,6 +135,22 @@ export async function POST(request: NextRequest) {
 
     const userMessage = messages[messages.length - 1]
 
+    // Check if user sent images and model doesn't support them
+    if (userMessage.attachments && userMessage.attachments.length > 0) {
+      const selectedModel = AI_MODELS.find((m) => m.id === validatedModel)
+
+      // Chat GPT 5.5 (Claude Haiku disguised) doesn't actually support images via OpenAI API
+      // It's just Claude Haiku using Bedrock, which does support images
+      const modelSupportsImages = selectedModel?.provider === 'anthropic' || selectedModel?.provider === 'google'
+
+      if (!modelSupportsImages) {
+        return NextResponse.json(
+          { error: 'Image input is not supported for this model. Try Claude Opus 4.6 or Gemini.' },
+          { status: 400 }
+        )
+      }
+    }
+
     // Filter and validate conversation context
     const isLoadingMarker = (content: string) => {
       return content === '__ARTIFACT_LOADING__' || content === '__ASSISTANT_LOADING__'

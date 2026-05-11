@@ -10,6 +10,7 @@ import remarkMath from 'remark-math'
 import rehypeKatex from 'rehype-katex'
 import { AI_MODELS } from '@/types/models'
 import { AnthropicIcon } from '@/components/icons/anthropic-icon'
+import { ChatGPTIcon } from '@/components/icons/chatgpt-icon'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { toast } from '@/components/ui/use-toast'
@@ -64,18 +65,24 @@ export function MessageBubble({ role, content, model, onRegenerate, attachments,
     >
       <div
         className={cn(
-          'rounded-2xl p-3 md:p-4 lg:p-6 relative group',
+          'rounded-[22px] relative group',
           isUser
-            ? 'max-w-[90%] md:max-w-[85%] lg:max-w-[70%] gradient-primary text-white'
-            : 'w-full glass'
+            ? 'max-w-[88%] md:max-w-[70%] bg-gradient-to-br from-purple-600/90 to-blue-600/90 backdrop-blur-sm text-white shadow-lg'
+            : 'w-full glass p-3 md:p-4 lg:p-6'
         )}
       >
         {!isUser && modelData && (
           <div className="flex items-center gap-2 mb-2 md:mb-3 pb-2 md:pb-3 border-b border-white/10">
             {modelData.provider === 'anthropic' ? (
-              <div className="w-5 h-5 md:w-6 md:h-6 rounded-lg bg-gradient-to-br from-[#d97757]/20 to-[#d97757]/10 flex items-center justify-center">
-                <AnthropicIcon className="w-3 h-3 md:w-3.5 md:h-3.5 text-[#d97757]" />
-              </div>
+              modelData.id === 'claude-haiku-4.5' ? (
+                <div className="w-5 h-5 md:w-6 md:h-6 rounded-lg bg-gradient-to-br from-[#10a37f]/20 to-[#10a37f]/10 flex items-center justify-center">
+                  <ChatGPTIcon className="w-3 h-3 md:w-3.5 md:h-3.5 text-[#10a37f]" />
+                </div>
+              ) : (
+                <div className="w-5 h-5 md:w-6 md:h-6 rounded-lg bg-gradient-to-br from-[#d97757]/20 to-[#d97757]/10 flex items-center justify-center">
+                  <AnthropicIcon className="w-3 h-3 md:w-3.5 md:h-3.5 text-[#d97757]" />
+                </div>
+              )
             ) : modelData.provider === 'google' ? (
               <div className="w-5 h-5 md:w-6 md:h-6 rounded-lg bg-gradient-to-br from-blue-500/20 to-blue-500/10 flex items-center justify-center">
                 <GeminiIcon className="w-3 h-3 md:w-3.5 md:h-3.5 text-blue-400" />
@@ -88,13 +95,21 @@ export function MessageBubble({ role, content, model, onRegenerate, attachments,
         )}
 
         {attachments && attachments.length > 0 && (
-          <div className="flex flex-wrap gap-3 mb-3">
+          <div className={cn(
+            'flex flex-wrap gap-2 md:gap-3',
+            isUser ? 'mb-3 p-3 md:p-4' : 'mb-3'
+          )}>
             {attachments.map((attachment, index) => (
               <div key={index} className="relative group">
                 <img
                   src={attachment.dataUrl}
-                  alt={attachment.name}
-                  className="max-w-full md:max-w-lg max-h-96 rounded-lg border border-white/20 object-contain"
+                  alt={attachment.name || 'Uploaded image'}
+                  className={cn(
+                    'rounded-xl border object-contain',
+                    isUser
+                      ? 'max-w-full max-h-[220px] md:max-h-[280px] border-white/20'
+                      : 'max-w-full md:max-w-lg max-h-96 border-white/20'
+                  )}
                 />
                 {!isUser && (
                   <div className="absolute top-2 right-2 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -104,8 +119,8 @@ export function MessageBubble({ role, content, model, onRegenerate, attachments,
                       className="h-8 w-8 p-0 bg-black/50 hover:bg-black/70 backdrop-blur-sm"
                       onClick={() => {
                         const link = document.createElement('a')
-                        link.href = attachment.dataUrl
-                        link.download = attachment.name || 'generated-image.png'
+                        link.href = attachment.dataUrl || ''
+                        link.download = attachment.name || 'image.png'
                         document.body.appendChild(link)
                         link.click()
                         document.body.removeChild(link)
@@ -127,10 +142,10 @@ export function MessageBubble({ role, content, model, onRegenerate, attachments,
 
         <div className={cn(
           'message-content prose prose-invert max-w-none',
-          isUser ? 'prose-sm' : 'prose-sm md:prose-base'
+          isUser ? 'prose-sm p-3 md:p-4' : 'prose-sm md:prose-base'
         )}>
           {isUser ? (
-            safeContent ? <p className="mb-0 whitespace-pre-wrap break-words">{safeContent}</p> : null
+            safeContent ? <p className="mb-0 whitespace-pre-wrap break-words text-sm md:text-base leading-6">{safeContent}</p> : null
           ) : isArtifactLoading ? (
             <div className="flex items-center gap-3 py-2">
               <div className="relative">

@@ -80,7 +80,7 @@ export async function streamBedrockResponse(
       // Add images if present (Bedrock Converse format)
       if (message.attachments && message.attachments.length > 0) {
         for (const attachment of message.attachments) {
-          if (attachment.type === 'image') {
+          if (attachment.type === 'image' && attachment.dataUrl) {
             try {
               const { format, bytes } = dataUrlToBedrockImage(attachment.dataUrl, attachment.mimeType)
 
@@ -98,7 +98,7 @@ export async function streamBedrockResponse(
                 console.log('[Bedrock] Added image:', {
                   hasImage: true,
                   format,
-                  byteLength: bytes.length,
+                  bytesLength: bytes.substring(0, 50) + '...',
                 })
               }
             } catch (error: any) {
@@ -115,7 +115,7 @@ export async function streamBedrockResponse(
       }
 
       // If we have images but no text, add a default prompt
-      if (content.length > 0 && !message.content) {
+      if (content.length > 0 && content.some(c => c.image) && !message.content) {
         content.push({ text: 'Please analyze this image.' })
       }
 

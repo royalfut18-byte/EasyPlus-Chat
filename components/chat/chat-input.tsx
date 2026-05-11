@@ -149,9 +149,9 @@ export function ChatInput({ onSend, disabled, isLoading }: ChatInputProps) {
       onDrop={handleDrop}
     >
       {isDragging && (
-        <div className="absolute inset-0 bg-purple-500/10 backdrop-blur-sm z-10 flex items-center justify-center border-2 border-dashed border-purple-500/50 rounded-2xl m-3 md:m-4 hidden sm:flex">
+        <div className="absolute inset-0 bg-purple-500/10 backdrop-blur-md z-[60] flex items-center justify-center border-2 border-dashed border-purple-500/50 rounded-2xl m-3 md:m-4 pointer-events-none">
           <div className="text-center">
-            <ImageIcon className="h-12 w-12 text-purple-500 mx-auto mb-2" />
+            <ImageIcon className="h-12 w-12 text-purple-400 mx-auto mb-2" />
             <p className="text-white font-medium">Drop image here</p>
           </div>
         </div>
@@ -159,19 +159,22 @@ export function ChatInput({ onSend, disabled, isLoading }: ChatInputProps) {
       <div className="max-w-4xl mx-auto">
         <div className="glass-strong rounded-xl md:rounded-2xl p-2.5 md:p-3 shadow-md md:shadow-lg hover:shadow-purple-500/10 transition-shadow">
           {attachments.length > 0 && (
-            <div className="flex flex-wrap gap-2 mb-2 md:mb-3 pb-2 md:pb-3 border-b border-white/10">
+            <div className="flex gap-2 mb-2 md:mb-3 pb-2 md:pb-3 border-b border-white/10 overflow-x-auto">
               {attachments.map((attachment, index) => (
-                <div key={index} className="relative group">
-                  <img
-                    src={attachment.dataUrl}
-                    alt={attachment.name}
-                    className="h-16 w-16 md:h-20 md:w-20 object-cover rounded-lg border border-white/20"
-                  />
+                <div key={index} className="relative group shrink-0">
+                  <div className="h-20 w-20 md:h-24 md:w-24 rounded-xl border-2 border-white/20 bg-black/20 overflow-hidden">
+                    <img
+                      src={attachment.dataUrl}
+                      alt={attachment.name}
+                      className="h-full w-full object-cover"
+                    />
+                  </div>
                   <button
                     onClick={() => removeAttachment(index)}
-                    className="absolute -top-1.5 -right-1.5 h-5 w-5 md:h-6 md:w-6 bg-red-500 rounded-full flex items-center justify-center opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity"
+                    className="absolute -top-2 -right-2 h-6 w-6 bg-red-500 hover:bg-red-600 rounded-full flex items-center justify-center shadow-lg transition-all"
+                    title="Remove image"
                   >
-                    <X className="h-3 w-3 md:h-4 md:w-4 text-white" />
+                    <X className="h-3.5 w-3.5 text-white" />
                   </button>
                 </div>
               ))}
