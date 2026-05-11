@@ -37,7 +37,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { model, messages, conversationId, artifactMode } = await request.json()
+    const { model, messages, conversationId, artifactMode, webSearchEnabled } = await request.json()
 
     if (!model || !messages || !Array.isArray(messages)) {
       console.error('[Chat API] Invalid request params')
@@ -47,6 +47,11 @@ export async function POST(request: NextRequest) {
     // Log artifact mode (not the content)
     if (artifactMode) {
       console.log('[Chat API] Artifact mode enabled for this request')
+    }
+
+    // Log web search mode
+    if (webSearchEnabled) {
+      console.log('[Chat API] Web search enabled for this request')
     }
 
     const { data: profile, error: profileError } = await db
@@ -111,11 +116,12 @@ export async function POST(request: NextRequest) {
 
     const userMessage = messages[messages.length - 1]
 
-    // Check if web search is needed
+    // Check if web search should be used (manual toggle takes priority)
     const latestUserMessage = messages[messages.length - 1]
     let messagesToSend = messages as ChatMessage[]
 
-    if (needsWebSearch(latestUserMessage.content)) {
+    if (webSearchEnabled === true) {
+      console.log('[Chat API] Running web search (manual toggle enabled)')
       const webContext = await searchWeb(latestUserMessage.content)
 
       if (webContext) {
@@ -133,6 +139,8 @@ User's question: ${latestUserMessage.content}`,
 
         // Replace the last user message with the enriched version
         messagesToSend = [...messages.slice(0, -1), systemMessage] as ChatMessage[]
+      } else {
+        console.warn('[Chat API] Web search returned no results')
       }
     }
 

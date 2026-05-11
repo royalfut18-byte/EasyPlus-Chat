@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Sparkles, Box, PanelRightOpen } from 'lucide-react'
+import { Sparkles, Box, PanelRightOpen, Globe } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { ensureProfile } from '@/lib/supabase/ensure-profile'
 import { ModelSelector } from '@/components/chat/model-selector'
@@ -109,6 +109,7 @@ export default function ChatPage() {
   const [userProfile, setUserProfile] = useState<any>(null)
   const [isCreatingConversation, setIsCreatingConversation] = useState(false)
   const [artifactMode, setArtifactMode] = useState(false)
+  const [webSearchEnabled, setWebSearchEnabled] = useState(false)
   const [activeArtifact, setActiveArtifact] = useState<Artifact | null>(null)
   const [isArtifactOpen, setIsArtifactOpen] = useState(false)
   const [artifactMessageId, setArtifactMessageId] = useState<string | null>(null)
@@ -117,6 +118,7 @@ export default function ChatPage() {
   const isSendingRef = useRef(false)
   const lastUserPromptRef = useRef<string>('')
   const artifactModeAtSendRef = useRef(false)
+  const webSearchEnabledAtSendRef = useRef(false)
   const abortControllerRef = useRef<AbortController | null>(null)
   const selectedConversationIdRef = useRef<string | null>(null)
   const conversationRequestSeqRef = useRef(0)
@@ -394,12 +396,14 @@ export default function ChatPage() {
     const clientUserMessageId = crypto.randomUUID()
     const clientAssistantMessageId = crypto.randomUUID()
     const requestArtifactMode = artifactMode
+    const requestWebSearchEnabled = webSearchEnabled
 
     const sentAt = new Date()
     const userCreatedAt = sentAt.toISOString()
     const assistantCreatedAt = new Date(sentAt.getTime() + 1).toISOString()
 
     artifactModeAtSendRef.current = requestArtifactMode
+    webSearchEnabledAtSendRef.current = requestWebSearchEnabled
     lastUserPromptRef.current = trimmedContent
 
     const userMessage: Message = {
@@ -536,6 +540,7 @@ Rules:
           messages: messagesToSend,
           conversationId: conversation.id,
           artifactMode: requestArtifactMode,
+          webSearchEnabled: requestWebSearchEnabled,
         }),
       })
 
@@ -710,6 +715,13 @@ Rules:
     setArtifactMode(!artifactMode)
   }
 
+  const handleToggleWebSearch = () => {
+    if (isLoading || isCreatingConversation || isSendingRef.current) {
+      return
+    }
+    setWebSearchEnabled(!webSearchEnabled)
+  }
+
   const handleOpenArtifact = (artifact?: Artifact) => {
     // If artifact is provided (from message bubble), use it
     if (artifact) {
@@ -791,6 +803,22 @@ Rules:
                 <span className="hidden sm:inline">Open Artifact</span>
               </motion.button>
             )}
+
+            <button
+              onClick={handleToggleWebSearch}
+              disabled={isRequestInProgress}
+              title={isRequestInProgress ? 'Wait for the current response to finish' : 'Toggle Web Search'}
+              className={cn(
+                'px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2',
+                webSearchEnabled
+                  ? 'bg-blue-500/20 text-blue-400 border border-blue-500/50 glow-border'
+                  : 'glass hover:bg-white/10 text-gray-400',
+                isRequestInProgress && 'opacity-50 cursor-not-allowed'
+              )}
+            >
+              <Globe className="h-4 w-4" />
+              Web Search {webSearchEnabled && '✓'}
+            </button>
 
             <button
               onClick={handleToggleArtifactMode}
