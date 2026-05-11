@@ -56,7 +56,8 @@ export async function POST(request: NextRequest) {
       },
     })
 
-    // Create the auth user
+    // Step 1: Create the auth user
+    console.log('[Admin] Creating auth user for:', email)
     const { data: newUser, error: createError } = await adminClient.auth.admin.createUser({
       email,
       password,
@@ -67,44 +68,80 @@ export async function POST(request: NextRequest) {
     })
 
     if (createError || !newUser.user) {
-      console.error('Failed to create user:', createError)
+      console.error('[Admin] Auth user creation failed:', {
+        error: createError?.message,
+        code: createError?.code,
+        status: createError?.status,
+      })
       return NextResponse.json(
-        { error: createError?.message || 'Failed to create user' },
+        { error: createError?.message || 'Failed to create auth user' },
         { status: 400 }
       )
     }
 
-    // Create profile
-    const { error: profileError } = await adminClient.from('profiles').insert({
+    console.log('[Admin] Auth user created successfully:', newUser.user.id)
+
+    // Step 2: Create/upsert profile (use upsert to handle conflicts and bypass RLS with service role)
+    console.log('[Admin] Creating profile for user:', newUser.user.id)
+    const profileData = {
       user_id: newUser.user.id,
       display_name: displayName || email.split('@')[0],
       credits: credits || 1000,
       unlimited_credits: unlimitedCredits || false,
       subscription_tier: 'free',
       role: role || 'user',
-    })
+    }
+
+    const { error: profileError } = await adminClient
+      .from('profiles')
+      .upsert(profileData, {
+        onConflict: 'user_id',
+        ignoreDuplicates: false,
+      })
 
     if (profileError) {
-      console.error('Failed to create profile:', profileError)
+      console.error('[Admin] Profile upsert failed:', {
+        error: profileError.message,
+        code: profileError.code,
+        details: profileError.details,
+        hint: profileError.hint,
+      })
       // Try to clean up the auth user if profile creation fails
+      console.log('[Admin] Cleaning up auth user after profile failure')
       await adminClient.auth.admin.deleteUser(newUser.user.id)
       return NextResponse.json(
-        { error: 'Failed to create user profile' },
+        { error: `Profile creation failed: ${profileError.message}` },
         { status: 500 }
       )
     }
 
-    // Create initial credit transaction if credits were granted
+    console.log('[Admin] Profile created successfully')
+
+    // Step 3: Create initial credit transaction (non-blocking, optional)
     if (credits && credits > 0) {
-      await adminClient.from('credit_transactions').insert({
-        user_id: newUser.user.id,
-        amount: credits,
-        type: 'grant',
-        description: 'Initial credits granted by admin',
-      })
+      console.log('[Admin] Creating credit transaction for:', newUser.user.id)
+      const { error: transactionError } = await adminClient
+        .from('credit_transactions')
+        .insert({
+          user_id: newUser.user.id,
+          amount: credits,
+          type: 'grant',
+          description: 'Initial credits granted by admin',
+        })
+
+      if (transactionError) {
+        // Log but don't fail the user creation
+        console.warn('[Admin] Credit transaction failed (non-critical):', {
+          error: transactionError.message,
+          code: transactionError.code,
+        })
+      } else {
+        console.log('[Admin] Credit transaction created successfully')
+      }
     }
 
     // Return safe user data
+    console.log('[Admin] User creation completed successfully:', newUser.user.id)
     return NextResponse.json({
       id: newUser.user.id,
       email: newUser.user.email,
@@ -115,7 +152,11 @@ export async function POST(request: NextRequest) {
       created_at: newUser.user.created_at,
     })
   } catch (error: any) {
-    console.error('Create user error:', error)
+    console.error('[Admin] Create user unexpected error:', {
+      message: error.message,
+      stack: error.stack,
+      name: error.name,
+    })
     return NextResponse.json(
       { error: error.message || 'Internal server error' },
       { status: 500 }

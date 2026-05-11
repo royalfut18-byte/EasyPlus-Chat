@@ -40,6 +40,10 @@ export function CreateUserDialog({ onUserCreated }: CreateUserDialogProps) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+
+    // Prevent double submission
+    if (isLoading) return
+
     setIsLoading(true)
 
     try {
@@ -49,24 +53,26 @@ export function CreateUserDialog({ onUserCreated }: CreateUserDialogProps) {
         body: JSON.stringify({
           email: formData.email,
           password: formData.password,
-          displayName: formData.displayName,
+          displayName: formData.displayName || formData.email.split('@')[0],
           role: formData.role,
           credits: parseInt(formData.credits) || 1000,
           unlimitedCredits: formData.unlimitedCredits,
         }),
       })
 
+      const result = await response.json()
+
       if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || 'Failed to create user')
+        // Show detailed error from API
+        throw new Error(result.error || `Server error (${response.status})`)
       }
 
       toast({
         title: 'Success',
-        description: 'User account created successfully',
+        description: `User account created: ${result.email}`,
       })
 
-      // Reset form
+      // Reset form only on success
       setFormData({
         email: '',
         password: '',
@@ -77,11 +83,14 @@ export function CreateUserDialog({ onUserCreated }: CreateUserDialogProps) {
       })
 
       setOpen(false)
+
+      // Refresh user list
       onUserCreated()
     } catch (error: any) {
+      console.error('[CreateUser] Failed:', error)
       toast({
-        title: 'Error',
-        description: error.message,
+        title: 'Failed to create user',
+        description: error.message || 'Unknown error occurred',
         variant: 'destructive',
       })
     } finally {
