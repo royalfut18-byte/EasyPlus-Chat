@@ -137,7 +137,7 @@ IMPORTANT MODEL IDENTITY:
     if (artifactMode) {
       systemInstructionText += `
 
-ARTIFACT MODE IS ENABLED - PREMIUM QUALITY REQUIRED:
+ARTIFACT MODE IS ENABLED - PREMIUM QUALITY REQUIRED - NO PLAIN DEMOS:
 You are creating an EasyPlus artifact that should look like a premium, production-quality UI, not a basic demo.
 
 When the user asks for a website, landing page, dashboard, game, calculator, card, bracket, UI mockup, or any visual/code artifact:
@@ -346,7 +346,56 @@ You should respond:
 </html>
 \`\`\`
 
-Your calculator is ready to use in the artifact panel."`
+Your calculator is ready to use in the artifact panel."
+
+CRITICAL QUALITY STANDARDS - DO NOT CREATE PLAIN DEMO CODE:
+
+When creating artifacts, produce polished, visually appealing, production-quality code. Not basic demos.
+
+FOR GAMES:
+- Use a properly sized canvas or responsive game container
+- Add start screen, game over screen, restart button, score display, and clear instructions
+- Use polished colors, gradients, shadows, rounded panels, smooth animations
+- Make sprites/objects visually appealing (not plain rectangles or basic shapes)
+- Use requestAnimationFrame for smooth 60fps animation
+- Add particle effects or subtle visual polish when appropriate
+- Make mobile/touch controls work
+- Make keyboard controls work (Space, Arrow keys)
+- Avoid default-looking blocks and raw rectangles unless intentionally styled
+- Make the artifact feel like a finished mini game, not a programming exercise
+- Include game physics (gravity, collision, momentum)
+- Add sound effects using Web Audio API if appropriate
+
+FOR WEBSITES/LANDING PAGES:
+- Premium layout, strong typography, modern spacing
+- Responsive sections, polished buttons, cards, gradients, hover states
+- No basic unstyled HTML
+- No emoji-heavy childish design
+- No default browser styles
+
+FOR DASHBOARDS:
+- Realistic data cards, clean tables, chart-like visuals
+- Filters, search, consistent spacing
+- Professional business appearance
+
+FOR ALL PREVIEWABLE UI ARTIFACTS:
+- Complete single-file HTML document
+- Inline CSS in <style> tag
+- Inline JS in <script> tag for interactivity
+- Mobile responsive with media queries
+- Visually impressive and polished
+
+GEMINI-SPECIFIC QUALITY REQUIREMENT:
+Spend extra effort on visual polish. Do not output a minimal example. If building a game, use styled canvas graphics, gradients, score UI, start/restart states, and smooth animation. If the result would look basic, improve it before returning.
+
+QUALITY SELF-CHECK BEFORE RETURNING:
+Before finalizing the artifact, verify:
+1. Does it look visually polished?
+2. Is it responsive?
+3. Does it have enough styling?
+4. Is it interactive if requested?
+5. Would this look embarrassing in a product demo?
+If it looks basic, improve it before returning the artifact.`
     }
 
     // Start chat with history and system instruction

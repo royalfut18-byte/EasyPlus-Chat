@@ -108,6 +108,37 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
   const isReact = artifact?.language === 'tsx' || artifact?.language === 'jsx'
   const currentTab = canPreview || isReact ? activeTab : 'code'
 
+  // Get display label for artifact language
+  const getLanguageLabel = (artifact: Artifact | null): string => {
+    if (!artifact) return 'No artifact'
+
+    const lang = artifact.language
+    const code = artifact.code || ''
+
+    // HTML artifacts with inline CSS/JS
+    if (lang === 'html') {
+      const hasCSS = code.includes('<style')
+      const hasJS = code.includes('<script')
+
+      if (hasCSS && hasJS) return 'HTML + CSS + JS'
+      if (hasCSS) return 'HTML + CSS'
+      if (hasJS) return 'HTML + JS'
+      return 'HTML'
+    }
+
+    // React artifacts
+    if (lang === 'tsx') return 'React / TSX'
+    if (lang === 'jsx') return 'React / JSX'
+
+    // Other languages
+    if (lang === 'javascript') return 'JavaScript'
+    if (lang === 'python') return 'Python'
+    if (lang === 'css') return 'CSS'
+    if (lang === 'markdown') return 'Markdown'
+
+    return lang.toUpperCase()
+  }
+
   const renderPanelContent = () => (
     <div className="flex flex-col h-full" style={{ paddingLeft: isMobile ? 0 : '12px' }}>
       {/* Dev Debug Info */}
@@ -123,8 +154,8 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
           <h3 className="text-lg font-semibold text-white truncate">
             {artifact?.title || 'No Artifact'}
           </h3>
-          <p className="text-xs text-gray-400 capitalize mt-0.5">
-            {artifact?.language ? `${artifact.language} • Artifact` : 'No artifact selected'}
+          <p className="text-xs text-gray-400 mt-0.5">
+            {artifact ? `${getLanguageLabel(artifact)} • Artifact` : 'No artifact selected'}
           </p>
         </div>
         <Button
