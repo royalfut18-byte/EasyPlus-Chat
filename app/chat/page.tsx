@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Sparkles, Box, PanelRightOpen, Globe, BrainCircuit, Code2, MapPin, Bug, Image as ImageIcon } from 'lucide-react'
+import { Sparkles, Box, PanelRightOpen, Globe, BrainCircuit, Code2, MapPin, Bug } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { ensureProfile } from '@/lib/supabase/ensure-profile'
 import { ModelSelector } from '@/components/chat/model-selector'
@@ -110,8 +110,6 @@ export default function ChatPage() {
   const [isCreatingConversation, setIsCreatingConversation] = useState(false)
   const [artifactMode, setArtifactMode] = useState(false)
   const [webSearchEnabled, setWebSearchEnabled] = useState(false)
-  const [imageMode, setImageMode] = useState(false)
-  const [imageAspectRatio, setImageAspectRatio] = useState<'1:1' | '16:9' | '9:16' | '4:3'>('1:1')
   const [activeArtifact, setActiveArtifact] = useState<Artifact | null>(null)
   const [isArtifactOpen, setIsArtifactOpen] = useState(false)
   const [artifactMessageId, setArtifactMessageId] = useState<string | null>(null)
@@ -377,187 +375,6 @@ export default function ChatPage() {
     }
   }
 
-  const handleImageGeneration = async (
-    prompt: string,
-    userMessageId: string,
-    assistantMessageId: string,
-    userCreatedAt: string,
-    assistantCreatedAt: string
-  ) => {
-    let conversation = currentConversation
-
-    // Create conversation if needed
-    if (!conversation) {
-      setIsCreatingConversation(true)
-      try {
-        const title = `Image: ${prompt.substring(0, 30)}...`
-
-        const response = await fetch('/api/conversations', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            title,
-            model: 'image-generation',
-          }),
-        })
-
-        if (!response.ok) {
-          throw new Error('Failed to create conversation')
-        }
-
-        conversation = await response.json()
-        setCurrentConversation(conversation)
-        setConversations((prev) => [conversation!, ...prev])
-        selectedConversationIdRef.current = conversation!.id
-        setIsCreatingConversation(false)
-      } catch (error: any) {
-        console.error('[Image Gen] Failed to create conversation:', error.message)
-        toast({
-          title: 'Error',
-          description: 'Failed to create conversation',
-          variant: 'destructive',
-        })
-        setIsCreatingConversation(false)
-        setIsLoading(false)
-        isSendingRef.current = false
-        return
-      }
-    }
-
-    if (!conversation) {
-      setIsLoading(false)
-      isSendingRef.current = false
-      return
-    }
-
-    const sendConversationId = conversation.id
-
-    // Add user message
-    const userMessage: Message = {
-      id: userMessageId,
-      conversation_id: sendConversationId,
-      role: 'user',
-      content: prompt,
-      model: 'image-generation',
-      created_at: userCreatedAt,
-    }
-
-    setMessages((prev) => processMessages([...prev, userMessage], sendConversationId))
-
-    // Add loading placeholder
-    const assistantPlaceholder: Message = {
-      id: assistantMessageId,
-      conversation_id: sendConversationId,
-      role: 'assistant',
-      content: '🎨 Generating image...',
-      model: 'image-generation',
-      created_at: assistantCreatedAt,
-    }
-
-    setMessages((prev) => processMessages([...prev, assistantPlaceholder], sendConversationId))
-    setIsLoading(true)
-
-    try {
-      // Get recent messages for context
-      const recentMessages = messages
-        .filter(m => m.conversation_id === sendConversationId)
-        .filter(m => m.role === 'user' || m.role === 'assistant')
-        .slice(-10)
-        .map(m => ({ role: m.role, content: m.content }))
-
-      const response = await fetch('/api/image/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          prompt,
-          model: 'nano-banana',
-          aspectRatio: imageAspectRatio,
-          recentMessages,
-          conversationId: sendConversationId,
-        }),
-      })
-
-      if (response.status === 402) {
-        const errorData = await response.json().catch(() => ({}))
-        toast({
-          title: 'Insufficient credits',
-          description: errorData.error || 'Please top up your credits to continue',
-          variant: 'destructive',
-        })
-        setMessages((prev) =>
-          processMessages(
-            prev.map((m) =>
-              m.id === assistantMessageId
-                ? { ...m, content: 'Error: Insufficient credits. Please top up to continue.' }
-                : m
-            ),
-            sendConversationId
-          )
-        )
-        setIsLoading(false)
-        isSendingRef.current = false
-        return
-      }
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}))
-        throw new Error(errorData.error || 'Failed to generate image')
-      }
-
-      const data = await response.json()
-
-      if (!data.success || !data.image) {
-        throw new Error('No image returned')
-      }
-
-      // Update assistant message with generated image
-      const imageAttachment: ChatAttachment = {
-        type: 'image',
-        name: `generated-${Date.now()}.png`,
-        mimeType: data.image.mimeType,
-        dataUrl: data.image.dataUrl,
-      }
-
-      const assistantMessage: Message = {
-        id: assistantMessageId,
-        conversation_id: sendConversationId,
-        role: 'assistant',
-        content: `Generated image for: "${prompt}"`,
-        model: 'image-generation',
-        created_at: assistantCreatedAt,
-        attachments: [imageAttachment],
-      }
-
-      setMessages((prev) =>
-        processMessages(
-          prev.map((m) => (m.id === assistantMessageId ? assistantMessage : m)),
-          sendConversationId
-        )
-      )
-
-      loadUserProfile().catch((e) => console.error('[Image Gen] Profile load failed:', e))
-    } catch (error: any) {
-      console.error('[Image Gen] Error:', error.message)
-      setMessages((prev) =>
-        processMessages(
-          prev.map((m) =>
-            m.id === assistantMessageId
-              ? { ...m, content: `Sorry, image generation failed: ${error.message}` }
-              : m
-          ),
-          sendConversationId
-        )
-      )
-      toast({
-        title: 'Error',
-        description: error.message || 'Failed to generate image',
-        variant: 'destructive',
-      })
-    } finally {
-      setIsLoading(false)
-      isSendingRef.current = false
-    }
-  }
 
   const handleSendMessage = async (content: string, attachments?: ChatAttachment[]) => {
     // 1. Guard: Block duplicate sends at the very top
@@ -581,16 +398,10 @@ export default function ChatPage() {
     const clientAssistantMessageId = crypto.randomUUID()
     const requestArtifactMode = artifactMode
     const requestWebSearchEnabled = webSearchEnabled
-    const requestImageMode = imageMode
 
     const sentAt = new Date()
     const userCreatedAt = sentAt.toISOString()
     const assistantCreatedAt = new Date(sentAt.getTime() + 1).toISOString()
-
-    // Handle image generation mode separately
-    if (requestImageMode) {
-      return handleImageGeneration(trimmedContent, clientUserMessageId, clientAssistantMessageId, userCreatedAt, assistantCreatedAt)
-    }
 
     // Determine which model to use: locked conversation model OR selected model
     const modelToUse = currentConversation?.model_used || selectedModel
@@ -947,22 +758,6 @@ Rules:
     }
     const newArtifactMode = !artifactMode
     setArtifactMode(newArtifactMode)
-    // Turn off Image mode if Artifact mode is turned on
-    if (newArtifactMode) {
-      setImageMode(false)
-    }
-  }
-
-  const handleToggleImageMode = () => {
-    if (isLoading || isCreatingConversation || isSendingRef.current) {
-      return
-    }
-    const newImageMode = !imageMode
-    setImageMode(newImageMode)
-    // Turn off Artifact mode if Image mode is turned on
-    if (newImageMode) {
-      setArtifactMode(false)
-    }
   }
 
   const handleToggleWebSearch = () => {
@@ -1075,23 +870,6 @@ Rules:
                 <Globe className="h-4 w-4" />
                 <span className="hidden sm:inline">Search</span>
                 {webSearchEnabled && <span className="hidden md:inline">✓</span>}
-              </button>
-
-              <button
-                onClick={handleToggleImageMode}
-                disabled={isRequestInProgress}
-                title={isRequestInProgress ? 'Wait for the current response to finish' : 'Toggle Image Generation'}
-                className={cn(
-                  'px-2 md:px-3 py-2 h-10 rounded-lg text-xs md:text-sm font-medium transition-all flex items-center gap-1.5',
-                  imageMode
-                    ? 'bg-green-500/20 text-green-400 border border-green-500/50 glow-border'
-                    : 'glass hover:bg-white/10 text-gray-400',
-                  isRequestInProgress && 'opacity-50 cursor-not-allowed'
-                )}
-              >
-                <ImageIcon className="h-4 w-4" />
-                <span className="hidden sm:inline">Image</span>
-                {imageMode && <span className="hidden md:inline">✓</span>}
               </button>
 
               <button
