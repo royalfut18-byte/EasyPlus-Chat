@@ -11,22 +11,22 @@ const sizeConfig = {
   sm: {
     container: 'h-11 w-11',
     imageSize: 64,
-    scale: 'scale-[1.55]',
+    scale: 'scale-[1.2]',
   },
   md: {
     container: 'h-12 w-12',
     imageSize: 72,
-    scale: 'scale-[1.55]',
+    scale: 'scale-[1.25]',
   },
   lg: {
     container: 'h-16 w-16',
     imageSize: 96,
-    scale: 'scale-[1.55]',
+    scale: 'scale-[1.25]',
   },
   xl: {
     container: 'h-20 w-20',
     imageSize: 120,
-    scale: 'scale-[1.55]',
+    scale: 'scale-[1.25]',
   },
 }
 
