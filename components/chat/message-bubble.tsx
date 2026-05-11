@@ -35,8 +35,14 @@ export function MessageBubble({ role, content, model, onRegenerate, attachments,
   const isUser = role === 'user'
   const modelData = model ? AI_MODELS.find((m) => m.id === model) : null
   const safeContent = content || ''
+
+  // Check for loading markers
   const isArtifactLoading = !isUser && safeContent === ARTIFACT_LOADING_MARKER
   const isAssistantLoading = !isUser && safeContent === ASSISTANT_LOADING_MARKER
+
+  // Check if this is a stuck/old loading marker (shouldn't persist in database)
+  const isStuckLoadingMarker = !isUser && (safeContent === ARTIFACT_LOADING_MARKER || safeContent === ASSISTANT_LOADING_MARKER)
+
   const hasArtifactCard = !isUser && (hasArtifact || (artifact && artifact.title && artifact.code))
 
   const copyToClipboard = () => {

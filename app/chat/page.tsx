@@ -630,7 +630,7 @@ Rules:
         return
       }
 
-      // 10. Parse artifact if enabled
+      // 10. Parse artifact if enabled and update final message
       if (requestArtifactMode) {
         const { artifact, cleanContent } = parseArtifactFromResponse(
           assistantContent,
@@ -648,7 +648,7 @@ Rules:
             finalContent = `I created an artifact for you: **${artifact.title}**.`
           }
 
-          // Only update if still on this conversation
+          // Update with artifact - only if still on this conversation
           if (selectedConversationIdRef.current === sendConversationId) {
             setMessages((prev) =>
               processMessages(
@@ -669,9 +669,39 @@ Rules:
           // Save artifact to localStorage
           saveArtifact(artifact, sendConversationId)
         } else {
+          // No artifact found - update with normal response
           if (process.env.NODE_ENV !== 'production') {
             console.log('[Chat] No artifact detected, showing normal response')
           }
+
+          // IMPORTANT: Replace loading marker with actual content
+          if (selectedConversationIdRef.current === sendConversationId) {
+            setMessages((prev) =>
+              processMessages(
+                prev.map((m) =>
+                  m.id === clientAssistantMessageId
+                    ? { ...m, content: assistantContent || 'I could not create an artifact from this response.' }
+                    : m
+                ),
+                sendConversationId
+              )
+            )
+          }
+        }
+      } else {
+        // Normal mode (not artifact mode) - ensure content is updated
+        // This handles case where artifact mode was toggled off
+        if (selectedConversationIdRef.current === sendConversationId) {
+          setMessages((prev) =>
+            processMessages(
+              prev.map((m) =>
+                m.id === clientAssistantMessageId
+                  ? { ...m, content: assistantContent || 'I received an empty response.' }
+                  : m
+              ),
+              sendConversationId
+            )
+          )
         }
       }
 
