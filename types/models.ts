@@ -19,6 +19,14 @@ export const AI_MODELS: AIModel[] = [
     color: '#d97757', // Anthropic warm neutral
   },
   {
+    id: 'claude-haiku-4.5',
+    name: 'Chat GPT 5.5',
+    provider: 'anthropic',
+    bedrockModelId: 'au.anthropic.claude-haiku-4-5-20251001-v1:0',
+    costPerMessage: 15,
+    color: '#10b981', // Green for fast/cheaper
+  },
+  {
     id: 'gemini-2.5-flash',
     name: 'Gemini 3.1 Pro',
     provider: 'google',
