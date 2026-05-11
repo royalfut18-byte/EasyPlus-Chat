@@ -1,7 +1,7 @@
 'use client'
 
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, Copy, Download, Code, Eye, GripVertical } from 'lucide-react'
+import { X, Copy, Download, Code, Eye, GripVertical, Package, AlertTriangle, Blocks, EyeOff } from 'lucide-react'
 import { useState, useEffect, useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { Artifact } from '@/types/models'
@@ -169,7 +169,9 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
         {!artifact ? (
           <div className="flex items-center justify-center h-full p-8 text-center">
             <div className="max-w-md space-y-4">
-              <div className="text-4xl">📦</div>
+              <div className="flex h-16 w-16 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-gray-400 mx-auto">
+                <Package className="h-8 w-8" />
+              </div>
               <h4 className="text-lg font-semibold text-white">No Artifact Selected</h4>
               <p className="text-sm text-gray-400">
                 Create or select an artifact to view it here.
@@ -179,7 +181,9 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
         ) : !artifact.code ? (
           <div className="flex items-center justify-center h-full p-8 text-center">
             <div className="max-w-md space-y-4">
-              <div className="text-4xl">⚠️</div>
+              <div className="flex h-16 w-16 items-center justify-center rounded-2xl border border-orange-500/30 bg-orange-500/10 text-orange-400 mx-auto">
+                <AlertTriangle className="h-8 w-8" />
+              </div>
               <h4 className="text-lg font-semibold text-white">Empty Artifact</h4>
               <p className="text-sm text-gray-400">
                 This artifact has no code to display.
@@ -199,7 +203,9 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
           ) : isReact ? (
             <div className="flex items-center justify-center h-full p-8 text-center">
               <div className="max-w-md space-y-4">
-                <div className="text-4xl">⚛️</div>
+                <div className="flex h-16 w-16 items-center justify-center rounded-2xl border border-cyan-500/30 bg-cyan-500/10 text-cyan-400 mx-auto">
+                  <Blocks className="h-8 w-8" />
+                </div>
                 <h4 className="text-lg font-semibold text-white">React Component</h4>
                 <p className="text-sm text-gray-400">
                   Live preview is not available for React components yet. Use the Code tab to view and copy the component code.
@@ -209,7 +215,9 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
           ) : (
             <div className="flex items-center justify-center h-full p-8 text-center">
               <div className="max-w-md space-y-4">
-                <div className="text-4xl">👁️</div>
+                <div className="flex h-16 w-16 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-gray-400 mx-auto">
+                  <EyeOff className="h-8 w-8" />
+                </div>
                 <h4 className="text-lg font-semibold text-white">Preview Not Available</h4>
                 <p className="text-sm text-gray-400">
                   Preview is only available for HTML artifacts. Switch to the Code tab to view the {artifact.language} code.

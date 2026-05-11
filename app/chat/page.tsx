@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Sparkles, Box, PanelRightOpen, Globe } from 'lucide-react'
+import { Sparkles, Box, PanelRightOpen, Globe, BrainCircuit, Code2, MapPin, Bug } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { ensureProfile } from '@/lib/supabase/ensure-profile'
 import { ModelSelector } from '@/components/chat/model-selector'
@@ -895,10 +895,10 @@ Rules:
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3 w-full max-w-2xl">
                     {[
-                      { text: 'Explain quantum computing', icon: '🔬' },
-                      { text: 'Write a Python function', icon: '💻' },
-                      { text: 'Plan a trip to Japan', icon: '✈️' },
-                      { text: 'Debug this code', icon: '🐛' },
+                      { text: 'Explain quantum computing', Icon: BrainCircuit, color: 'text-purple-400' },
+                      { text: 'Write a Python function', Icon: Code2, color: 'text-blue-400' },
+                      { text: 'Plan a trip to Japan', Icon: MapPin, color: 'text-cyan-400' },
+                      { text: 'Debug this code', Icon: Bug, color: 'text-orange-400' },
                     ].map((prompt, i) => (
                       <motion.button
                         key={i}
@@ -908,7 +908,9 @@ Rules:
                         whileHover={{ scale: 1.02, y: -2 }}
                         whileTap={{ scale: 0.98 }}
                       >
-                        <span className="text-2xl mb-2 block">{prompt.icon}</span>
+                        <div className={`flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/5 mb-3 ${prompt.color} group-hover:bg-white/10 transition-colors`}>
+                          <prompt.Icon className="h-5 w-5" />
+                        </div>
                         <p className="text-sm md:text-base text-gray-300 group-hover:text-white transition-colors">
                           {prompt.text}
                         </p>
