@@ -801,7 +801,7 @@ Rules:
   const displayedMessages = processMessages(messages, activeConversationId)
 
   return (
-    <div className="h-screen bg-[#0A0A0F] flex overflow-hidden">
+    <div className="h-[100dvh] md:h-screen bg-[#0A0A0F] flex overflow-hidden">
       <Sidebar
         conversations={conversations}
         currentConversationId={currentConversation?.id}
@@ -814,61 +814,65 @@ Rules:
       {/* Main content + artifact panel flex container */}
       <div className="flex min-w-0 flex-1 overflow-hidden ml-0 md:ml-80">
         {/* Chat section */}
-        <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        <div className="flex items-center justify-between flex-wrap gap-2 border-b border-white/10 bg-[#0A0A0F]/90 backdrop-blur-xl">
-          <div className="flex-1 min-w-0">
-            <ModelSelector selectedModel={selectedModel} onSelectModel={setSelectedModel} />
-          </div>
-          <div className="px-4 py-2 flex items-center gap-2">
-            {showReopenButton && (
-              <motion.button
-                initial={{ opacity: 0, scale: 0.9 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.9 }}
-                onClick={() => handleOpenArtifact()}
-                className="px-3 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 glass hover:bg-white/10 text-gray-300 hover:text-white border border-white/20"
-                title="Reopen latest artifact"
+        <main className="flex min-w-0 flex-1 flex-col overflow-hidden h-full">
+        <div className="border-b border-white/10 bg-[#0A0A0F]/90 backdrop-blur-sm md:backdrop-blur-xl">
+          <div className="flex items-center gap-2 overflow-x-auto px-3 py-3 md:px-4">
+            <div className="flex-1 min-w-0">
+              <ModelSelector selectedModel={selectedModel} onSelectModel={setSelectedModel} />
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              {showReopenButton && (
+                <motion.button
+                  initial={{ opacity: 0, scale: 0.9 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.9 }}
+                  onClick={() => handleOpenArtifact()}
+                  className="px-2 md:px-3 py-2 h-10 rounded-lg text-xs md:text-sm font-medium transition-all flex items-center gap-1.5 glass hover:bg-white/10 text-gray-300 hover:text-white border border-white/20"
+                  title="Reopen latest artifact"
+                >
+                  <PanelRightOpen className="h-4 w-4" />
+                  <span className="hidden sm:inline">Open</span>
+                </motion.button>
+              )}
+
+              <button
+                onClick={handleToggleWebSearch}
+                disabled={isRequestInProgress}
+                title={isRequestInProgress ? 'Wait for the current response to finish' : 'Toggle Web Search'}
+                className={cn(
+                  'px-2 md:px-3 py-2 h-10 rounded-lg text-xs md:text-sm font-medium transition-all flex items-center gap-1.5',
+                  webSearchEnabled
+                    ? 'bg-blue-500/20 text-blue-400 border border-blue-500/50 glow-border'
+                    : 'glass hover:bg-white/10 text-gray-400',
+                  isRequestInProgress && 'opacity-50 cursor-not-allowed'
+                )}
               >
-                <PanelRightOpen className="h-4 w-4" />
-                <span className="hidden sm:inline">Open Artifact</span>
-              </motion.button>
-            )}
+                <Globe className="h-4 w-4" />
+                <span className="hidden sm:inline">Search</span>
+                {webSearchEnabled && <span className="hidden md:inline">✓</span>}
+              </button>
 
-            <button
-              onClick={handleToggleWebSearch}
-              disabled={isRequestInProgress}
-              title={isRequestInProgress ? 'Wait for the current response to finish' : 'Toggle Web Search'}
-              className={cn(
-                'px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2',
-                webSearchEnabled
-                  ? 'bg-blue-500/20 text-blue-400 border border-blue-500/50 glow-border'
-                  : 'glass hover:bg-white/10 text-gray-400',
-                isRequestInProgress && 'opacity-50 cursor-not-allowed'
-              )}
-            >
-              <Globe className="h-4 w-4" />
-              Web Search {webSearchEnabled && '✓'}
-            </button>
-
-            <button
-              onClick={handleToggleArtifactMode}
-              disabled={isRequestInProgress}
-              title={isRequestInProgress ? 'Wait for the current response to finish' : 'Toggle Artifact Mode'}
-              className={cn(
-                'px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2',
-                artifactMode
-                  ? 'bg-purple-500/20 text-purple-400 border border-purple-500/50 glow-border'
-                  : 'glass hover:bg-white/10 text-gray-400',
-                isRequestInProgress && 'opacity-50 cursor-not-allowed'
-              )}
-            >
-              <Box className="h-4 w-4" />
-              Artifacts {artifactMode && '✓'}
-            </button>
+              <button
+                onClick={handleToggleArtifactMode}
+                disabled={isRequestInProgress}
+                title={isRequestInProgress ? 'Wait for the current response to finish' : 'Toggle Artifact Mode'}
+                className={cn(
+                  'px-2 md:px-3 py-2 h-10 rounded-lg text-xs md:text-sm font-medium transition-all flex items-center gap-1.5',
+                  artifactMode
+                    ? 'bg-purple-500/20 text-purple-400 border border-purple-500/50 glow-border'
+                    : 'glass hover:bg-white/10 text-gray-400',
+                  isRequestInProgress && 'opacity-50 cursor-not-allowed'
+                )}
+              >
+                <Box className="h-4 w-4" />
+                <span className="hidden sm:inline">Artifacts</span>
+                {artifactMode && <span className="hidden md:inline">✓</span>}
+              </button>
+            </div>
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-4 md:px-6 py-6 md:py-8 scrollbar-thin">
+        <div className="flex-1 overflow-y-auto px-3 md:px-4 lg:px-6 py-4 md:py-6 lg:py-8 scrollbar-thin">
           <div className="max-w-4xl mx-auto">
             <AnimatePresence mode="popLayout">
               {displayedMessages.length === 0 && !isLoadingConversation ? (

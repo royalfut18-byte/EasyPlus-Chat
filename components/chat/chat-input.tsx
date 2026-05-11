@@ -143,13 +143,13 @@ export function ChatInput({ onSend, disabled, isLoading }: ChatInputProps) {
 
   return (
     <div
-      className="sticky bottom-0 border-t border-white/10 bg-[#0A0A0F]/90 backdrop-blur-xl p-4 shadow-2xl"
+      className="sticky bottom-0 border-t border-white/10 bg-[#0A0A0F]/90 backdrop-blur-sm md:backdrop-blur-xl p-3 md:p-4 shadow-xl md:shadow-2xl"
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
       {isDragging && (
-        <div className="absolute inset-0 bg-purple-500/10 backdrop-blur-sm z-10 flex items-center justify-center border-2 border-dashed border-purple-500/50 rounded-2xl m-4">
+        <div className="absolute inset-0 bg-purple-500/10 backdrop-blur-sm z-10 flex items-center justify-center border-2 border-dashed border-purple-500/50 rounded-2xl m-3 md:m-4 hidden sm:flex">
           <div className="text-center">
             <ImageIcon className="h-12 w-12 text-purple-500 mx-auto mb-2" />
             <p className="text-white font-medium">Drop image here</p>
@@ -157,27 +157,27 @@ export function ChatInput({ onSend, disabled, isLoading }: ChatInputProps) {
         </div>
       )}
       <div className="max-w-4xl mx-auto">
-        <div className="glass-strong rounded-2xl p-3 shadow-lg hover:shadow-purple-500/10 transition-shadow">
+        <div className="glass-strong rounded-xl md:rounded-2xl p-2.5 md:p-3 shadow-md md:shadow-lg hover:shadow-purple-500/10 transition-shadow">
           {attachments.length > 0 && (
-            <div className="flex flex-wrap gap-2 mb-3 pb-3 border-b border-white/10">
+            <div className="flex flex-wrap gap-2 mb-2 md:mb-3 pb-2 md:pb-3 border-b border-white/10">
               {attachments.map((attachment, index) => (
                 <div key={index} className="relative group">
                   <img
                     src={attachment.dataUrl}
                     alt={attachment.name}
-                    className="h-20 w-20 object-cover rounded-lg border border-white/20"
+                    className="h-16 w-16 md:h-20 md:w-20 object-cover rounded-lg border border-white/20"
                   />
                   <button
                     onClick={() => removeAttachment(index)}
-                    className="absolute -top-2 -right-2 h-6 w-6 bg-red-500 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                    className="absolute -top-1.5 -right-1.5 h-5 w-5 md:h-6 md:w-6 bg-red-500 rounded-full flex items-center justify-center opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity"
                   >
-                    <X className="h-4 w-4 text-white" />
+                    <X className="h-3 w-3 md:h-4 md:w-4 text-white" />
                   </button>
                 </div>
               ))}
             </div>
           )}
-          <div className="flex items-end gap-3">
+          <div className="flex items-end gap-2 md:gap-3">
             <input
               ref={fileInputRef}
               type="file"
@@ -191,9 +191,9 @@ export function ChatInput({ onSend, disabled, isLoading }: ChatInputProps) {
               variant="ghost"
               onClick={() => fileInputRef.current?.click()}
               disabled={disabled || isLoading}
-              className="h-11 w-11 rounded-xl shrink-0 hover:bg-white/10 text-gray-400 hover:text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              className="h-10 w-10 md:h-11 md:w-11 rounded-xl shrink-0 hover:bg-white/10 text-gray-400 hover:text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              <ImageIcon className="h-5 w-5" />
+              <ImageIcon className="h-4 w-4 md:h-5 md:w-5" />
             </Button>
             <textarea
               ref={textareaRef}
@@ -204,8 +204,8 @@ export function ChatInput({ onSend, disabled, isLoading }: ChatInputProps) {
               placeholder="Ask anything..."
               disabled={disabled || isLoading}
               className={cn(
-                'flex-1 bg-transparent border-none outline-none resize-none text-white placeholder:text-gray-400',
-                'min-h-[44px] max-h-[200px] py-3 px-2',
+                'flex-1 bg-transparent border-none outline-none resize-none text-white placeholder:text-gray-400 text-sm md:text-base',
+                'min-h-[40px] md:min-h-[44px] max-h-[160px] md:max-h-[200px] py-2.5 md:py-3 px-1 md:px-2',
                 'scrollbar-thin',
                 'disabled:opacity-50 disabled:cursor-not-allowed'
               )}
@@ -216,17 +216,17 @@ export function ChatInput({ onSend, disabled, isLoading }: ChatInputProps) {
               onClick={handleSubmit}
               disabled={(!message.trim() && attachments.length === 0) || disabled || isLoading}
               size="icon"
-              className="gradient-primary h-11 w-11 rounded-xl shrink-0 hover:shadow-lg hover:shadow-purple-500/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              className="gradient-primary h-10 w-10 md:h-11 md:w-11 rounded-xl shrink-0 hover:shadow-lg hover:shadow-purple-500/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isLoading ? (
-                <Loader2 className="h-5 w-5 animate-spin" />
+                <Loader2 className="h-4 w-4 md:h-5 md:w-5 animate-spin" />
               ) : (
-                <Send className="h-5 w-5" />
+                <Send className="h-4 w-4 md:h-5 md:w-5" />
               )}
             </Button>
           </div>
         </div>
-        <p className="text-xs text-gray-500 text-center mt-2.5">
+        <p className="text-xs text-gray-500 text-center mt-2 md:mt-2.5 hidden sm:block">
           Press <kbd className="px-1.5 py-0.5 bg-white/10 rounded text-gray-400">Enter</kbd> to send, <kbd className="px-1.5 py-0.5 bg-white/10 rounded text-gray-400">Shift+Enter</kbd> for new line
         </p>
       </div>

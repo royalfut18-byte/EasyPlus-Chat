@@ -25,8 +25,15 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
   const [activeTab, setActiveTab] = useState<'preview' | 'code'>('preview')
   const [isResizing, setIsResizing] = useState(false)
   const [currentWidth, setCurrentWidth] = useState(width)
+  const [isMobile, setIsMobile] = useState(false)
   const panelRef = useRef<HTMLDivElement>(null)
-  const isMobile = typeof window !== 'undefined' && window.innerWidth < 768
+
+  useEffect(() => {
+    const checkMobile = () => setIsMobile(window.innerWidth < 768)
+    checkMobile()
+    window.addEventListener('resize', checkMobile)
+    return () => window.removeEventListener('resize', checkMobile)
+  }, [])
 
   useEffect(() => {
     setCurrentWidth(width)
@@ -303,7 +310,7 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
 
   return (
     <>
-      {/* Mobile: Fixed overlay */}
+      {/* Mobile: Fixed overlay full-screen */}
       {isMobile && isOpen && (
         <AnimatePresence>
           <motion.div
@@ -312,7 +319,7 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
             animate={{ x: 0 }}
             exit={{ x: '100%' }}
             transition={{ type: 'spring', damping: 30, stiffness: 300 }}
-            className="fixed inset-0 z-50 glass-strong md:hidden"
+            className="fixed inset-0 z-50 bg-[#0A0A0F] md:hidden"
           >
             {renderPanelContent()}
           </motion.div>

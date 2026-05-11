@@ -11,17 +11,22 @@ interface ModelSelectorProps {
 }
 
 export function ModelSelector({ selectedModel, onSelectModel }: ModelSelectorProps) {
+  const getShortName = (name: string) => {
+    // Show shorter names on mobile
+    return name.replace('Claude Opus', 'Claude').replace('Claude Sonnet', 'Claude')
+  }
+
   return (
-    <div className="flex flex-wrap gap-3 p-4">
+    <div className="flex flex-wrap gap-2 md:gap-3 py-1 md:p-0">
       {AI_MODELS.map((model) => (
         <motion.button
           key={model.id}
           onClick={() => onSelectModel(model.id)}
           className={cn(
-            'relative px-4 py-2 rounded-full text-sm font-medium transition-all duration-200',
-            'border flex items-center gap-2',
+            'relative px-2.5 md:px-4 py-1.5 md:py-2 rounded-full text-xs md:text-sm font-medium transition-all duration-200',
+            'border flex items-center gap-1.5 md:gap-2 h-9 md:h-auto',
             selectedModel === model.id
-              ? 'border-transparent shadow-lg'
+              ? 'border-transparent shadow-md md:shadow-lg'
               : 'border-white/10 hover:border-white/20 bg-white/5'
           )}
           style={{
@@ -30,33 +35,34 @@ export function ModelSelector({ selectedModel, onSelectModel }: ModelSelectorPro
                 ? `linear-gradient(135deg, ${model.color}40, ${model.color}20)`
                 : undefined,
             boxShadow:
-              selectedModel === model.id ? `0 0 20px ${model.color}40` : undefined,
+              selectedModel === model.id ? `0 0 15px ${model.color}40` : undefined,
           }}
           whileHover={{ scale: 1.05 }}
           whileTap={{ scale: 0.95 }}
         >
           {model.provider === 'anthropic' ? (
             <div className={cn(
-              'w-7 h-7 rounded-lg flex items-center justify-center transition-colors',
+              'w-5 h-5 md:w-7 md:h-7 rounded-lg flex items-center justify-center transition-colors',
               selectedModel === model.id
                 ? 'bg-gradient-to-br from-[#d97757]/20 to-[#d97757]/10'
                 : 'bg-white/5'
             )}>
               <AnthropicIcon className={cn(
-                'w-4 h-4 transition-colors',
+                'w-3 h-3 md:w-4 md:h-4 transition-colors',
                 selectedModel === model.id ? 'text-[#d97757]' : 'text-gray-400'
               )} />
             </div>
           ) : (
-            <span className="text-lg">{model.icon}</span>
+            <span className="text-base md:text-lg">{model.icon}</span>
           )}
           <span
             className={cn(
-              'transition-colors',
+              'transition-colors whitespace-nowrap',
               selectedModel === model.id ? 'text-white' : 'text-gray-300'
             )}
           >
-            {model.name}
+            <span className="md:hidden">{getShortName(model.name)}</span>
+            <span className="hidden md:inline">{model.name}</span>
           </span>
           {selectedModel === model.id && (
             <motion.div

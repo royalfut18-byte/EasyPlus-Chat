@@ -40,16 +40,30 @@
 @layer utilities {
   .glass {
     background: rgba(17, 17, 24, 0.4);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
     border: 1px solid rgba(255, 255, 255, 0.1);
+  }
+
+  @media (min-width: 768px) {
+    .glass {
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+    }
   }
 
   .glass-strong {
     background: rgba(17, 17, 24, 0.7);
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
     border: 1px solid rgba(255, 255, 255, 0.15);
+  }
+
+  @media (min-width: 768px) {
+    .glass-strong {
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+    }
   }
 
   .gradient-primary {
@@ -86,15 +100,33 @@
 }
 
 .prose p {
-  @apply mb-4 leading-7;
+  @apply mb-3 leading-6;
+}
+
+@media (min-width: 768px) {
+  .prose p {
+    @apply mb-4 leading-7;
+  }
 }
 
 .prose ul, .prose ol {
-  @apply mb-4 ml-6 space-y-2;
+  @apply mb-3 ml-4 space-y-1.5;
+}
+
+@media (min-width: 768px) {
+  .prose ul, .prose ol {
+    @apply mb-4 ml-6 space-y-2;
+  }
 }
 
 .prose li {
-  @apply leading-7;
+  @apply leading-6;
+}
+
+@media (min-width: 768px) {
+  .prose li {
+    @apply leading-7;
+  }
 }
 
 .prose h1, .prose h2, .prose h3, .prose h4 {
@@ -102,15 +134,33 @@
 }
 
 .prose h1 {
-  @apply text-2xl mt-6 mb-4;
+  @apply text-xl mt-4 mb-3;
+}
+
+@media (min-width: 768px) {
+  .prose h1 {
+    @apply text-2xl mt-6 mb-4;
+  }
 }
 
 .prose h2 {
-  @apply text-xl mt-5 mb-3;
+  @apply text-lg mt-4 mb-2;
+}
+
+@media (min-width: 768px) {
+  .prose h2 {
+    @apply text-xl mt-5 mb-3;
+  }
 }
 
 .prose h3 {
-  @apply text-lg mt-4 mb-2;
+  @apply text-base mt-3 mb-2;
+}
+
+@media (min-width: 768px) {
+  .prose h3 {
+    @apply text-lg mt-4 mb-2;
+  }
 }
 
 .prose table {

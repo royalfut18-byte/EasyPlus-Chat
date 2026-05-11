@@ -84,20 +84,20 @@ export function LandingPage() {
       </div>
 
       {/* Navbar */}
-      <nav className="relative z-50 flex items-center justify-between p-6 max-w-7xl mx-auto">
+      <nav className="relative z-50 flex items-center justify-between p-4 md:p-6 max-w-7xl mx-auto">
         <motion.div
           initial={{ opacity: 0, x: -20 }}
           animate={{ opacity: 1, x: 0 }}
         >
-          <Logo size="md" showText />
+          <Logo size="sm" showText className="md:w-auto" />
         </motion.div>
         <motion.div
           initial={{ opacity: 0, x: 20 }}
           animate={{ opacity: 1, x: 0 }}
         >
           <Link href="/login">
-            <Button className="gradient-primary shadow-2xl shadow-purple-500/50 hover:shadow-purple-500/70 transition-all hover:scale-105">
-              <Lock className="mr-2 h-4 w-4" />
+            <Button className="gradient-primary shadow-xl md:shadow-2xl shadow-purple-500/50 hover:shadow-purple-500/70 transition-all hover:scale-105 text-sm md:text-base px-4 md:px-6 h-9 md:h-10">
+              <Lock className="mr-1.5 md:mr-2 h-3.5 w-3.5 md:h-4 md:w-4" />
               Sign In
             </Button>
           </Link>
@@ -131,12 +131,12 @@ export function LandingPage() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.3 }}
-            className="text-6xl md:text-8xl lg:text-9xl font-black leading-[1.1] max-w-5xl mx-auto"
+            className="text-4xl sm:text-5xl md:text-7xl lg:text-8xl xl:text-9xl font-black leading-[1.1] max-w-5xl mx-auto px-4"
           >
             Your private
             <br />
             <span className="relative inline-block">
-              <span className="absolute inset-0 blur-2xl bg-gradient-to-r from-purple-400 via-blue-500 to-cyan-400 opacity-50" />
+              <span className="absolute inset-0 blur-xl md:blur-2xl bg-gradient-to-r from-purple-400 via-blue-500 to-cyan-400 opacity-50" />
               <span className="relative bg-gradient-to-r from-purple-400 via-blue-500 to-cyan-400 bg-clip-text text-transparent">
                 AI workspace.
               </span>
@@ -147,7 +147,7 @@ export function LandingPage() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.4 }}
-            className="text-xl md:text-2xl text-gray-400 max-w-3xl mx-auto leading-relaxed font-light"
+            className="text-base md:text-xl lg:text-2xl text-gray-400 max-w-3xl mx-auto leading-relaxed font-light px-4"
           >
             EasyPlus gives approved users access to a fast Claude-powered chat workspace
             with web search, conversation history, and admin-managed credits.
@@ -162,14 +162,14 @@ export function LandingPage() {
             <Link href="/login">
               <Button
                 size="lg"
-                className="gradient-primary text-lg px-12 py-7 rounded-2xl shadow-2xl shadow-purple-500/50 hover:shadow-purple-500/70 hover:scale-105 transition-all group"
+                className="gradient-primary text-base md:text-lg px-8 md:px-12 py-5 md:py-7 rounded-xl md:rounded-2xl shadow-xl md:shadow-2xl shadow-purple-500/50 hover:shadow-purple-500/70 hover:scale-105 transition-all group"
               >
-                <Lock className="mr-2 h-5 w-5 group-hover:rotate-12 transition-transform" />
+                <Lock className="mr-2 h-4 w-4 md:h-5 md:w-5 group-hover:rotate-12 transition-transform" />
                 Sign In
-                <ArrowRight className="ml-2 h-5 w-5 group-hover:translate-x-1 transition-transform" />
+                <ArrowRight className="ml-2 h-4 w-4 md:h-5 md:w-5 group-hover:translate-x-1 transition-transform" />
               </Button>
             </Link>
-            <p className="text-sm text-gray-500">
+            <p className="text-xs md:text-sm text-gray-500 px-4">
               Access is managed by your workspace admin
             </p>
           </motion.div>
@@ -331,7 +331,7 @@ export function LandingPage() {
         </motion.div>
 
         {/* Features Grid */}
-        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 mb-40">
+        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6 mb-20 md:mb-40 px-4">
           {[
             {
               icon: <Sparkles className="h-6 w-6" />,
@@ -386,11 +386,11 @@ export function LandingPage() {
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
           transition={{ duration: 0.8 }}
-          className="max-w-5xl mx-auto mb-40"
+          className="max-w-5xl mx-auto mb-20 md:mb-40 px-4"
         >
-          <div className="text-center mb-16 space-y-4">
-            <h2 className="text-4xl md:text-5xl font-bold">Admin-Managed Access</h2>
-            <p className="text-xl text-gray-400 max-w-2xl mx-auto">
+          <div className="text-center mb-12 md:mb-16 space-y-3 md:space-y-4">
+            <h2 className="text-3xl md:text-4xl lg:text-5xl font-bold">Admin-Managed Access</h2>
+            <p className="text-base md:text-lg lg:text-xl text-gray-400 max-w-2xl mx-auto">
               EasyPlus is a private workspace. All accounts are created and managed by your administrator.
             </p>
           </div>
