@@ -592,6 +592,9 @@ export default function ChatPage() {
       return handleImageGeneration(trimmedContent, clientUserMessageId, clientAssistantMessageId, userCreatedAt, assistantCreatedAt)
     }
 
+    // Determine which model to use: locked conversation model OR selected model
+    const modelToUse = currentConversation?.model_used || selectedModel
+
     artifactModeAtSendRef.current = requestArtifactMode
     webSearchEnabledAtSendRef.current = requestWebSearchEnabled
     lastUserPromptRef.current = trimmedContent
@@ -601,7 +604,7 @@ export default function ChatPage() {
       conversation_id: currentConversation?.id || 'temp',
       role: 'user',
       content: trimmedContent,
-      model: selectedModel,
+      model: modelToUse,
       created_at: userCreatedAt,
       attachments,
     }
@@ -625,7 +628,7 @@ export default function ChatPage() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             title,
-            model: selectedModel,
+            model: modelToUse,
           }),
         })
 
@@ -683,7 +686,7 @@ export default function ChatPage() {
       conversation_id: sendConversationId,
       role: 'assistant',
       content: requestArtifactMode ? ARTIFACT_LOADING_MARKER : ASSISTANT_LOADING_MARKER,
-      model: selectedModel,
+      model: modelToUse,
       created_at: assistantCreatedAt, // Use the +1ms timestamp
     }
 
@@ -736,7 +739,7 @@ Rules:
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model: selectedModel,
+          model: modelToUse,
           messages: messagesToSend,
           conversationId: conversation.id,
           artifactMode: requestArtifactMode,
@@ -1035,7 +1038,12 @@ Rules:
         <div className="border-b border-white/10 bg-[#0A0A0F]/90 backdrop-blur-sm md:backdrop-blur-xl">
           <div className="flex items-center gap-2 overflow-x-auto px-3 py-3 md:px-4">
             <div className="flex-1 min-w-0">
-              <ModelSelector selectedModel={selectedModel} onSelectModel={setSelectedModel} />
+              <ModelSelector
+                selectedModel={selectedModel}
+                onSelectModel={setSelectedModel}
+                disabled={currentConversation !== null}
+                disabledReason="Start a new chat to switch models"
+              />
             </div>
             <div className="flex items-center gap-2 shrink-0">
               {showReopenButton && (

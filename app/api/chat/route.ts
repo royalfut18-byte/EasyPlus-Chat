@@ -46,6 +46,23 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid request' }, { status: 400 })
     }
 
+    // Validate model matches conversation if conversationId exists
+    let validatedModel = model
+    if (conversationId) {
+      const { data: conversation, error: convError } = await db
+        .from('conversations')
+        .select('model_used')
+        .eq('id', conversationId)
+        .single()
+
+      if (!convError && conversation) {
+        if (conversation.model_used !== model) {
+          console.warn('[Chat API] Model mismatch detected, using conversation model:', conversation.model_used)
+          validatedModel = conversation.model_used
+        }
+      }
+    }
+
     // Log artifact mode (not the content)
     if (artifactMode) {
       console.log('[Chat API] Artifact mode enabled for this request')
@@ -77,7 +94,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Profile not found' }, { status: 404 })
     }
 
-    const cost = getModelCost(model)
+    const cost = getModelCost(validatedModel)
 
     // Check if user has unlimited credits (admin or unlimited_credits flag)
     const hasUnlimitedCredits = typedProfile.role === 'admin' || typedProfile.unlimited_credits === true
@@ -101,7 +118,7 @@ export async function POST(request: NextRequest) {
           user_id: user.id,
           amount: -cost,
           type: 'deduction',
-          description: `Message sent using ${model}`,
+          description: `Message sent using ${validatedModel}`,
         }),
       ])
 
@@ -190,11 +207,11 @@ Now continue the conversation naturally:
       messagesToSend = [systemInstruction, ...messagesToSend]
     }
 
-    // Route to appropriate AI provider based on model
-    const selectedModel = AI_MODELS.find((m) => m.id === model)
+    // Route to appropriate AI provider based on validated model
+    const selectedModel = AI_MODELS.find((m) => m.id === validatedModel)
 
     if (!selectedModel) {
-      console.error('[Chat API] Unknown model:', model)
+      console.error('[Chat API] Unknown model:', validatedModel)
       return NextResponse.json({ error: 'Unknown model' }, { status: 400 })
     }
 
@@ -202,10 +219,10 @@ Now continue the conversation naturally:
 
     if (selectedModel.provider === 'google') {
       console.log('[Chat API] Using Gemini provider')
-      stream = await streamGeminiResponse(model, messagesToSend)
+      stream = await streamGeminiResponse(validatedModel, messagesToSend)
     } else if (selectedModel.provider === 'anthropic') {
       console.log('[Chat API] Using Bedrock/Claude provider')
-      stream = await streamBedrockResponse(model, messagesToSend)
+      stream = await streamBedrockResponse(validatedModel, messagesToSend)
     } else {
       console.error('[Chat API] Unsupported provider:', selectedModel.provider)
       return NextResponse.json(
@@ -244,7 +261,7 @@ Now continue the conversation naturally:
             conversation_id: conversationId,
             role: 'user',
             content: userMessage.content,
-            model,
+            model: validatedModel,
             order_index: nextOrder,
           })
 
@@ -256,7 +273,7 @@ Now continue the conversation naturally:
             conversation_id: conversationId,
             role: 'assistant',
             content: fullResponse,
-            model,
+            model: validatedModel,
             order_index: nextOrder + 1,
           })
 

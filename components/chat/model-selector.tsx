@@ -3,21 +3,24 @@
 import { motion } from 'framer-motion'
 import { AI_MODELS, type AIModel } from '@/types/models'
 import { AnthropicIcon } from '@/components/icons/anthropic-icon'
-import { Sparkles } from 'lucide-react'
+import { Sparkles, Lock } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface ModelSelectorProps {
   selectedModel: string
   onSelectModel: (modelId: string) => void
+  disabled?: boolean
+  disabledReason?: string
 }
 
-export function ModelSelector({ selectedModel, onSelectModel }: ModelSelectorProps) {
+export function ModelSelector({ selectedModel, onSelectModel, disabled = false, disabledReason }: ModelSelectorProps) {
   const getShortName = (name: string) => {
     // Show shorter names on mobile
     return name
       .replace('Claude Opus', 'Claude')
       .replace('Claude Sonnet', 'Claude')
       .replace('Gemini 2.5 Flash', 'Gemini 2.5')
+      .replace('Gemini 3.1 Pro', 'Gemini 3.1')
   }
 
   const getModelIcon = (model: AIModel) => {
@@ -55,16 +58,25 @@ export function ModelSelector({ selectedModel, onSelectModel }: ModelSelectorPro
 
   return (
     <div className="flex flex-wrap gap-2 md:gap-3 py-1 md:p-0">
+      {disabled && (
+        <div className="flex items-center gap-2 text-xs text-gray-400 px-2 py-1">
+          <Lock className="w-3 h-3" />
+          <span className="hidden md:inline">{disabledReason || 'Model locked for this chat'}</span>
+        </div>
+      )}
       {AI_MODELS.map((model) => (
         <motion.button
           key={model.id}
-          onClick={() => onSelectModel(model.id)}
+          onClick={() => !disabled && onSelectModel(model.id)}
+          disabled={disabled}
+          title={disabled ? (disabledReason || 'Start a new chat to switch models') : undefined}
           className={cn(
             'relative px-2.5 md:px-4 py-1.5 md:py-2 rounded-full text-xs md:text-sm font-medium transition-all duration-200',
             'border flex items-center gap-1.5 md:gap-2 h-9 md:h-auto',
             selectedModel === model.id
               ? 'border-transparent shadow-md md:shadow-lg'
-              : 'border-white/10 hover:border-white/20 bg-white/5'
+              : 'border-white/10 hover:border-white/20 bg-white/5',
+            disabled && 'opacity-60 cursor-not-allowed'
           )}
           style={{
             background:
@@ -74,8 +86,8 @@ export function ModelSelector({ selectedModel, onSelectModel }: ModelSelectorPro
             boxShadow:
               selectedModel === model.id ? `0 0 15px ${model.color}40` : undefined,
           }}
-          whileHover={{ scale: 1.05 }}
-          whileTap={{ scale: 0.95 }}
+          whileHover={disabled ? {} : { scale: 1.05 }}
+          whileTap={disabled ? {} : { scale: 0.95 }}
         >
           {getModelIcon(model)}
           <span
@@ -87,7 +99,7 @@ export function ModelSelector({ selectedModel, onSelectModel }: ModelSelectorPro
             <span className="md:hidden">{getShortName(model.name)}</span>
             <span className="hidden md:inline">{model.name}</span>
           </span>
-          {selectedModel === model.id && (
+          {selectedModel === model.id && !disabled && (
             <motion.div
               className="absolute inset-0 rounded-full"
               style={{
@@ -97,6 +109,9 @@ export function ModelSelector({ selectedModel, onSelectModel }: ModelSelectorPro
               layoutId="model-indicator"
               transition={{ type: 'spring', stiffness: 300, damping: 30 }}
             />
+          )}
+          {selectedModel === model.id && disabled && (
+            <Lock className="w-3 h-3 ml-1" />
           )}
         </motion.button>
       ))}
