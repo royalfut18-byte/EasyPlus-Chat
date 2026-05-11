@@ -26,6 +26,11 @@ export async function streamGeminiResponse(
   const genAI = new GoogleGenerativeAI(apiKey)
   const geminiModel = genAI.getGenerativeModel({ model: model.geminiModelId })
 
+  if (process.env.NODE_ENV !== 'production') {
+    console.log('[Gemini] Received messages count:', messages.length)
+    console.log('[Gemini] First message preview:', messages[0]?.content?.substring(0, 100))
+  }
+
   // Convert messages to Gemini format
   // Gemini uses a flat array of {role, parts} where role is 'user' or 'model'
   const geminiMessages = messages
@@ -112,6 +117,11 @@ export async function streamGeminiResponse(
 
     if (!lastMessage || lastMessage.role !== 'user') {
       throw new Error('Last message must be from user')
+    }
+
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('[Gemini] Using history messages:', history.length)
+      console.log('[Gemini] Sending last message with', lastMessage.parts?.length || 0, 'parts')
     }
 
     // Start chat with history
