@@ -10,13 +10,16 @@ import {
   Lock,
   History,
   Search,
-  Brain,
   ArrowRight,
   Sparkles,
   Crown,
   Users,
   Settings,
   Infinity as InfinityIcon,
+  Bot,
+  ShieldCheck,
+  CreditCard,
+  UserCog,
 } from 'lucide-react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
@@ -38,7 +41,7 @@ export function LandingPage() {
             repeat: Infinity,
             ease: 'linear',
           }}
-          className="absolute top-0 -left-20 w-[600px] h-[600px] bg-purple-500/20 rounded-full blur-[120px]"
+          className="absolute top-0 -left-20 w-[600px] h-[600px] bg-purple-500/10 rounded-full blur-[120px]"
         />
         <motion.div
           animate={{
@@ -51,7 +54,7 @@ export function LandingPage() {
             repeat: Infinity,
             ease: 'linear',
           }}
-          className="absolute bottom-0 right-0 w-[700px] h-[700px] bg-blue-500/15 rounded-full blur-[120px]"
+          className="absolute bottom-0 right-0 w-[700px] h-[700px] bg-blue-500/8 rounded-full blur-[120px]"
         />
         <motion.div
           animate={{
@@ -63,7 +66,7 @@ export function LandingPage() {
             repeat: Infinity,
             ease: 'linear',
           }}
-          className="absolute top-1/3 right-1/4 w-[500px] h-[500px] bg-cyan-500/10 rounded-full blur-[100px]"
+          className="absolute top-1/3 right-1/4 w-[500px] h-[500px] bg-cyan-500/6 rounded-full blur-[100px]"
         />
       </div>
 
@@ -107,7 +110,7 @@ export function LandingPage() {
           initial={{ opacity: 0, y: 30 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.8 }}
-          className="text-center pt-20 md:pt-32 pb-24 space-y-10"
+          className="text-center pt-12 md:pt-16 lg:pt-20 pb-20 md:pb-24 space-y-8 md:space-y-10"
         >
           <motion.div
             initial={{ opacity: 0, scale: 0.9 }}
@@ -331,42 +334,42 @@ export function LandingPage() {
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 mb-40">
           {[
             {
-              icon: <Brain className="h-7 w-7" />,
-              title: 'Claude-Powered',
+              icon: <Sparkles className="h-6 w-6" />,
+              title: 'Claude-Powered Chat',
               description: 'Advanced Claude Opus 4.6 model for intelligent responses',
               color: 'from-purple-500 to-violet-600',
               delay: 0,
             },
             {
-              icon: <Search className="h-7 w-7" />,
+              icon: <Globe2 className="h-6 w-6" />,
               title: 'Web Search',
               description: 'Access current information with real-time web search',
               color: 'from-blue-500 to-cyan-500',
               delay: 0.1,
             },
             {
-              icon: <History className="h-7 w-7" />,
+              icon: <MessageSquare className="h-6 w-6" />,
               title: 'Conversation History',
               description: 'Save and revisit all your chats with organization',
               color: 'from-cyan-500 to-teal-500',
               delay: 0.2,
             },
             {
-              icon: <Shield className="h-7 w-7" />,
-              title: 'Admin-Controlled',
+              icon: <UserCog className="h-6 w-6" />,
+              title: 'Admin Controls',
               description: 'Secure workspace with admin-managed permissions',
               color: 'from-teal-500 to-green-500',
               delay: 0.3,
             },
             {
-              icon: <Lock className="h-7 w-7" />,
+              icon: <Lock className="h-6 w-6" />,
               title: 'Private Access',
               description: 'Invite-only workspace for authorized users',
               color: 'from-green-500 to-emerald-500',
               delay: 0.4,
             },
             {
-              icon: <Zap className="h-7 w-7" />,
+              icon: <CreditCard className="h-6 w-6" />,
               title: 'Credit Management',
               description: 'Admin controls with unlimited access options',
               color: 'from-yellow-500 to-orange-500',
@@ -416,10 +419,10 @@ export function LandingPage() {
               <div className="p-6 space-y-3">
                 {[
                   { icon: <Users className="h-4 w-4" />, label: 'Create User Account', color: 'text-blue-400' },
-                  { icon: <Settings className="h-4 w-4" />, label: 'Set User Role: Admin / User', color: 'text-purple-400' },
-                  { icon: <Zap className="h-4 w-4" />, label: 'Allocate Credits', color: 'text-yellow-400' },
+                  { icon: <UserCog className="h-4 w-4" />, label: 'Set User Role: Admin / User', color: 'text-purple-400' },
+                  { icon: <CreditCard className="h-4 w-4" />, label: 'Allocate Credits', color: 'text-yellow-400' },
                   { icon: <InfinityIcon className="h-4 w-4" />, label: 'Toggle Unlimited Credits', color: 'text-green-400' },
-                  { icon: <Lock className="h-4 w-4" />, label: 'Manage Permissions', color: 'text-red-400' },
+                  { icon: <ShieldCheck className="h-4 w-4" />, label: 'Manage Permissions', color: 'text-emerald-400' },
                 ].map((item, i) => (
                   <motion.div
                     key={i}
@@ -427,10 +430,12 @@ export function LandingPage() {
                     whileInView={{ opacity: 1, x: 0 }}
                     viewport={{ once: true }}
                     transition={{ delay: i * 0.1 }}
-                    className="flex items-center gap-3 p-4 rounded-xl glass border border-white/10 hover:border-white/20 transition-all"
+                    className="flex items-center gap-4 p-4 rounded-xl glass-strong border border-white/10 hover:border-white/20 transition-all"
                   >
-                    <div className={`${item.color}`}>{item.icon}</div>
-                    <span className="text-sm text-gray-300">{item.label}</span>
+                    <div className={`h-9 w-9 rounded-lg glass border border-white/10 flex items-center justify-center ${item.color}`}>
+                      {item.icon}
+                    </div>
+                    <span className="text-sm text-gray-200">{item.label}</span>
                   </motion.div>
                 ))}
               </div>
@@ -496,7 +501,7 @@ export function LandingPage() {
               </div>
             </div>
             <div className="flex items-center gap-2 text-sm text-gray-400">
-              <Brain className="h-4 w-4 text-purple-400" />
+              <Sparkles className="h-4 w-4 text-purple-400" />
               <span>Powered by Claude Opus 4.6</span>
             </div>
           </div>
@@ -528,12 +533,12 @@ function FeatureCard({
       whileHover={{ y: -8, scale: 1.02 }}
       className="relative group"
     >
-      <div className={`absolute -inset-0.5 bg-gradient-to-r ${color} rounded-2xl blur-xl opacity-0 group-hover:opacity-30 transition-opacity duration-500`} />
-      <div className="relative glass-strong rounded-2xl p-6 border border-white/10 group-hover:border-white/20 transition-all space-y-4 h-full backdrop-blur-2xl">
-        <div className={`h-14 w-14 rounded-xl bg-gradient-to-br ${color} flex items-center justify-center shadow-xl shadow-purple-500/20 group-hover:shadow-purple-500/40 transition-all`}>
+      <div className={`absolute -inset-0.5 bg-gradient-to-r ${color} rounded-2xl blur-xl opacity-0 group-hover:opacity-20 transition-opacity duration-500`} />
+      <div className="relative glass-strong rounded-2xl p-7 border border-white/10 group-hover:border-white/20 transition-all space-y-4 h-full backdrop-blur-2xl">
+        <div className={`h-12 w-12 rounded-xl glass-strong border border-white/10 flex items-center justify-center text-white shadow-lg group-hover:shadow-xl transition-all`}>
           {icon}
         </div>
-        <h3 className="text-xl font-bold text-white">{title}</h3>
+        <h3 className="text-lg font-semibold text-white">{title}</h3>
         <p className="text-gray-400 leading-relaxed text-sm">{description}</p>
       </div>
     </motion.div>
