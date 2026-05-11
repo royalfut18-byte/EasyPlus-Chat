@@ -144,53 +144,55 @@ IMPORTANT MODEL IDENTITY:
   if (artifactMode) {
     systemPromptText += `
 
-ARTIFACT MODE IS ENABLED:
-If the user asks for code, UI, HTML, CSS, React, a website, game, dashboard, calculator, component, app, or any buildable artifact, you MUST return your response in this format:
+ARTIFACT MODE IS ENABLED - PREMIUM QUALITY REQUIRED:
+You are creating an EasyPlus artifact that should look like a premium, production-quality UI, not a basic demo.
 
-1. A brief explanation of what you're creating (1-2 sentences)
-2. EXACTLY ONE artifact block using this format:
+When the user asks for a website, landing page, dashboard, game, calculator, card, bracket, UI mockup, or any visual/code artifact:
+- Create a complete, polished, responsive artifact
+- Use modern design principles: clean spacing, strong typography, thoughtful color palettes
+- Add smooth animations and interactions where appropriate
+- Make it mobile responsive with proper breakpoints
+- Include real UX details: hover states, focus states, active states, loading states
+- Avoid default browser styles - always add custom CSS
+- Avoid childish emoji-heavy design
+- Avoid plain unstyled HTML
+
+QUALITY STANDARDS BY TYPE:
+- Games: polished arcade-style visuals, smooth animation loop, clear controls, score tracking, restart button, game over states
+- Websites/Landing pages: modern SaaS-grade design, navbar, hero section, feature cards, CTAs, footer, consistent spacing
+- Dashboards: realistic cards, tables, charts/mock data, filters, sidebar navigation, clean sections
+- Calculators/Tools: intuitive button layout, clear display, proper number formatting, good visual feedback
+- Brackets: interactive and visually organized, proper spacing, clear matchups, winner indication
+
+ARTIFACT FORMAT:
+Return exactly one artifact block using this format:
 
 \`\`\`artifact:LANGUAGE:Title
 FULL_CODE_HERE
 \`\`\`
 
-Where LANGUAGE is one of: html, tsx, jsx, javascript, css, python
-And Title is a short descriptive title (e.g., "Simple Calculator" or "Flappy Bird Game")
+LANGUAGE OPTIONS:
+- html: For previewable web artifacts (games, websites, dashboards, calculators) - PREFERRED for visual content
+- tsx/jsx: For React components (code view only, no live preview)
+- javascript: For standalone JS code
+- css: For stylesheets
+- python: For Python code
+- markdown: For text/documentation
 
-CRITICAL ARTIFACT RULES:
-- For web/UI artifacts, use "html" and create a COMPLETE single-file HTML document with inline CSS and JavaScript
+CRITICAL RULES FOR HTML ARTIFACTS:
+- Create a COMPLETE single-file HTML document
 - Include <!DOCTYPE html>, <html>, <head>, and <body> tags
 - Put all CSS in a <style> tag in the <head>
 - Put all JavaScript in a <script> tag at the end of <body>
+- Use modern CSS: flexbox/grid, custom properties, gradients, box-shadows, transitions
+- Make it responsive with media queries
+- Add proper meta tags (viewport, charset)
+- Include a descriptive <title>
+- Do NOT use external CDN scripts unless absolutely necessary
+- Do NOT include API keys or secrets
 - Do NOT output raw HTML outside the artifact block
-- Do NOT wrap the artifact in a normal markdown code fence
-- Do NOT omit the artifact block if the user asked for something buildable
-- The artifact block MUST use the format: \`\`\`artifact:html:Title
 
-EXAMPLE:
-User: "Make me a simple calculator"
-You should respond:
-"I'll create a simple calculator for you.
-
-\`\`\`artifact:html:Simple Calculator
-<!DOCTYPE html>
-<html>
-<head>
-  <title>Calculator</title>
-  <style>
-    /* CSS here */
-  </style>
-</head>
-<body>
-  <!-- HTML here -->
-  <script>
-    // JavaScript here
-  </script>
-</body>
-</html>
-\`\`\`
-
-The calculator is now ready to use in the artifact panel."`
+Always strive for premium, polished, production-quality artifacts with modern design and smooth interactions."`
   }
 
   const systemPrompt = [

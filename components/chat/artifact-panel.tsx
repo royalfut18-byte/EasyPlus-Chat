@@ -1,7 +1,7 @@
 'use client'
 
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, Copy, Download, Code, Eye, GripVertical, Package, AlertTriangle, Blocks, EyeOff } from 'lucide-react'
+import { X, Copy, Download, Code, Eye, GripVertical, Package, AlertTriangle, Blocks, EyeOff, Monitor, Tablet, Smartphone, RefreshCw } from 'lucide-react'
 import { useState, useEffect, useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { Artifact } from '@/types/models'
@@ -26,6 +26,8 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
   const [isResizing, setIsResizing] = useState(false)
   const [currentWidth, setCurrentWidth] = useState(width)
   const [isMobile, setIsMobile] = useState(false)
+  const [previewDevice, setPreviewDevice] = useState<'desktop' | 'tablet' | 'mobile'>('desktop')
+  const [refreshKey, setRefreshKey] = useState(0)
   const panelRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -134,34 +136,86 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
         </Button>
       </div>
 
-      {/* Tabs */}
-      <div className="glass border-b border-white/10 px-4 flex items-center gap-2">
-        {canPreview && (
+      {/* Tabs and Controls */}
+      <div className="glass border-b border-white/10 px-4 flex items-center gap-2 justify-between">
+        <div className="flex items-center gap-2">
+          {canPreview && (
+            <button
+              onClick={() => setActiveTab('preview')}
+              className={cn(
+                'px-4 py-3 text-sm font-medium transition-colors border-b-2 flex items-center gap-2',
+                currentTab === 'preview'
+                  ? 'text-white border-purple-500'
+                  : 'text-gray-400 border-transparent hover:text-white'
+              )}
+            >
+              <Eye className="h-4 w-4" />
+              Preview
+            </button>
+          )}
           <button
-            onClick={() => setActiveTab('preview')}
+            onClick={() => setActiveTab('code')}
             className={cn(
               'px-4 py-3 text-sm font-medium transition-colors border-b-2 flex items-center gap-2',
-              currentTab === 'preview'
+              currentTab === 'code'
                 ? 'text-white border-purple-500'
                 : 'text-gray-400 border-transparent hover:text-white'
             )}
           >
-            <Eye className="h-4 w-4" />
-            Preview
+            <Code className="h-4 w-4" />
+            Code
           </button>
+        </div>
+
+        {/* Device Preview Controls - Only show in preview tab for HTML */}
+        {canPreview && currentTab === 'preview' && artifact?.code && (
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setPreviewDevice('desktop')}
+              title="Desktop view"
+              className={cn(
+                'p-2 rounded transition-colors',
+                previewDevice === 'desktop'
+                  ? 'bg-purple-500/20 text-purple-400'
+                  : 'text-gray-400 hover:text-white hover:bg-white/5'
+              )}
+            >
+              <Monitor className="h-4 w-4" />
+            </button>
+            <button
+              onClick={() => setPreviewDevice('tablet')}
+              title="Tablet view"
+              className={cn(
+                'p-2 rounded transition-colors',
+                previewDevice === 'tablet'
+                  ? 'bg-purple-500/20 text-purple-400'
+                  : 'text-gray-400 hover:text-white hover:bg-white/5'
+              )}
+            >
+              <Tablet className="h-4 w-4" />
+            </button>
+            <button
+              onClick={() => setPreviewDevice('mobile')}
+              title="Mobile view"
+              className={cn(
+                'p-2 rounded transition-colors',
+                previewDevice === 'mobile'
+                  ? 'bg-purple-500/20 text-purple-400'
+                  : 'text-gray-400 hover:text-white hover:bg-white/5'
+              )}
+            >
+              <Smartphone className="h-4 w-4" />
+            </button>
+            <div className="w-px h-6 bg-white/10 mx-1" />
+            <button
+              onClick={() => setRefreshKey(k => k + 1)}
+              title="Refresh preview"
+              className="p-2 rounded text-gray-400 hover:text-white hover:bg-white/5 transition-colors"
+            >
+              <RefreshCw className="h-4 w-4" />
+            </button>
+          </div>
         )}
-        <button
-          onClick={() => setActiveTab('code')}
-          className={cn(
-            'px-4 py-3 text-sm font-medium transition-colors border-b-2 flex items-center gap-2',
-            currentTab === 'code'
-              ? 'text-white border-purple-500'
-              : 'text-gray-400 border-transparent hover:text-white'
-          )}
-        >
-          <Code className="h-4 w-4" />
-          Code
-        </button>
       </div>
 
       {/* Content */}
@@ -192,13 +246,27 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
           </div>
         ) : currentTab === 'preview' ? (
           canPreview ? (
-            <div className="flex-1 min-h-0 h-full overflow-hidden rounded-xl m-4 bg-white">
-              <iframe
-                srcDoc={artifact.code}
-                title={artifact.title}
-                sandbox="allow-scripts allow-forms allow-modals allow-popups"
-                className="w-full h-full border-0"
-              />
+            <div className="flex-1 min-h-0 h-full overflow-hidden flex items-center justify-center p-4">
+              <div
+                className="bg-white rounded-xl shadow-2xl overflow-hidden border border-gray-200 transition-all duration-300"
+                style={{
+                  width: previewDevice === 'mobile' ? '375px' : previewDevice === 'tablet' ? '768px' : '100%',
+                  maxWidth: '100%',
+                  height: previewDevice === 'desktop' ? '100%' : 'auto',
+                  maxHeight: '100%',
+                }}
+              >
+                <iframe
+                  key={refreshKey}
+                  srcDoc={artifact.code}
+                  title={artifact.title}
+                  sandbox="allow-scripts allow-forms allow-modals allow-popups"
+                  className="w-full h-full border-0"
+                  style={{
+                    minHeight: previewDevice !== 'desktop' ? '600px' : undefined
+                  }}
+                />
+              </div>
             </div>
           ) : isReact ? (
             <div className="flex items-center justify-center h-full p-8 text-center">

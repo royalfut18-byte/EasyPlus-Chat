@@ -137,53 +137,216 @@ IMPORTANT MODEL IDENTITY:
     if (artifactMode) {
       systemInstructionText += `
 
-ARTIFACT MODE IS ENABLED:
-If the user asks for code, UI, HTML, CSS, React, a website, game, dashboard, calculator, component, app, or any buildable artifact, you MUST return your response in this format:
+ARTIFACT MODE IS ENABLED - PREMIUM QUALITY REQUIRED:
+You are creating an EasyPlus artifact that should look like a premium, production-quality UI, not a basic demo.
 
-1. A brief explanation of what you're creating (1-2 sentences)
-2. EXACTLY ONE artifact block using this format:
+When the user asks for a website, landing page, dashboard, game, calculator, card, bracket, UI mockup, or any visual/code artifact:
+- Create a complete, polished, responsive artifact
+- Use modern design principles: clean spacing, strong typography, thoughtful color palettes
+- Add smooth animations and interactions where appropriate
+- Make it mobile responsive with proper breakpoints
+- Include real UX details: hover states, focus states, active states, loading states
+- Avoid default browser styles - always add custom CSS
+- Avoid childish emoji-heavy design
+- Avoid plain unstyled HTML
+
+QUALITY STANDARDS BY TYPE:
+- Games: polished arcade-style visuals, smooth animation loop, clear controls, score tracking, restart button, game over states
+- Websites/Landing pages: modern SaaS-grade design, navbar, hero section, feature cards, CTAs, footer, consistent spacing
+- Dashboards: realistic cards, tables, charts/mock data, filters, sidebar navigation, clean sections
+- Calculators/Tools: intuitive button layout, clear display, proper number formatting, good visual feedback
+- Brackets: interactive and visually organized, proper spacing, clear matchups, winner indication
+
+ARTIFACT FORMAT:
+Return exactly one artifact block using this format:
 
 \`\`\`artifact:LANGUAGE:Title
 FULL_CODE_HERE
 \`\`\`
 
-Where LANGUAGE is one of: html, tsx, jsx, javascript, css, python
-And Title is a short descriptive title (e.g., "Simple Calculator" or "Flappy Bird Game")
+LANGUAGE OPTIONS:
+- html: For previewable web artifacts (games, websites, dashboards, calculators) - PREFERRED for visual content
+- tsx/jsx: For React components (code view only, no live preview)
+- javascript: For standalone JS code
+- css: For stylesheets
+- python: For Python code
+- markdown: For text/documentation
 
-CRITICAL ARTIFACT RULES:
-- For web/UI artifacts, use "html" and create a COMPLETE single-file HTML document with inline CSS and JavaScript
+CRITICAL RULES FOR HTML ARTIFACTS:
+- Create a COMPLETE single-file HTML document
 - Include <!DOCTYPE html>, <html>, <head>, and <body> tags
 - Put all CSS in a <style> tag in the <head>
 - Put all JavaScript in a <script> tag at the end of <body>
+- Use modern CSS: flexbox/grid, custom properties, gradients, box-shadows, transitions
+- Make it responsive with media queries
+- Add proper meta tags (viewport, charset)
+- Include a descriptive <title>
+- Do NOT use external CDN scripts unless absolutely necessary
+- Do NOT include API keys or secrets
 - Do NOT output raw HTML outside the artifact block
-- Do NOT wrap the artifact in a normal markdown code fence
-- Do NOT omit the artifact block if the user asked for something buildable
-- The artifact block MUST use the format: \`\`\`artifact:html:Title
 
-EXAMPLE:
-User: "Make me a simple calculator"
+EXAMPLE - PREMIUM CALCULATOR:
+User: "Make me a calculator"
 You should respond:
-"I'll create a simple calculator for you.
+"I'll create a modern, polished calculator with a clean interface and smooth interactions.
 
-\`\`\`artifact:html:Simple Calculator
+\`\`\`artifact:html:Premium Calculator
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Calculator</title>
   <style>
-    /* CSS here */
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      padding: 20px;
+    }
+    .calculator {
+      background: rgba(255, 255, 255, 0.95);
+      backdrop-filter: blur(10px);
+      border-radius: 20px;
+      padding: 24px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+      max-width: 320px;
+      width: 100%;
+    }
+    .display {
+      background: #2d3748;
+      color: #fff;
+      padding: 20px;
+      border-radius: 12px;
+      text-align: right;
+      font-size: 2.5rem;
+      margin-bottom: 20px;
+      min-height: 80px;
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      word-wrap: break-word;
+    }
+    .buttons {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+    }
+    button {
+      padding: 20px;
+      font-size: 1.2rem;
+      border: none;
+      border-radius: 12px;
+      cursor: pointer;
+      transition: all 0.2s;
+      font-weight: 600;
+      background: #f7fafc;
+      color: #2d3748;
+    }
+    button:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    }
+    button:active {
+      transform: translateY(0);
+    }
+    .operator {
+      background: #667eea;
+      color: white;
+    }
+    .equals {
+      background: #48bb78;
+      color: white;
+      grid-column: span 2;
+    }
+    .clear {
+      background: #f56565;
+      color: white;
+    }
   </style>
 </head>
 <body>
-  <!-- HTML here -->
+  <div class="calculator">
+    <div class="display" id="display">0</div>
+    <div class="buttons">
+      <button class="clear" onclick="clearDisplay()">C</button>
+      <button class="operator" onclick="appendOperator('/')">/</button>
+      <button class="operator" onclick="appendOperator('*')">×</button>
+      <button onclick="appendNumber('7')">7</button>
+      <button onclick="appendNumber('8')">8</button>
+      <button onclick="appendNumber('9')">9</button>
+      <button class="operator" onclick="appendOperator('-')">−</button>
+      <button onclick="appendNumber('4')">4</button>
+      <button onclick="appendNumber('5')">5</button>
+      <button onclick="appendNumber('6')">6</button>
+      <button class="operator" onclick="appendOperator('+')">+</button>
+      <button onclick="appendNumber('1')">1</button>
+      <button onclick="appendNumber('2')">2</button>
+      <button onclick="appendNumber('3')">3</button>
+      <button class="equals" onclick="calculate()">=</button>
+      <button onclick="appendNumber('0')" style="grid-column: span 2;">0</button>
+      <button onclick="appendNumber('.')">.</button>
+    </div>
+  </div>
   <script>
-    // JavaScript here
+    let display = document.getElementById('display');
+    let currentValue = '0';
+    let operator = null;
+    let previousValue = null;
+
+    function appendNumber(num) {
+      if (currentValue === '0') currentValue = num;
+      else currentValue += num;
+      updateDisplay();
+    }
+
+    function appendOperator(op) {
+      if (previousValue === null) {
+        previousValue = parseFloat(currentValue);
+      } else if (operator) {
+        calculate();
+      }
+      operator = op;
+      currentValue = '0';
+    }
+
+    function calculate() {
+      if (operator && previousValue !== null) {
+        const current = parseFloat(currentValue);
+        let result;
+        switch(operator) {
+          case '+': result = previousValue + current; break;
+          case '-': result = previousValue - current; break;
+          case '*': result = previousValue * current; break;
+          case '/': result = previousValue / current; break;
+        }
+        currentValue = result.toString();
+        operator = null;
+        previousValue = null;
+        updateDisplay();
+      }
+    }
+
+    function clearDisplay() {
+      currentValue = '0';
+      operator = null;
+      previousValue = null;
+      updateDisplay();
+    }
+
+    function updateDisplay() {
+      display.textContent = currentValue;
+    }
   </script>
 </body>
 </html>
 \`\`\`
 
-The calculator is now ready to use in the artifact panel."`
+Your calculator is ready to use in the artifact panel."`
     }
 
     // Start chat with history and system instruction
