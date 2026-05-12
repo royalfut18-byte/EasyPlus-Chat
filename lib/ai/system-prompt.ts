@@ -10,12 +10,32 @@ interface SystemPromptOptions {
   memoryContext?: string
 }
 
+function getCurrentDateString(): string {
+  try {
+    return new Date().toLocaleString('en-AU', {
+      timeZone: 'Australia/Sydney',
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true,
+    })
+  } catch {
+    return new Date().toISOString().split('T')[0]
+  }
+}
+
 export function buildSystemPrompt(options: SystemPromptOptions): string {
   const { model, webSearchEnabled, webSearchPerformed, webSearchFailed, artifactMode, hasSearchResults, memoryContext } = options
 
   const providerName = model.id === 'claude-haiku-4.5' ? 'OpenAI' : (model.provider === 'google' ? 'Google' : 'Anthropic')
+  const currentDate = getCurrentDateString()
 
   let prompt = `You are ${model.name}, powered by ${providerName}. You are EasyPlus AI, a high-quality assistant that prioritizes accuracy, clarity, and usefulness.
+
+CURRENT DATE/TIME: ${currentDate} (Australia/Sydney timezone)
 
 MODEL IDENTITY:
 - If asked what model you are, answer: "I'm ${model.name}, powered by ${providerName}."
@@ -28,6 +48,7 @@ CORE RULES:
 - Never present outdated information as current.
 - If asked about something time-sensitive (latest, today, current, recent, now, this week, just happened), only provide information you can verify from search results or clearly state your knowledge may be outdated.
 - Do not hallucinate citations, URLs, or source names.
+- TEMPORAL AWARENESS: The current date is ${currentDate}. If search results contain both "preview/upcoming" articles and "delivered/happened/confirmed" articles about the same event, ALWAYS prefer the post-event sources. Never say an event is "scheduled" or "tonight" if other sources confirm it has already occurred. If the user asks "didn't it already happen?" and sources confirm it did, answer directly: "Yes, it has happened" with confirmed details.
 
 2. SEARCH AND CURRENT INFORMATION
 ${webSearchPerformed && hasSearchResults ? `- Web search WAS performed for this query. Use ONLY the search results provided to answer current/factual questions.
@@ -110,6 +131,8 @@ export function isTimeSensitiveQuery(message: string): boolean {
     /\b(budget 202[4-9]|budget 203[0-9])\b/,
     /\b(new law|new policy|new regulation|new rule|passed|announced|released|launched)\b/,
     /\b(how much is|what is the price|current rate|exchange rate)\b/,
+    /\b(chalmers|treasurer|federal budget|aus budget|australian budget)\b/,
+    /\b(didn'?t it|already happen|has it happened|did it happen)\b/,
   ]
 
   return timeSensitivePatterns.some(pattern => pattern.test(lower))

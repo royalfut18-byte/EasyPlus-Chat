@@ -96,17 +96,36 @@ function detectLocation(message: string): string | null {
   return null
 }
 
+function getCurrentDateInfo() {
+  const now = new Date()
+  const sydneyDate = new Date(now.toLocaleString('en-US', { timeZone: 'Australia/Sydney' }))
+  return {
+    year: sydneyDate.getFullYear(),
+    month: sydneyDate.toLocaleString('en-US', { month: 'long' }),
+    day: sydneyDate.getDate(),
+    dateStr: sydneyDate.toLocaleDateString('en-AU'),
+  }
+}
+
 function buildSearchTerms(message: string, location: string | null): string[] {
   const lower = message.toLowerCase()
-  const currentYear = new Date().getFullYear()
-  const currentMonth = new Date().toLocaleString('en-US', { month: 'long' })
+  const { year, month, day } = getCurrentDateInfo()
   const queries: string[] = []
 
   if (/budget/i.test(lower) && location === 'Australia') {
-    queries.push(`${currentYear} Australian federal budget announcements ${currentMonth} ${currentYear}`)
-    queries.push(`Australia budget ${currentYear}-${(currentYear + 1).toString().slice(-2)} Treasurer Jim Chalmers`)
+    // Australian budget is typically delivered in May
+    // If we're past the budget date, search for delivered/outcomes
+    const budgetDelivered = year > 2026 || (year === 2026 && (new Date().getMonth() > 4 || (new Date().getMonth() === 4 && day >= 12)))
+
+    if (budgetDelivered || /already|happened|delivered|passed|announced/i.test(lower)) {
+      queries.push(`Australian federal budget ${year}-${(year + 1).toString().slice(-2)} delivered speech key measures`)
+      queries.push(`Treasurer Jim Chalmers budget ${year} winners losers summary`)
+    } else {
+      queries.push(`${year} Australian federal budget announcements ${month} ${year}`)
+      queries.push(`Australia budget ${year}-${(year + 1).toString().slice(-2)} Treasurer Jim Chalmers`)
+    }
   } else if (/budget/i.test(lower)) {
-    queries.push(`${location || ''} budget ${currentYear} latest announcements`.trim())
+    queries.push(`${location || ''} budget ${year} latest announcements`.trim())
   }
 
   if (queries.length === 0) {
@@ -117,7 +136,7 @@ function buildSearchTerms(message: string, location: string | null): string[] {
 
     const hasTimeWord = /\b(today|yesterday|now|this week|this month|latest|current|recent)\b/i.test(base)
     if (!hasTimeWord) {
-      base = `${base} ${currentMonth} ${currentYear}`
+      base = `${base} ${month} ${year}`
     }
 
     if (location) {
@@ -174,6 +193,18 @@ interface SearchResult {
   isReputable: boolean
 }
 
+const POST_EVENT_SIGNALS = [
+  'delivered', 'handed down', 'announced', 'speech', 'budget papers',
+  'winners and losers', 'as it happened', 'key measures', 'summary',
+  'confirmed', 'passed', 'released', 'unveiled',
+]
+
+const PREVIEW_SIGNALS = [
+  'when is the budget', 'what to expect', 'scheduled for',
+  'preview', 'what we know so far', 'ahead of', 'upcoming',
+  'tonight', 'will be delivered', 'expected to',
+]
+
 function scoreResult(result: any, userMessage: string): SearchResult {
   const url = (result.url || '').toLowerCase()
   const title = result.title || ''
@@ -196,6 +227,19 @@ function scoreResult(result: any, userMessage: string): SearchResult {
   if (content.length > 200) score += 10
   if (content.length > 500) score += 10
 
+  // Prefer post-event articles over preview/upcoming articles
+  const hasPostEventSignal = POST_EVENT_SIGNALS.some(s => combinedText.includes(s))
+  const hasPreviewSignal = PREVIEW_SIGNALS.some(s => combinedText.includes(s))
+
+  if (hasPostEventSignal) score += 25
+  if (hasPreviewSignal && hasPostEventSignal) score += 0 // mixed, no penalty
+  else if (hasPreviewSignal) score -= 20
+
+  // Prefer official budget domains
+  if (url.includes('budget.gov.au')) score += 30
+  if (url.includes('treasury.gov.au')) score += 25
+  if (url.includes('pmc.gov.au')) score += 20
+
   return { title, url: result.url, content, score, isReputable }
 }
 
@@ -206,7 +250,7 @@ function filterAndRankResults(results: any[], userMessage: string): SearchResult
 
   filtered.sort((a, b) => b.score - a.score)
 
-  return filtered.slice(0, 5)
+  return filtered.slice(0, 6)
 }
 
 export interface WebSearchResult {
@@ -229,9 +273,10 @@ export async function searchWeb(query: string, userMessage?: string): Promise<We
     const tvly = tavily({ apiKey })
 
     const response = await tvly.search(query, {
-      maxResults: 8,
+      maxResults: 10,
       includeAnswer: false,
       searchDepth: 'advanced',
+      days: 7,
     })
 
     if (!response.results || response.results.length === 0) {
