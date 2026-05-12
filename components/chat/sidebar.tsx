@@ -13,6 +13,7 @@ import {
   CreditCard,
   User,
   Shield,
+  Brain,
 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
@@ -139,6 +140,10 @@ export function Sidebar({
                         Admin Panel
                       </DropdownMenuItem>
                     )}
+                    <DropdownMenuItem onClick={() => router.push('/settings/memory')}>
+                      <Brain className="mr-2 h-4 w-4" />
+                      Memory
+                    </DropdownMenuItem>
                     <DropdownMenuItem onClick={() => router.push('/settings')}>
                       <Settings className="mr-2 h-4 w-4" />
                       Settings

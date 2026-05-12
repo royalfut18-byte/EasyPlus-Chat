@@ -614,6 +614,9 @@ Rules:
         }),
       })
 
+      // Check if memory was saved
+      const memorySaved = response.headers.get('X-Memory-Saved') === 'true'
+
       if (response.status === 402) {
         const errorData = await response.json().catch(() => ({}))
         toast({
@@ -773,6 +776,11 @@ Rules:
             )
           )
         }
+      }
+
+      // Show memory saved toast (subtle)
+      if (memorySaved) {
+        toast({ title: 'Memory saved', description: 'I\'ll remember that for future chats.' })
       }
 
       loadUserProfile().catch((e) => console.error('[Chat] Profile load failed:', e))

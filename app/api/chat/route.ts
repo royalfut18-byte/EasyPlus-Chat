@@ -4,6 +4,15 @@ import { streamBedrockResponse, getModelCost } from '@/lib/ai/bedrock'
 import { streamGeminiResponse } from '@/lib/ai/gemini'
 import { needsWebSearch, searchWeb, buildWebSearchQuery } from '@/lib/ai/web-search'
 import { buildSystemPrompt, isTimeSensitiveQuery, detectQueryType } from '@/lib/ai/system-prompt'
+import {
+  getUserMemories,
+  formatMemoriesForPrompt,
+  shouldExtractMemory,
+  isForgetRequest,
+  extractMemoryText,
+  saveMemory,
+  deleteMemoryByContent,
+} from '@/lib/ai/memory'
 import { AI_MODELS } from '@/types/models'
 import type { ChatMessage } from '@/types/models'
 
@@ -212,6 +221,35 @@ RULES FOR USING THESE RESULTS:
       }
     }
 
+    // Retrieve long-term memory for this user (non-blocking if table doesn't exist)
+    let memoryContext = ''
+    let memorySaveResult: { saved: boolean; memoryText?: string } | null = null
+
+    try {
+      const memories = await getUserMemories(db, user.id, latestUserMessage.content)
+      memoryContext = formatMemoriesForPrompt(memories)
+
+      // Check if user wants to save or forget a memory
+      if (shouldExtractMemory(latestUserMessage.content)) {
+        const memText = extractMemoryText(latestUserMessage.content)
+        if (memText) {
+          const result = await saveMemory(db, user.id, memText, conversationId)
+          if (result.saved) {
+            memorySaveResult = { saved: true, memoryText: memText }
+            console.log('[Chat API] Memory saved:', memText.substring(0, 50))
+          }
+        }
+      } else if (isForgetRequest(latestUserMessage.content)) {
+        const forgetText = latestUserMessage.content
+          .replace(/^(forget|delete|remove)\s+(that|about|my)?\s*/i, '')
+          .trim()
+        await deleteMemoryByContent(db, user.id, forgetText)
+        console.log('[Chat API] Memory deletion attempted for:', forgetText.substring(0, 50))
+      }
+    } catch (memErr: any) {
+      console.warn('[Chat API] Memory retrieval non-fatal error:', memErr.message)
+    }
+
     // Route to appropriate AI provider based on validated model
     const selectedModel = AI_MODELS.find((m) => m.id === validatedModel)
 
@@ -220,7 +258,7 @@ RULES FOR USING THESE RESULTS:
       return NextResponse.json({ error: 'Unknown model' }, { status: 400 })
     }
 
-    // Build production system prompt
+    // Build production system prompt (includes memory context)
     const systemPrompt = buildSystemPrompt({
       model: selectedModel,
       webSearchEnabled: webSearchEnabled === true,
@@ -228,6 +266,7 @@ RULES FOR USING THESE RESULTS:
       webSearchFailed,
       artifactMode: artifactMode || false,
       hasSearchResults,
+      memoryContext,
     })
 
     // Determine temperature based on query type
@@ -309,12 +348,18 @@ RULES FOR USING THESE RESULTS:
       },
     })
 
+    const responseHeaders: Record<string, string> = {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      Connection: 'keep-alive',
+    }
+
+    if (memorySaveResult?.saved) {
+      responseHeaders['X-Memory-Saved'] = 'true'
+    }
+
     return new Response(stream.pipeThrough(transformStream), {
-      headers: {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache',
-        Connection: 'keep-alive',
-      },
+      headers: responseHeaders,
     })
   } catch (error: any) {
     console.error('[Chat API] Fatal error:', {

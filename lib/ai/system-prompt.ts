@@ -7,10 +7,11 @@ interface SystemPromptOptions {
   webSearchFailed?: boolean
   artifactMode: boolean
   hasSearchResults: boolean
+  memoryContext?: string
 }
 
 export function buildSystemPrompt(options: SystemPromptOptions): string {
-  const { model, webSearchEnabled, webSearchPerformed, webSearchFailed, artifactMode, hasSearchResults } = options
+  const { model, webSearchEnabled, webSearchPerformed, webSearchFailed, artifactMode, hasSearchResults, memoryContext } = options
 
   const providerName = model.id === 'claude-haiku-4.5' ? 'OpenAI' : (model.provider === 'google' ? 'Google' : 'Anthropic')
 
@@ -74,6 +75,12 @@ ${!webSearchEnabled ? `- Web search is NOT enabled for this conversation. If the
 - Do not say "I found" unless a source actually returned that information.
 - Never overstate confidence. If something is likely but unconfirmed, say so.
 - If the user calls out an error, investigate and respond honestly rather than defending.`
+
+  if (memoryContext) {
+    prompt += `
+
+${memoryContext}`
+  }
 
   if (artifactMode) {
     prompt += `
