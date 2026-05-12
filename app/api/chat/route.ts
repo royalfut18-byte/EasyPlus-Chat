@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { streamBedrockResponse, getModelCost } from '@/lib/ai/bedrock'
 import { streamGeminiResponse } from '@/lib/ai/gemini'
 import { needsWebSearch, searchWeb, buildWebSearchQuery } from '@/lib/ai/web-search'
+import { buildSystemPrompt, isTimeSensitiveQuery, detectQueryType } from '@/lib/ai/system-prompt'
 import { AI_MODELS } from '@/types/models'
 import type { ChatMessage } from '@/types/models'
 
@@ -162,65 +163,53 @@ export async function POST(request: NextRequest) {
       .filter((m: ChatMessage) => m.content && !isLoadingMarker(m.content))
       .slice(-16) // Last 16 messages for reasonable context window
 
-    // Check if web search should be used (manual toggle takes priority)
+    // Determine if we need search: manual toggle OR auto-detect time-sensitive
     const latestUserMessage = cleanedMessages[cleanedMessages.length - 1]
     let messagesToSend = cleanedMessages as ChatMessage[]
+    const shouldSearch = webSearchEnabled === true ||
+      (isTimeSensitiveQuery(latestUserMessage.content) && !!process.env.TAVILY_API_KEY)
 
-    if (webSearchEnabled === true) {
-      console.log('[Chat API] Running web search (manual toggle enabled)')
+    let webSearchPerformed = false
+    let webSearchFailed = false
+    let hasSearchResults = false
 
-      // Build smart contextual search query
+    if (shouldSearch) {
+      console.log('[Chat API] Running web search', { manual: webSearchEnabled, autoDetected: !webSearchEnabled })
+
       const searchQuery = buildWebSearchQuery(latestUserMessage.content, cleanedMessages)
+      const searchResult = await searchWeb(searchQuery, latestUserMessage.content)
 
-      const webContext = await searchWeb(searchQuery)
+      webSearchPerformed = true
+      webSearchFailed = searchResult.failed
+      hasSearchResults = searchResult.resultCount > 0
 
-      if (webContext) {
-        // Prepend system message with web search context
-        const systemMessage: ChatMessage = {
+      if (searchResult.context) {
+        const searchInstruction: ChatMessage = {
           role: 'user',
-          content: `[WEB SEARCH RESULTS]
-Current user question: "${latestUserMessage.content}"
+          content: `[WEB SEARCH RESULTS - USE THESE FOR YOUR ANSWER]
+User's question: "${latestUserMessage.content}"
 
-Web search results for this question:
-${webContext}
+The following are real search results retrieved just now. Use them to answer the user's question accurately.
+
+${searchResult.context}
 
 ---
 
-INSTRUCTION:
-Answer the current user question using these web search results. Cite or mention source URLs when relevant.
-If the search results are about the wrong topic or insufficient, say you could not find relevant live data.
-Do not answer from unrelated previous conversation context.`,
+RULES FOR USING THESE RESULTS:
+- Base your answer on these search results for any current/factual claims.
+- Cite sources by name and URL when making specific claims.
+- If these results do NOT address the user's question, say so honestly. Do not force irrelevant results into your answer.
+- Do not invent information beyond what these sources provide.
+- Clearly distinguish between what the sources say vs your own analysis.
+- If results conflict with each other, note the disagreement.`,
         }
 
-        // Replace the last user message with the enriched version
-        messagesToSend = [...cleanedMessages.slice(0, -1), systemMessage] as ChatMessage[]
+        messagesToSend = [...cleanedMessages.slice(0, -1), searchInstruction, latestUserMessage] as ChatMessage[]
+      } else if (searchResult.failed) {
+        console.warn('[Chat API] Web search failed')
       } else {
-        console.warn('[Chat API] Web search returned no results')
+        console.warn('[Chat API] Web search returned no relevant results')
       }
-    }
-
-    // Add system instruction for conversation context
-    if (messagesToSend.length > 0) {
-      const systemInstruction: ChatMessage = {
-        role: 'user',
-        content: `[SYSTEM INSTRUCTION]
-You are EasyPlus AI, a helpful assistant. You are having a conversation with a user.
-
-IMPORTANT CONTEXT RULES:
-- Answer using the full conversation history provided above
-- For follow-up questions or pronouns (it, that, this, they, he, she), refer to previous messages in this conversation
-- Maintain topic continuity unless the user explicitly changes subjects
-- If the user asks about "tax" after discussing Jim Chalmers, assume Australian tax policy unless specified otherwise
-- If the user says "their squad" after discussing SRH, understand "their" refers to SRH
-- Do not randomly switch topics, countries, or contexts
-- If web search context conflicts with conversation history, acknowledge both perspectives
-- Be conversational and contextually aware
-
-Now continue the conversation naturally:
----`,
-      }
-
-      messagesToSend = [systemInstruction, ...messagesToSend]
     }
 
     // Route to appropriate AI provider based on validated model
@@ -231,14 +220,28 @@ Now continue the conversation naturally:
       return NextResponse.json({ error: 'Unknown model' }, { status: 400 })
     }
 
+    // Build production system prompt
+    const systemPrompt = buildSystemPrompt({
+      model: selectedModel,
+      webSearchEnabled: webSearchEnabled === true,
+      webSearchPerformed,
+      webSearchFailed,
+      artifactMode: artifactMode || false,
+      hasSearchResults,
+    })
+
+    // Determine temperature based on query type
+    const queryType = detectQueryType(latestUserMessage.content)
+    const temperature = queryType === 'creative' ? 0.7 : queryType === 'factual' ? 0.3 : 0.4
+
     let stream: ReadableStream
 
     if (selectedModel.provider === 'google') {
-      console.log('[Chat API] Using Gemini provider')
-      stream = await streamGeminiResponse(validatedModel, messagesToSend, artifactMode)
+      console.log('[Chat API] Using Gemini provider, temp:', temperature)
+      stream = await streamGeminiResponse(validatedModel, messagesToSend, artifactMode, systemPrompt, temperature)
     } else if (selectedModel.provider === 'anthropic') {
-      console.log('[Chat API] Using Bedrock/Claude provider')
-      stream = await streamBedrockResponse(validatedModel, messagesToSend, artifactMode)
+      console.log('[Chat API] Using Bedrock/Claude provider, temp:', temperature)
+      stream = await streamBedrockResponse(validatedModel, messagesToSend, artifactMode, systemPrompt, temperature)
     } else {
       console.error('[Chat API] Unsupported provider:', selectedModel.provider)
       return NextResponse.json(

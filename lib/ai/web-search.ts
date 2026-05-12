@@ -1,30 +1,6 @@
 import { tavily } from '@tavily/core'
 import type { ChatMessage } from '@/types/models'
 
-const WEB_SEARCH_KEYWORDS = [
-  'latest',
-  'current',
-  'today',
-  'now',
-  'recent',
-  'live',
-  'news',
-  'score',
-  'price',
-  'weather',
-  'who won',
-  'search',
-  'lookup',
-  'look up',
-  'web',
-  'yesterday',
-  'this week',
-  'this month',
-  'update',
-  'happening',
-]
-
-// Words/patterns that indicate ambiguous follow-up questions
 const AMBIGUOUS_PATTERNS = [
   /\b(it|that|this|these|those)\b/i,
   /\b(he|she|they|their|his|her|him)\b/i,
@@ -34,7 +10,6 @@ const AMBIGUOUS_PATTERNS = [
   /\bwhat happened (next|after)\b/i,
 ]
 
-// Topics to filter out from web search context
 const IRRELEVANT_TOPICS = [
   /\b(ai model|what model|which model|gemini|claude|opus|what ai)\b/i,
   /\b(you are|identity|powered by)\b/i,
@@ -42,32 +17,48 @@ const IRRELEVANT_TOPICS = [
   /\bmodel\b.*\bselection\b/i,
 ]
 
+const REPUTABLE_DOMAINS = [
+  'gov.au', 'gov.uk', 'gov', '.edu',
+  'abc.net.au', 'sbs.com.au', 'afr.com', 'smh.com.au', 'theaustralian.com.au',
+  'theguardian.com', 'bbc.com', 'bbc.co.uk', 'reuters.com', 'apnews.com',
+  'nytimes.com', 'washingtonpost.com', 'ft.com', 'economist.com',
+  '9news.com.au', '7news.com.au', 'news.com.au',
+  'budget.gov.au', 'treasury.gov.au', 'ato.gov.au', 'homeaffairs.gov.au',
+  'asx.com.au', 'rba.gov.au',
+]
+
+const LOW_QUALITY_DOMAINS = [
+  'quora.com', 'reddit.com', 'yahoo.com/answers',
+  'wikihow.com', 'ehow.com', 'turbotax',
+  'pinterest.com', 'facebook.com', 'tiktok.com',
+]
+
 export function needsWebSearch(message: string): boolean {
   const lowerMessage = message.toLowerCase()
-  return WEB_SEARCH_KEYWORDS.some((keyword) => lowerMessage.includes(keyword))
+  const keywords = [
+    'latest', 'current', 'today', 'now', 'recent', 'live',
+    'news', 'score', 'price', 'weather', 'who won', 'search',
+    'lookup', 'look up', 'yesterday', 'this week', 'this month',
+    'update', 'happening', 'just happened', 'announced', 'released',
+    'new policy', 'new law', 'budget 202', 'election',
+  ]
+  return keywords.some((keyword) => lowerMessage.includes(keyword))
 }
 
-/**
- * Check if a message is an ambiguous follow-up that needs context
- */
-export function isAmbiguousFollowUp(message: string): boolean {
+function isAmbiguousFollowUp(message: string): boolean {
   const lowerMessage = message.toLowerCase().trim()
 
-  // Very short messages are usually follow-ups
   if (lowerMessage.length < 15) {
     return true
   }
 
-  // Check for ambiguous pronouns/patterns
   const hasAmbiguousPattern = AMBIGUOUS_PATTERNS.some((pattern) => pattern.test(message))
 
   if (hasAmbiguousPattern) {
-    // But if it has specific entities (capitals, named things), it might be specific
-    const hasNamedEntities = /[A-Z][a-z]+\s+[A-Z][a-z]+/.test(message) || // "Jim Chalmers"
-                             /\b[A-Z]{2,}\b/.test(message) || // "US", "UK", "IPL"
-                             /\d{4}/.test(message) // years like "2026"
+    const hasNamedEntities = /[A-Z][a-z]+\s+[A-Z][a-z]+/.test(message) ||
+                             /\b[A-Z]{2,}\b/.test(message) ||
+                             /\d{4}/.test(message)
 
-    // If ambiguous but has entities, still consider it specific
     if (hasNamedEntities) {
       return false
     }
@@ -78,91 +69,158 @@ export function isAmbiguousFollowUp(message: string): boolean {
   return false
 }
 
-/**
- * Sanitize and optimize search query
- */
-export function sanitizeSearchQuery(query: string): string {
-  let sanitized = query.trim()
-
-  // Replace "x" between words with space (iran x us -> iran us)
-  sanitized = sanitized.replace(/\s+x\s+/gi, ' ')
-
-  // Add "today" for latest/current/news queries if not present
-  const needsToday = /\b(latest|current|update|news)\b/i.test(sanitized)
-  const hasTimeword = /\b(today|yesterday|now|this week|this month)\b/i.test(sanitized)
-
-  if (needsToday && !hasTimeword) {
-    sanitized = `${sanitized} today`
-  }
-
-  // Limit length
-  if (sanitized.length > 200) {
-    sanitized = sanitized.substring(0, 200).trim()
-  }
-
-  return sanitized
-}
-
-/**
- * Filter out irrelevant messages (like AI model discussions)
- */
 function isRelevantMessage(message: ChatMessage): boolean {
   const content = message.content.toLowerCase()
   return !IRRELEVANT_TOPICS.some((pattern) => pattern.test(content))
 }
 
-/**
- * Build web search query with smart context handling
- */
+function detectLocation(message: string): string | null {
+  const lower = message.toLowerCase()
+
+  const locationPatterns: [RegExp, string][] = [
+    [/\b(australia|australian|aussie|aus)\b/i, 'Australia'],
+    [/\b(budget\.gov\.au|treasury\.gov\.au|ato\.gov\.au)\b/i, 'Australia'],
+    [/\b(afl|nrl|cricket australia|ashes)\b/i, 'Australia'],
+    [/\b(uk|united kingdom|british|britain|england)\b/i, 'UK'],
+    [/\b(us|usa|united states|american)\b/i, 'US'],
+    [/\b(india|indian)\b/i, 'India'],
+    [/\b(jim chalmers|albanese|dutton|treasurer)\b/i, 'Australia'],
+  ]
+
+  for (const [pattern, location] of locationPatterns) {
+    if (pattern.test(lower)) {
+      return location
+    }
+  }
+
+  return null
+}
+
+function buildSearchTerms(message: string, location: string | null): string[] {
+  const lower = message.toLowerCase()
+  const currentYear = new Date().getFullYear()
+  const currentMonth = new Date().toLocaleString('en-US', { month: 'long' })
+  const queries: string[] = []
+
+  if (/budget/i.test(lower) && location === 'Australia') {
+    queries.push(`${currentYear} Australian federal budget announcements ${currentMonth} ${currentYear}`)
+    queries.push(`Australia budget ${currentYear}-${(currentYear + 1).toString().slice(-2)} Treasurer Jim Chalmers`)
+  } else if (/budget/i.test(lower)) {
+    queries.push(`${location || ''} budget ${currentYear} latest announcements`.trim())
+  }
+
+  if (queries.length === 0) {
+    let base = message.trim()
+    if (base.length > 150) {
+      base = base.substring(0, 150).trim()
+    }
+
+    const hasTimeWord = /\b(today|yesterday|now|this week|this month|latest|current|recent)\b/i.test(base)
+    if (!hasTimeWord) {
+      base = `${base} ${currentMonth} ${currentYear}`
+    }
+
+    if (location) {
+      base = `${base} ${location}`
+    }
+
+    queries.push(base)
+  }
+
+  return queries
+}
+
 export function buildWebSearchQuery(
   latestUserMessage: string,
   recentMessages: ChatMessage[]
 ): string {
   const isAmbiguous = isAmbiguousFollowUp(latestUserMessage)
+  let messageForQuery = latestUserMessage
 
-  console.log('[WebSearch] latest:', latestUserMessage)
-  console.log('[WebSearch] isAmbiguous:', isAmbiguous)
+  if (isAmbiguous) {
+    const contextMessages = recentMessages
+      .slice(-5, -1)
+      .filter(isRelevantMessage)
+      .slice(-4)
 
-  // If the message is specific, use it directly
-  if (!isAmbiguous) {
-    const query = sanitizeSearchQuery(latestUserMessage)
-    console.log('[WebSearch] query (specific):', query)
-    return query
+    if (contextMessages.length > 0) {
+      const context = contextMessages
+        .map((m) => m.content)
+        .join(' ')
+        .substring(0, 200)
+
+      messageForQuery = `${context} ${latestUserMessage}`
+    }
   }
 
-  // For ambiguous follow-ups, add relevant context
-  // Get last 4 messages (2 exchanges) excluding the current message
-  const contextMessages = recentMessages
-    .slice(-5, -1) // Last 4 messages before current
-    .filter(isRelevantMessage)
-    .slice(-4) // Keep max 4
+  const location = detectLocation(messageForQuery)
+  const queries = buildSearchTerms(messageForQuery, location)
 
-  if (contextMessages.length === 0) {
-    // No context available, just use the message
-    const query = sanitizeSearchQuery(latestUserMessage)
-    console.log('[WebSearch] query (no context):', query)
-    return query
+  const query = queries[0] || messageForQuery
+
+  if (query.length > 250) {
+    return query.substring(0, 250).trim()
   }
 
-  // Build contextual query
-  const context = contextMessages
-    .map((m) => m.content)
-    .join(' ')
-    .substring(0, 300) // Limit context length
-
-  const combinedQuery = `${context} ${latestUserMessage}`
-  const query = sanitizeSearchQuery(combinedQuery)
-
-  console.log('[WebSearch] query (with context):', query)
+  console.log('[WebSearch] Built query:', query, '| location:', location)
   return query
 }
 
-export async function searchWeb(query: string): Promise<string | null> {
+interface SearchResult {
+  title: string
+  url: string
+  content: string
+  score: number
+  isReputable: boolean
+}
+
+function scoreResult(result: any, userMessage: string): SearchResult {
+  const url = (result.url || '').toLowerCase()
+  const title = result.title || ''
+  const content = result.content || result.snippet || ''
+
+  let score = 0
+
+  const isReputable = REPUTABLE_DOMAINS.some(d => url.includes(d))
+  const isLowQuality = LOW_QUALITY_DOMAINS.some(d => url.includes(d))
+
+  if (isReputable) score += 30
+  if (isLowQuality) score -= 40
+  if (url.includes('.gov')) score += 20
+
+  const userWords = userMessage.toLowerCase().split(/\s+/).filter(w => w.length > 3)
+  const combinedText = `${title} ${content}`.toLowerCase()
+  const matchingWords = userWords.filter(w => combinedText.includes(w))
+  score += matchingWords.length * 10
+
+  if (content.length > 200) score += 10
+  if (content.length > 500) score += 10
+
+  return { title, url: result.url, content, score, isReputable }
+}
+
+function filterAndRankResults(results: any[], userMessage: string): SearchResult[] {
+  const scored = results.map(r => scoreResult(r, userMessage))
+
+  const filtered = scored.filter(r => r.score > -10)
+
+  filtered.sort((a, b) => b.score - a.score)
+
+  return filtered.slice(0, 5)
+}
+
+export interface WebSearchResult {
+  context: string | null
+  failed: boolean
+  resultCount: number
+}
+
+export async function searchWeb(query: string, userMessage?: string): Promise<WebSearchResult> {
   const apiKey = process.env.TAVILY_API_KEY
 
   if (!apiKey) {
     console.warn('[Web Search] TAVILY_API_KEY not set, skipping web search')
-    return null
+    return { context: null, failed: true, resultCount: 0 }
   }
 
   try {
@@ -171,32 +229,37 @@ export async function searchWeb(query: string): Promise<string | null> {
     const tvly = tavily({ apiKey })
 
     const response = await tvly.search(query, {
-      maxResults: 5,
+      maxResults: 8,
       includeAnswer: false,
-      searchDepth: 'basic',
+      searchDepth: 'advanced',
     })
 
     if (!response.results || response.results.length === 0) {
       console.log('[Web Search] No results found')
-      return null
+      return { context: null, failed: false, resultCount: 0 }
     }
 
-    console.log('[Web Search] Found', response.results.length, 'results')
+    const ranked = filterAndRankResults(response.results, userMessage || query)
 
-    const context = response.results
-      .map((result: any, index: number) => {
-        return `[${index + 1}] ${result.title}
+    if (ranked.length === 0) {
+      console.log('[Web Search] All results filtered as irrelevant')
+      return { context: null, failed: false, resultCount: 0 }
+    }
+
+    console.log('[Web Search] Ranked results:', ranked.length, 'from', response.results.length, 'raw')
+
+    const context = ranked
+      .map((result, index) => {
+        const reputeTag = result.isReputable ? ' [REPUTABLE SOURCE]' : ''
+        return `[Source ${index + 1}] ${result.title}${reputeTag}
 URL: ${result.url}
-${result.content || result.snippet || ''}`
+${result.content}`
       })
       .join('\n\n')
 
-    return context
+    return { context, failed: false, resultCount: ranked.length }
   } catch (error: any) {
-    console.error('[Web Search] Error:', {
-      message: error.message,
-      stack: error.stack,
-    })
-    return null
+    console.error('[Web Search] Error:', error.message)
+    return { context: null, failed: true, resultCount: 0 }
   }
 }
