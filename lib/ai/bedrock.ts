@@ -55,7 +55,6 @@ function dataUrlToBedrockImage(dataUrl: string, mimeType?: string): { format: st
 export async function streamBedrockResponse(
   modelId: string,
   messages: ChatMessage[],
-  artifactMode: boolean = false,
   systemPromptText?: string,
   temperature: number = 0.7
 ): Promise<ReadableStream> {

@@ -238,10 +238,10 @@ RULES FOR USING THESE RESULTS:
 
     if (selectedModel.provider === 'google') {
       console.log('[Chat API] Using Gemini provider, temp:', temperature)
-      stream = await streamGeminiResponse(validatedModel, messagesToSend, artifactMode, systemPrompt, temperature)
+      stream = await streamGeminiResponse(validatedModel, messagesToSend, systemPrompt, temperature)
     } else if (selectedModel.provider === 'anthropic') {
       console.log('[Chat API] Using Bedrock/Claude provider, temp:', temperature)
-      stream = await streamBedrockResponse(validatedModel, messagesToSend, artifactMode, systemPrompt, temperature)
+      stream = await streamBedrockResponse(validatedModel, messagesToSend, systemPrompt, temperature)
     } else {
       console.error('[Chat API] Unsupported provider:', selectedModel.provider)
       return NextResponse.json(

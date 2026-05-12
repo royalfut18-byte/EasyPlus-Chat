@@ -7,7 +7,6 @@ import { AI_MODELS, type ChatMessage } from '@/types/models'
 export async function streamGeminiResponse(
   modelId: string,
   messages: ChatMessage[],
-  artifactMode: boolean = false,
   systemPromptText?: string,
   temperature: number = 0.7
 ): Promise<ReadableStream> {
@@ -38,12 +37,7 @@ export async function streamGeminiResponse(
   // Gemini uses a flat array of {role, parts} where role is 'user' or 'model'
   const geminiMessages = messages
     .filter((message) => message.role === 'user' || message.role === 'assistant')
-    .filter((message) => {
-      // Filter out loading markers
-      const isLoadingMarker =
-        message.content === '__ARTIFACT_LOADING__' || message.content === '__ASSISTANT_LOADING__'
-      return message.content && !isLoadingMarker
-    })
+    .filter((message) => message.content && message.content.trim())
     .map((message) => {
       const parts: any[] = []
 
