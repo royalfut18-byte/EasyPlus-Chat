@@ -89,10 +89,15 @@
 
 .prose {
   @apply max-w-none;
+  word-break: break-word;
+  overflow-wrap: break-word;
 }
 
 .prose pre {
   @apply bg-secondary rounded-lg p-4 overflow-x-auto;
+  white-space: pre;
+  word-break: normal;
+  overflow-wrap: normal;
 }
 
 .prose code {
@@ -101,6 +106,19 @@
 
 .prose p {
   @apply mb-3 leading-6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.prose li {
+  white-space: normal;
+  word-break: break-word;
+}
+
+.prose strong,
+.prose em {
+  display: inline;
+  white-space: normal;
 }
 
 @media (min-width: 768px) {
@@ -121,6 +139,8 @@
 
 .prose li {
   @apply leading-6;
+  white-space: normal;
+  word-break: break-word;
 }
 
 @media (min-width: 768px) {

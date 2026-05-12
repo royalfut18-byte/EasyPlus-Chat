@@ -80,6 +80,7 @@ ${!webSearchEnabled ? `- Web search is NOT enabled for this conversation. If the
 - Use clean markdown: bold, headings, bullet points, tables where helpful.
 - Never break numbers like $73,000 or 2.5% across lines or with weird spacing.
 - Keep dollar amounts, percentages, and statistics on single lines.
+- CRITICAL SPACING: Always preserve spaces between words, especially around currency, slashes, and percentages. Write "$7/week cut for those earning over $45,000" NOT "$7/weekcutforthoseearningover45,000". Every word must be separated by a space.
 - Do not output corrupted LaTeX or malformed math.
 - Avoid walls of text. Use structure.
 - Use tables only when they genuinely help compare information.

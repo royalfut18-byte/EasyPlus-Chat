@@ -14,6 +14,7 @@ import { ChatGPTIcon } from '@/components/icons/chatgpt-icon'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { toast } from '@/components/ui/use-toast'
+import { cleanAssistantText } from '@/lib/ai/format-response'
 import 'katex/dist/katex.min.css'
 
 import type { ChatAttachment, Artifact } from '@/types/models'
@@ -35,7 +36,8 @@ const ASSISTANT_LOADING_MARKER = '__ASSISTANT_LOADING__'
 export function MessageBubble({ role, content, model, onRegenerate, attachments, hasArtifact, artifact, onOpenArtifact }: MessageBubbleProps) {
   const isUser = role === 'user'
   const modelData = model ? AI_MODELS.find((m) => m.id === model) : null
-  const safeContent = content || ''
+  const rawContent = content || ''
+  const safeContent = !isUser ? cleanAssistantText(rawContent) : rawContent
 
   // Check for loading markers
   const isArtifactLoading = !isUser && safeContent === ARTIFACT_LOADING_MARKER
