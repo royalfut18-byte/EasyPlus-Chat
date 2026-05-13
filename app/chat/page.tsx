@@ -166,6 +166,17 @@ function toTitleCase(str: string): string {
     .join(' ')
 }
 
+type PendingResponse = {
+  conversationId: string
+  assistantMessageId: string
+  userMessageId: string
+  startedAt: string
+  model: string
+  mode: 'normal' | 'artifact' | 'agent'
+  status: 'thinking' | 'streaming'
+  loadingMarker: string
+}
+
 export default function ChatPage() {
   const [selectedModel, setSelectedModel] = useState(AI_MODELS[0].id)
   const [conversations, setConversations] = useState<Conversation[]>([])
@@ -181,6 +192,7 @@ export default function ChatPage() {
   const [isArtifactOpen, setIsArtifactOpen] = useState(false)
   const [artifactMessageId, setArtifactMessageId] = useState<string | null>(null)
   const [artifactPanelWidth, setArtifactPanelWidth] = useState(DEFAULT_PANEL_WIDTH)
+  const [pendingResponses, setPendingResponses] = useState<Record<string, PendingResponse>>({})
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const isSendingRef = useRef(false)
   const lastUserPromptRef = useRef<string>('')
@@ -189,8 +201,23 @@ export default function ChatPage() {
   const abortControllerRef = useRef<AbortController | null>(null)
   const selectedConversationIdRef = useRef<string | null>(null)
   const conversationRequestSeqRef = useRef(0)
+  const pendingResponsesRef = useRef<Record<string, PendingResponse>>({})
   const router = useRouter()
   const supabase = createClient()
+
+  const setPendingResponse = (conversationId: string, pending: PendingResponse) => {
+    pendingResponsesRef.current = { ...pendingResponsesRef.current, [conversationId]: pending }
+    setPendingResponses(prev => ({ ...prev, [conversationId]: pending }))
+  }
+
+  const clearPendingResponse = (conversationId: string) => {
+    const { [conversationId]: _, ...rest } = pendingResponsesRef.current
+    pendingResponsesRef.current = rest
+    setPendingResponses(prev => {
+      const { [conversationId]: __, ...remaining } = prev
+      return remaining
+    })
+  }
 
   useEffect(() => {
     loadUserProfile()
@@ -402,7 +429,7 @@ export default function ChatPage() {
     const requestSeq = ++conversationRequestSeqRef.current
     selectedConversationIdRef.current = id
 
-    // Abort any previous request
+    // Abort any previous message-loading request (NOT the active AI generation)
     if (abortControllerRef.current) {
       abortControllerRef.current.abort()
     }
@@ -420,6 +447,24 @@ export default function ChatPage() {
 
     // Fetch messages (with sequence check)
     await loadConversationMessages(id, requestSeq)
+
+    // After loading, restore pending placeholder if this conversation has an active response
+    const pending = pendingResponsesRef.current[id]
+    if (pending && selectedConversationIdRef.current === id) {
+      setMessages(prev => {
+        const hasPlaceholder = prev.some(m => m.id === pending.assistantMessageId)
+        if (hasPlaceholder) return prev
+        const placeholder: Message = {
+          id: pending.assistantMessageId,
+          conversation_id: id,
+          role: 'assistant',
+          content: pending.loadingMarker,
+          model: pending.model,
+          created_at: pending.startedAt,
+        }
+        return processMessages([...prev, placeholder], id)
+      })
+    }
   }
 
   const handleDeleteConversation = async (id: string) => {
@@ -471,7 +516,14 @@ export default function ChatPage() {
 
 
   const handleSendMessage = async (content: string, attachments?: ChatAttachment[]) => {
-    // 1. Guard: Block duplicate sends at the very top
+    // 1. Guard: Block duplicate sends - check if current conversation already has pending
+    const guardConvId = currentConversation?.id
+    if (guardConvId && pendingResponsesRef.current[guardConvId]) {
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('[Chat] Duplicate send blocked - conversation has pending response')
+      }
+      return
+    }
     if (isSendingRef.current) {
       if (process.env.NODE_ENV !== 'production') {
         console.log('[Chat] Duplicate send blocked')
@@ -604,6 +656,18 @@ export default function ChatPage() {
 
     setMessages((prev) => processMessages([...prev, assistantPlaceholder], sendConversationId))
 
+    // Register pending response for this conversation
+    setPendingResponse(sendConversationId, {
+      conversationId: sendConversationId,
+      assistantMessageId: clientAssistantMessageId,
+      userMessageId: clientUserMessageId,
+      startedAt: assistantCreatedAt,
+      model: modelToUse,
+      mode: requestArtifactMode ? 'artifact' : 'normal',
+      status: 'thinking',
+      loadingMarker,
+    })
+
     try {
       // 7. Prepare messages for API (exclude artifact metadata and loading markers)
       const isLoadingMarker = (content: string) => {
@@ -722,6 +786,7 @@ Rules:
       const reader = response.body?.getReader()
       const decoder = new TextDecoder()
       let assistantContent = ''
+      let streamingStatusSet = false
 
       while (reader) {
         const { done, value } = await reader.read()
@@ -729,6 +794,15 @@ Rules:
 
         const chunk = decoder.decode(value)
         assistantContent += chunk
+
+        // Update pending status to streaming on first chunk
+        if (!streamingStatusSet) {
+          streamingStatusSet = true
+          const currentPending = pendingResponsesRef.current[sendConversationId]
+          if (currentPending) {
+            setPendingResponse(sendConversationId, { ...currentPending, status: 'streaming' })
+          }
+        }
 
         // Update by ID only - no new messages, only if still on this conversation
         if (selectedConversationIdRef.current === sendConversationId) {
@@ -894,6 +968,7 @@ Rules:
       setIsLoading(false)
       setIsCreatingConversation(false)
       isSendingRef.current = false
+      clearPendingResponse(sendConversationId)
       if (process.env.NODE_ENV !== 'production') {
         console.log('[Chat] Send complete, loading states reset')
       }
@@ -956,7 +1031,9 @@ Rules:
     )
   }
 
-  const isRequestInProgress = isLoading || isCreatingConversation || isSendingRef.current
+  const currentConvId = currentConversation?.id
+  const currentChatPending = currentConvId ? !!pendingResponses[currentConvId] : false
+  const isRequestInProgress = currentChatPending || isLoading || isCreatingConversation
   const showReopenButton = currentConversation && activeArtifact && !isArtifactOpen
 
   // Process messages before rendering - filter by current conversation ID as final safety
@@ -968,6 +1045,7 @@ Rules:
       <Sidebar
         conversations={conversations}
         currentConversationId={currentConversation?.id}
+        pendingConversationIds={Object.keys(pendingResponses)}
         onSelectConversation={handleSelectConversation}
         onNewChat={handleNewChat}
         onDeleteConversation={handleDeleteConversation}

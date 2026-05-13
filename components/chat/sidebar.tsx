@@ -33,6 +33,7 @@ import type { Conversation } from '@/types/models'
 interface SidebarProps {
   conversations: Conversation[]
   currentConversationId?: string
+  pendingConversationIds?: string[]
   onSelectConversation: (id: string) => void
   onNewChat: () => void
   onDeleteConversation: (id: string) => void
@@ -47,6 +48,7 @@ interface SidebarProps {
 export function Sidebar({
   conversations,
   currentConversationId,
+  pendingConversationIds = [],
   onSelectConversation,
   onNewChat,
   onDeleteConversation,
@@ -203,6 +205,9 @@ export function Sidebar({
                           })}
                         </p>
                       </div>
+                      {pendingConversationIds.includes(conv.id) && (
+                        <span className="absolute top-3 right-10 h-2.5 w-2.5 rounded-full bg-purple-500 animate-pulse" />
+                      )}
                     </div>
                     <Button
                       onClick={(e) => {
