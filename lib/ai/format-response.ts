@@ -22,6 +22,20 @@ export function cleanAssistantText(text: string): string {
     return `${CODE_BLOCK_PLACEHOLDER}${codeBlocks.length - 1}`
   })
 
+  // Protect display math blocks ($$...$$)
+  const displayMathBlocks: string[] = []
+  cleaned = cleaned.replace(/\$\$[\s\S]*?\$\$/g, (match) => {
+    displayMathBlocks.push(match)
+    return `___DISPLAY_MATH___${displayMathBlocks.length - 1}`
+  })
+
+  // Protect inline math ($...$) - single dollar signs with non-space content
+  const inlineMathBlocks: string[] = []
+  cleaned = cleaned.replace(/\$(?!\d)([^$\n]+?)\$/g, (match) => {
+    inlineMathBlocks.push(match)
+    return `___INLINE_MATH___${inlineMathBlocks.length - 1}`
+  })
+
   // Protect inline code
   const inlineCodeBlocks: string[] = []
   cleaned = cleaned.replace(/`[^`\n]+`/g, (match) => {
@@ -87,6 +101,8 @@ export function cleanAssistantText(text: string): string {
   // Restore protected content
   cleaned = cleaned.replace(/___MDLINK___(\d+)/g, (_, i) => mdLinks[parseInt(i)])
   cleaned = cleaned.replace(/___URL___(\d+)/g, (_, i) => urls[parseInt(i)])
+  cleaned = cleaned.replace(/___INLINE_MATH___(\d+)/g, (_, i) => inlineMathBlocks[parseInt(i)])
+  cleaned = cleaned.replace(/___DISPLAY_MATH___(\d+)/g, (_, i) => displayMathBlocks[parseInt(i)])
   cleaned = cleaned.replace(/___INLINE_CODE___(\d+)/g, (_, i) => inlineCodeBlocks[parseInt(i)])
   cleaned = cleaned.replace(new RegExp(`${CODE_BLOCK_PLACEHOLDER}(\\d+)`, 'g'), (_, i) => codeBlocks[parseInt(i)])
   cleaned = cleaned.replace(new RegExp(`${ARTIFACT_BLOCK_PLACEHOLDER}(\\d+)`, 'g'), (_, i) => artifactBlocks[parseInt(i)])

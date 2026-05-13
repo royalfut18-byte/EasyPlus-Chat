@@ -219,6 +219,54 @@
   @apply mb-0;
 }
 
+/* KaTeX math rendering - dark mode */
+.katex {
+  color: #e2e8f0;
+  font-size: 1.05em;
+}
+
+.katex-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0.75rem 0;
+  margin: 0.75rem 0;
+  max-width: 100%;
+  -webkit-overflow-scrolling: touch;
+}
+
+.katex-display > .katex {
+  white-space: nowrap;
+}
+
+.katex-display .katex-html {
+  max-width: 100%;
+}
+
+.prose .katex-display {
+  @apply my-4;
+}
+
+@media (max-width: 767px) {
+  .katex-display {
+    padding: 0.5rem 0;
+    margin: 0.5rem 0;
+    font-size: 0.95em;
+  }
+}
+
+/* Inline math alignment */
+.katex-inline {
+  vertical-align: baseline;
+}
+
+p .katex {
+  vertical-align: baseline;
+}
+
+li .katex {
+  vertical-align: baseline;
+}
+
 .scrollbar-thin::-webkit-scrollbar {
   width: 6px;
   height: 6px;
