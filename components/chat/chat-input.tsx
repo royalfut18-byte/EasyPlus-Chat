@@ -24,7 +24,7 @@ const DOCUMENT_TYPES = [
 ]
 const ALLOWED_EXTENSIONS = ['.pdf', '.txt', '.md', '.csv', '.json', '.docx', '.png', '.jpg', '.jpeg', '.webp']
 const MAX_IMAGE_SIZE = 5 * 1024 * 1024
-const MAX_DOC_SIZE = 10 * 1024 * 1024
+const MAX_DOC_SIZE = 500 * 1024 * 1024
 const MAX_FILES = 5
 
 function getMimeFromExtension(filename: string): string | null {
@@ -131,7 +131,7 @@ export function ChatInput({ onSend, disabled, isLoading }: ChatInputProps) {
         title: 'File too large',
         description: isImage
           ? 'Images must be smaller than 5MB'
-          : 'Documents must be smaller than 10MB',
+          : 'Documents must be smaller than 500MB',
         variant: 'destructive',
       })
       return null
