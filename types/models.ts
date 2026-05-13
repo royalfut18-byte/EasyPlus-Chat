@@ -22,7 +22,7 @@ export const AI_MODELS: AIModel[] = [
     id: 'claude-haiku-4.5',
     name: 'Chat GPT 5.5',
     provider: 'anthropic',
-    bedrockModelId: 'anthropic.claude-opus-4-5-20250514',
+    bedrockModelId: 'global.anthropic.claude-opus-4-5-20251101-v1:0',
     costPerMessage: 15,
     color: '#10b981', // Green for fast/cheaper
   },
