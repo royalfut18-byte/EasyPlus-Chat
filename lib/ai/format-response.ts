@@ -81,6 +81,9 @@ export function cleanAssistantText(text: string): string {
   cleaned = cleaned.replace(/([a-zA-Z])\*\*([^*]+)\*\*([a-zA-Z])/g, '$1 **$2** $3')
   cleaned = cleaned.replace(/([a-zA-Z])\*([^*]+)\*([a-zA-Z])/g, '$1 *$2* $3')
 
+  // Fix 6: Normalize spaced bold markers "** text **" -> "**text**"
+  cleaned = cleaned.replace(/\*\*\s+([^*]+?)\s+\*\*/g, '**$1**')
+
   // Restore protected content
   cleaned = cleaned.replace(/___MDLINK___(\d+)/g, (_, i) => mdLinks[parseInt(i)])
   cleaned = cleaned.replace(/___URL___(\d+)/g, (_, i) => urls[parseInt(i)])

@@ -191,7 +191,7 @@ export function MessageBubble({ role, content, model, onRegenerate, attachments,
                   h2: ({ children }) => <h2 className="text-lg md:text-xl font-bold mt-4 md:mt-5 mb-2 md:mb-3 text-white">{children}</h2>,
                   h3: ({ children }) => <h3 className="text-base md:text-lg font-semibold mt-3 md:mt-4 mb-2 text-white">{children}</h3>,
                   p: ({ children }) => <p className="mb-3 md:mb-4 leading-6 md:leading-7 text-gray-100 last:mb-0">{children}</p>,
-                  strong: ({ children }) => <strong className="font-bold text-white">{children}</strong>,
+                  strong: ({ children }) => <strong className="font-semibold text-white">{children}</strong>,
                 }}
               >
                 {safeContent}
@@ -293,7 +293,7 @@ export function MessageBubble({ role, content, model, onRegenerate, attachments,
                     </code>
                   )
                 },
-                strong: ({ children }) => <strong className="font-bold text-white">{children}</strong>,
+                strong: ({ children }) => <strong className="font-semibold text-white">{children}</strong>,
                 em: ({ children }) => <em className="italic text-gray-200">{children}</em>,
                 hr: () => <hr className="my-6 border-white/20" />,
               }}

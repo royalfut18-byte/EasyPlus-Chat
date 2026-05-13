@@ -106,7 +106,7 @@
 
 .prose p {
   @apply mb-3 leading-6;
-  white-space: pre-wrap;
+  white-space: normal;
   word-break: break-word;
 }
 
@@ -204,11 +204,11 @@
 }
 
 .prose strong {
-  @apply font-bold;
+  @apply font-semibold text-white;
 }
 
 .prose em {
-  @apply italic;
+  @apply italic text-gray-200;
 }
 
 .prose hr {
