@@ -342,6 +342,33 @@ export default function ChatPage() {
     }
   }
 
+  const generateSmartTitle = async (conversationId: string, _currentTitle: string) => {
+
+    try {
+      const response = await fetch(`/api/conversations/${conversationId}/title`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      })
+
+      if (!response.ok) return
+
+      const { title } = await response.json()
+      if (!title) return
+
+      // Update sidebar conversation list
+      setConversations((prev) =>
+        prev.map((c) => c.id === conversationId ? { ...c, title } : c)
+      )
+
+      // Update current conversation if it matches
+      setCurrentConversation((prev) =>
+        prev && prev.id === conversationId ? { ...prev, title } : prev
+      )
+    } catch (e) {
+      // Silently fail - fallback title remains
+    }
+  }
+
   const handleNewChat = () => {
     if (!currentConversation && messages.length === 0) return
 
@@ -793,6 +820,11 @@ Rules:
       // Show memory saved toast (subtle)
       if (memorySaved) {
         toast({ title: 'Memory saved', description: 'I\'ll remember that for future chats.' })
+      }
+
+      // Generate smart title after first exchange
+      if (conversation && messages.length === 0) {
+        generateSmartTitle(conversation.id, conversation.title)
       }
 
       loadUserProfile().catch((e) => console.error('[Chat] Profile load failed:', e))
