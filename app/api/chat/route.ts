@@ -168,6 +168,18 @@ export async function POST(request: NextRequest) {
     stage = 'prepare-messages'
     const userMessage = messages[messages.length - 1]
 
+    // Validate attachment sizes (5MB limit per file)
+    if (userMessage.attachments && userMessage.attachments.length > 0) {
+      for (const att of userMessage.attachments) {
+        if (att.dataUrl && att.dataUrl.length > 7 * 1024 * 1024) {
+          return NextResponse.json(
+            { error: 'File too large. Please upload a file under 5MB.' },
+            { status: 400 }
+          )
+        }
+      }
+    }
+
     // Check image support
     if (userMessage.attachments && userMessage.attachments.length > 0) {
       const hasImageAttachments = userMessage.attachments.some((a: any) => a.type === 'image')

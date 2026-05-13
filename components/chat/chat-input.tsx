@@ -23,9 +23,8 @@ const DOCUMENT_TYPES = [
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
 ]
 const ALLOWED_EXTENSIONS = ['.pdf', '.txt', '.md', '.csv', '.json', '.docx', '.png', '.jpg', '.jpeg', '.webp']
-const MAX_IMAGE_SIZE = 5 * 1024 * 1024
-const MAX_DOC_SIZE = 500 * 1024 * 1024
-const MAX_FILES = 5
+const MAX_FILE_SIZE = 5 * 1024 * 1024
+const MAX_FILES = 3
 
 function getMimeFromExtension(filename: string): string | null {
   const ext = filename.toLowerCase().split('.').pop()
@@ -124,14 +123,11 @@ export function ChatInput({ onSend, disabled, isLoading }: ChatInputProps) {
     }
 
     const isImage = IMAGE_TYPES.includes(mime)
-    const maxSize = isImage ? MAX_IMAGE_SIZE : MAX_DOC_SIZE
 
-    if (file.size > maxSize) {
+    if (file.size > MAX_FILE_SIZE) {
       toast({
         title: 'File too large',
-        description: isImage
-          ? 'Images must be smaller than 5MB'
-          : 'Documents must be smaller than 500MB',
+        description: 'Please upload a file under 5MB.',
         variant: 'destructive',
       })
       return null

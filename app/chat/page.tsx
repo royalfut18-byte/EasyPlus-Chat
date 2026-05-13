@@ -647,12 +647,16 @@ Rules:
         let errorMessage = `Server error (${response.status})`
         try {
           const text = await response.text()
-          try {
-            const errorData = JSON.parse(text)
-            errorMessage = errorData.error || errorMessage
-          } catch {
-            if (text.length > 0 && text.length < 500) {
-              errorMessage = text
+          if (response.status === 413 || text.includes('PAYLOAD_TOO_LARGE') || text.includes('FUNCTION_PAYLOAD_TOO_LARGE') || text.includes('Request Entity Too Large')) {
+            errorMessage = 'File too large for upload. Try a smaller file under 5MB.'
+          } else {
+            try {
+              const errorData = JSON.parse(text)
+              errorMessage = errorData.error || errorMessage
+            } catch {
+              if (text.length > 0 && text.length < 500) {
+                errorMessage = text
+              }
             }
           }
         } catch (e) {
