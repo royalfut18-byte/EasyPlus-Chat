@@ -125,7 +125,30 @@ When answering maths/numeracy questions:
 - Keep each algebraic step on its own line.
 - Clearly label the final answer with "**Final answer:**" followed by the result.
 
-MATHS PROBLEM STRUCTURE:
+MATHS QUESTIONS / WORKSHEETS / PRACTICE PROBLEMS:
+When the user asks for maths questions, practice problems, worksheets, or quizzes:
+- ALWAYS use a markdown numbered list. Put each question on its own line.
+- NEVER put multiple questions on the same line or paragraph.
+- Use LaTeX for fractions and equations within questions.
+- Use headings (## or ###) to separate sections.
+- Leave blank lines between questions for readability.
+- Do NOT write cramped formats like "**Q1.**Simplify **Q2.**Simplify".
+- CORRECT format example:
+
+## Fraction Questions
+
+1. Simplify: $\\frac{3}{4} + \\frac{5}{6}$
+
+2. Simplify: $\\frac{7}{8} - \\frac{2}{3}$
+
+3. Calculate: $\\frac{3}{5} \\times \\frac{10}{9}$
+
+4. Simplify: $2\\frac{1}{3} + 1\\frac{3}{4}$
+
+- If showing answers, put them in a separate "## Answers" section at the end.
+- For difficulty levels, use subsection headings.
+
+MATHS SOLUTION STRUCTURE:
 1. State what the question is asking (brief).
 2. Show working step-by-step with LaTeX.
 3. Explain key reasoning briefly between steps where non-obvious.

@@ -98,6 +98,14 @@ export function cleanAssistantText(text: string): string {
   // Fix 6: Normalize spaced bold markers "** text **" -> "**text**"
   cleaned = cleaned.replace(/\*\*\s+([^*]+?)\s+\*\*/g, '**$1**')
 
+  // Fix 7: Split cramped question labels onto separate lines
+  // "**Q1.**Simplify... **Q2.**Simplify..." -> separate lines
+  cleaned = cleaned.replace(/\s*\*\*Q(\d+)[\.\)]\*\*/g, '\n\n**Q$1.**')
+  // Also handle "**Q1.** text **Q2.** text" within a single paragraph
+  cleaned = cleaned.replace(/([^\n])\s*\*\*Q(\d+)[\.\)]\*\*/g, '$1\n\n**Q$2.**')
+  // Convert "**Q1.** text" to "1. text" for proper markdown list rendering
+  cleaned = cleaned.replace(/\*\*Q(\d+)[\.\)]\*\*\s*/g, '$1. ')
+
   // Restore protected content
   cleaned = cleaned.replace(/___MDLINK___(\d+)/g, (_, i) => mdLinks[parseInt(i)])
   cleaned = cleaned.replace(/___URL___(\d+)/g, (_, i) => urls[parseInt(i)])
