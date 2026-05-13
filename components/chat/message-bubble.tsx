@@ -1,7 +1,7 @@
 'use client'
 
 import { motion } from 'framer-motion'
-import { Copy, ThumbsUp, ThumbsDown, RotateCw, FileCode, Sparkles, PanelRightOpen, Sparkles as GeminiIcon, Download } from 'lucide-react'
+import { Copy, ThumbsUp, ThumbsDown, RotateCw, FileCode, Sparkles, PanelRightOpen, Sparkles as GeminiIcon, Download, FileText, FileSpreadsheet, FileJson, File as FileIcon } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism'
@@ -103,40 +103,67 @@ export function MessageBubble({ role, content, model, onRegenerate, attachments,
           )}>
             {attachments.map((attachment, index) => (
               <div key={index} className="relative group">
-                <img
-                  src={attachment.dataUrl}
-                  alt={attachment.name || 'Uploaded image'}
-                  className={cn(
-                    'rounded-xl border object-contain',
+                {attachment.type === 'image' && attachment.dataUrl ? (
+                  <>
+                    <img
+                      src={attachment.dataUrl}
+                      alt={attachment.name || 'Uploaded image'}
+                      className={cn(
+                        'rounded-xl border object-contain',
+                        isUser
+                          ? 'max-w-full max-h-[220px] md:max-h-[280px] border-white/20'
+                          : 'max-w-full md:max-w-lg max-h-96 border-white/20'
+                      )}
+                    />
+                    {!isUser && (
+                      <div className="absolute top-2 right-2 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-8 w-8 p-0 bg-black/50 hover:bg-black/70 backdrop-blur-sm"
+                          onClick={() => {
+                            const link = document.createElement('a')
+                            link.href = attachment.dataUrl || ''
+                            link.download = attachment.name || 'image.png'
+                            document.body.appendChild(link)
+                            link.click()
+                            document.body.removeChild(link)
+                            toast({
+                              title: 'Image downloaded',
+                              description: 'The image has been saved to your downloads',
+                            })
+                          }}
+                          title="Download image"
+                        >
+                          <Download className="h-4 w-4 text-white" />
+                        </Button>
+                      </div>
+                    )}
+                  </>
+                ) : attachment.type === 'document' ? (
+                  <div className={cn(
+                    'flex items-center gap-2.5 px-3 py-2.5 rounded-xl border backdrop-blur-sm',
                     isUser
-                      ? 'max-w-full max-h-[220px] md:max-h-[280px] border-white/20'
-                      : 'max-w-full md:max-w-lg max-h-96 border-white/20'
-                  )}
-                />
-                {!isUser && (
-                  <div className="absolute top-2 right-2 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="h-8 w-8 p-0 bg-black/50 hover:bg-black/70 backdrop-blur-sm"
-                      onClick={() => {
-                        const link = document.createElement('a')
-                        link.href = attachment.dataUrl || ''
-                        link.download = attachment.name || 'image.png'
-                        document.body.appendChild(link)
-                        link.click()
-                        document.body.removeChild(link)
-                        toast({
-                          title: 'Image downloaded',
-                          description: 'The image has been saved to your downloads',
-                        })
-                      }}
-                      title="Download image"
-                    >
-                      <Download className="h-4 w-4 text-white" />
-                    </Button>
+                      ? 'border-white/20 bg-white/10'
+                      : 'border-white/15 bg-white/5'
+                  )}>
+                    {attachment.mimeType === 'application/pdf' ? (
+                      <FileText className="h-5 w-5 text-red-400 shrink-0" />
+                    ) : attachment.mimeType === 'text/csv' ? (
+                      <FileSpreadsheet className="h-5 w-5 text-green-400 shrink-0" />
+                    ) : attachment.mimeType === 'application/json' ? (
+                      <FileJson className="h-5 w-5 text-yellow-400 shrink-0" />
+                    ) : attachment.mimeType === 'text/markdown' ? (
+                      <FileText className="h-5 w-5 text-blue-400 shrink-0" />
+                    ) : (
+                      <FileIcon className="h-5 w-5 text-gray-400 shrink-0" />
+                    )}
+                    <div className="min-w-0">
+                      <p className="text-xs font-medium text-white truncate max-w-[180px]">{attachment.name}</p>
+                      <p className="text-[10px] text-gray-400">Document attached</p>
+                    </div>
                   </div>
-                )}
+                ) : null}
               </div>
             ))}
           </div>

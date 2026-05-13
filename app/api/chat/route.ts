@@ -4,6 +4,7 @@ import { streamBedrockResponse, getModelCost } from '@/lib/ai/bedrock'
 import { streamGeminiResponse } from '@/lib/ai/gemini'
 import { needsWebSearch, searchWeb, buildWebSearchQuery } from '@/lib/ai/web-search'
 import { buildSystemPrompt, isTimeSensitiveQuery, detectQueryType } from '@/lib/ai/system-prompt'
+import { buildDocumentContext } from '@/lib/ai/document-extract'
 import {
   getUserMemories,
   formatMemoriesForPrompt,
@@ -147,17 +148,18 @@ export async function POST(request: NextRequest) {
 
     // Check if user sent images and model doesn't support them
     if (userMessage.attachments && userMessage.attachments.length > 0) {
-      const selectedModel = AI_MODELS.find((m) => m.id === validatedModel)
+      const hasImageAttachments = userMessage.attachments.some((a: any) => a.type === 'image')
 
-      // Chat GPT 5.5 (Claude Haiku disguised) doesn't actually support images via OpenAI API
-      // It's just Claude Haiku using Bedrock, which does support images
-      const modelSupportsImages = selectedModel?.provider === 'anthropic' || selectedModel?.provider === 'google'
+      if (hasImageAttachments) {
+        const selectedModelCheck = AI_MODELS.find((m) => m.id === validatedModel)
+        const modelSupportsImages = selectedModelCheck?.provider === 'anthropic' || selectedModelCheck?.provider === 'google'
 
-      if (!modelSupportsImages) {
-        return NextResponse.json(
-          { error: 'Image input is not supported for this model. Try Claude Opus 4.6 or Gemini.' },
-          { status: 400 }
-        )
+        if (!modelSupportsImages) {
+          return NextResponse.json(
+            { error: 'Image input is not supported for this model. Try Claude Opus 4.6 or Gemini.' },
+            { status: 400 }
+          )
+        }
       }
     }
 
@@ -219,6 +221,29 @@ RULES FOR USING THESE RESULTS:
       } else {
         console.warn('[Chat API] Web search returned no relevant results')
       }
+    }
+
+    // Extract document text from attachments in the latest user message
+    let documentContext = ''
+    if (latestUserMessage.attachments && latestUserMessage.attachments.length > 0) {
+      const docAttachments = latestUserMessage.attachments.filter((a: any) => a.type === 'document')
+      if (docAttachments.length > 0) {
+        try {
+          documentContext = await buildDocumentContext(docAttachments)
+          console.log('[Chat API] Document context extracted, length:', documentContext.length)
+        } catch (docErr: any) {
+          console.error('[Chat API] Document extraction error:', docErr.message)
+        }
+      }
+    }
+
+    // If document context exists, inject it into the messages
+    if (documentContext) {
+      const docInstruction: ChatMessage = {
+        role: 'user',
+        content: `[ATTACHED DOCUMENTS - USE THESE FOR YOUR ANSWER]\n\n${documentContext}\n\n---\nThe above documents are attached by the user. Read and use this content to answer their question. If the document does not contain enough information to answer, say so. Do not invent details not in the document.`,
+      }
+      messagesToSend = [...messagesToSend.slice(0, -1), docInstruction, latestUserMessage] as ChatMessage[]
     }
 
     // Retrieve long-term memory for this user (non-blocking if table doesn't exist)

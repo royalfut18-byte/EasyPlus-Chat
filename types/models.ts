@@ -37,10 +37,12 @@ export const AI_MODELS: AIModel[] = [
 ]
 
 export interface ChatAttachment {
-  type: 'image'
+  type: 'image' | 'document'
   name: string
   mimeType: string
-  dataUrl: string
+  size?: number
+  dataUrl?: string
+  textContent?: string
 }
 
 export interface ChatMessage {
