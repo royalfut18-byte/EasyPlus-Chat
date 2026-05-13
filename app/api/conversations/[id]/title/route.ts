@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { GoogleGenerativeAI } from '@google/generative-ai'
 
+export const runtime = 'nodejs'
+export const maxDuration = 30
+
 function generateFallbackTitle(userMessage: string, attachmentNames?: string[]): string {
   const trimmed = userMessage.trim().toLowerCase()
 

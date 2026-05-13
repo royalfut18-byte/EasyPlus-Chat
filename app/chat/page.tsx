@@ -23,6 +23,17 @@ const DEFAULT_PANEL_WIDTH = 560
 const PANEL_WIDTH_KEY = 'easyplus-artifact-panel-width'
 const ARTIFACT_LOADING_MARKER = '__ARTIFACT_LOADING__'
 const ASSISTANT_LOADING_MARKER = '__ASSISTANT_LOADING__'
+const LONG_TASK_LOADING_MARKER = '__LONG_TASK_LOADING__'
+
+function isLongTaskClient(message: string, attachments?: ChatAttachment[]): boolean {
+  const lower = message.toLowerCase()
+  const longKeywords = ['scan', 'analyse', 'analyze', 'mark', 'refine', '20/20', 'band 6', 'skeletal essay', 'full essay', 'detailed', 'step by step', 'explain fully', 'solve all', 'generate full', 'long response', 'comprehensive', 'in detail', 'mark out of']
+  const hasLongKeyword = longKeywords.some((kw) => lower.includes(kw))
+  const hasDocOrImage = attachments?.some((a) => a.type === 'document' || a.type === 'image')
+  if (hasDocOrImage && hasLongKeyword) return true
+  if (hasLongKeyword && lower.length > 100) return true
+  return false
+}
 
 // Artifact persistence keys
 const getArtifactKey = (conversationId: string) => `easyplus:artifact:${conversationId}`
@@ -575,11 +586,18 @@ export default function ChatPage() {
     const sendConversationId = conversation.id
 
     // 6. Add assistant placeholder exactly once with correct timestamp
+    const isLongTask = isLongTaskClient(trimmedContent, attachments)
+    const loadingMarker = requestArtifactMode
+      ? ARTIFACT_LOADING_MARKER
+      : isLongTask
+        ? LONG_TASK_LOADING_MARKER
+        : ASSISTANT_LOADING_MARKER
+
     const assistantPlaceholder: Message = {
       id: clientAssistantMessageId,
       conversation_id: sendConversationId,
       role: 'assistant',
-      content: requestArtifactMode ? ARTIFACT_LOADING_MARKER : ASSISTANT_LOADING_MARKER,
+      content: loadingMarker,
       model: modelToUse,
       created_at: assistantCreatedAt, // Use the +1ms timestamp
     }
@@ -589,7 +607,7 @@ export default function ChatPage() {
     try {
       // 7. Prepare messages for API (exclude artifact metadata and loading markers)
       const isLoadingMarker = (content: string) => {
-        return content === ARTIFACT_LOADING_MARKER || content === ASSISTANT_LOADING_MARKER
+        return content === ARTIFACT_LOADING_MARKER || content === ASSISTANT_LOADING_MARKER || content === LONG_TASK_LOADING_MARKER
       }
 
       // Get recent conversation context (last 16 messages)
@@ -676,6 +694,13 @@ Rules:
           const text = await response.text()
           if (response.status === 413 || text.includes('PAYLOAD_TOO_LARGE') || text.includes('FUNCTION_PAYLOAD_TOO_LARGE') || text.includes('Request Entity Too Large')) {
             errorMessage = 'File too large for upload. Try a smaller file under 5MB.'
+          } else if (response.status === 504 || text.includes('FUNCTION_INVOCATION_TIMEOUT') || text.includes('took too long')) {
+            try {
+              const errorData = JSON.parse(text)
+              errorMessage = errorData.error || 'This task took too long. Try asking for one part at a time, or ask me to continue in parts.'
+            } catch {
+              errorMessage = 'This task took too long. Try asking for one part at a time, or ask me to continue in parts.'
+            }
           } else {
             try {
               const errorData = JSON.parse(text)
@@ -833,12 +858,25 @@ Rules:
       }
     } catch (error: any) {
       console.error('[Chat] Send message error:', error.message)
+
+      const isTimeoutError =
+        error.message?.includes('took too long') ||
+        error.message?.includes('timeout') ||
+        error.message?.includes('TIMEOUT') ||
+        error.message?.includes('network') ||
+        error.message?.includes('aborted') ||
+        error.name === 'TypeError'
+
+      const displayMessage = isTimeoutError
+        ? 'This task took too long. Try asking for one part at a time, or ask me to continue in parts.'
+        : `Sorry, something went wrong: ${error.message}`
+
       if (selectedConversationIdRef.current === sendConversationId) {
         setMessages((prev) =>
           processMessages(
             prev.map((m) =>
               m.id === clientAssistantMessageId
-                ? { ...m, content: `Sorry, something went wrong: ${error.message}` }
+                ? { ...m, content: displayMessage }
                 : m
             ),
             sendConversationId
@@ -846,8 +884,10 @@ Rules:
         )
       }
       toast({
-        title: 'Error',
-        description: error.message || 'Failed to send message',
+        title: isTimeoutError ? 'Task too long' : 'Error',
+        description: isTimeoutError
+          ? 'Try splitting the task into smaller parts'
+          : (error.message || 'Failed to send message'),
         variant: 'destructive',
       })
     } finally {

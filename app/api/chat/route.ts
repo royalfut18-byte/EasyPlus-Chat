@@ -15,11 +15,12 @@ import {
   saveMemory,
   deleteMemoryByContent,
 } from '@/lib/ai/memory'
+import { isLongTaskRequest, LONG_TASK_SYSTEM_ADDENDUM } from '@/lib/ai/long-task'
 import { AI_MODELS } from '@/types/models'
 import type { ChatMessage } from '@/types/models'
 
 export const runtime = 'nodejs'
-export const maxDuration = 60
+export const maxDuration = 300
 
 type ProfileRow = {
   credits: number
@@ -207,7 +208,7 @@ export async function POST(request: NextRequest) {
     }
 
     const isLoadingMarker = (content: string) => {
-      return content === '__ARTIFACT_LOADING__' || content === '__ASSISTANT_LOADING__'
+      return content === '__ARTIFACT_LOADING__' || content === '__ASSISTANT_LOADING__' || content === '__LONG_TASK_LOADING__'
     }
 
     let cleanedMessages = messages
@@ -302,7 +303,7 @@ RULES FOR USING THESE RESULTS:
       messagesToSend = [...messagesToSend.slice(0, -1), docInstruction, latestUserMessage] as ChatMessage[]
     }
 
-    // Stage: Memory
+    // Stage: Memory (fetch only - save/delete deferred to not block AI call)
     stage = 'memory'
     let memoryContext = ''
     let memorySaveResult: { saved: boolean; memoryText?: string } | null = null
@@ -311,19 +312,22 @@ RULES FOR USING THESE RESULTS:
       const memories = await getUserMemories(db, user.id, latestUserMessage.content)
       memoryContext = formatMemoriesForPrompt(memories)
 
+      // Defer memory save/delete - fire-and-forget after getting context
       if (shouldExtractMemory(latestUserMessage.content)) {
         const memText = extractMemoryText(latestUserMessage.content)
         if (memText) {
-          const result = await saveMemory(db, user.id, memText, conversationId)
-          if (result.saved) {
-            memorySaveResult = { saved: true, memoryText: memText }
-          }
+          memorySaveResult = { saved: true, memoryText: memText }
+          saveMemory(db, user.id, memText, conversationId).catch((err: any) => {
+            console.warn('[Chat API] Deferred memory save failed:', err.message)
+          })
         }
       } else if (isForgetRequest(latestUserMessage.content)) {
         const forgetText = latestUserMessage.content
           .replace(/^(forget|delete|remove)\s+(that|about|my)?\s*/i, '')
           .trim()
-        await deleteMemoryByContent(db, user.id, forgetText)
+        deleteMemoryByContent(db, user.id, forgetText).catch((err: any) => {
+          console.warn('[Chat API] Deferred memory delete failed:', err.message)
+        })
       }
     } catch (memErr: any) {
       console.warn('[Chat API] Memory non-fatal error:', memErr.message)
@@ -341,7 +345,13 @@ RULES FOR USING THESE RESULTS:
       )
     }
 
-    const systemPrompt = buildSystemPrompt({
+    // Detect long tasks for optimized handling
+    const longTask = isLongTaskRequest(latestUserMessage.content, userMessage.attachments)
+    if (longTask) {
+      console.log('[Chat API] Long task detected')
+    }
+
+    let systemPrompt = buildSystemPrompt({
       model: selectedModel,
       webSearchEnabled: webSearchEnabled === true,
       webSearchPerformed,
@@ -350,6 +360,10 @@ RULES FOR USING THESE RESULTS:
       hasSearchResults,
       memoryContext,
     })
+
+    if (longTask) {
+      systemPrompt += '\n\n' + LONG_TASK_SYSTEM_ADDENDUM
+    }
 
     const queryType = detectQueryType(latestUserMessage.content)
     const temperature = queryType === 'creative' ? 0.7 : queryType === 'factual' ? 0.3 : 0.4
@@ -483,6 +497,10 @@ RULES FOR USING THESE RESULTS:
       responseHeaders['X-Memory-Saved'] = 'true'
     }
 
+    if (longTask) {
+      responseHeaders['X-Long-Task'] = 'true'
+    }
+
     console.log('[Chat API] Success, streaming response. Duration:', Date.now() - startTime, 'ms')
 
     return new Response(stream.pipeThrough(transformStream), {
@@ -494,6 +512,22 @@ RULES FOR USING THESE RESULTS:
       name: error.name,
       stack: error.stack?.substring(0, 500),
     })
+
+    const isTimeout =
+      error.message?.includes('timeout') ||
+      error.message?.includes('TIMEOUT') ||
+      error.message?.includes('timed out') ||
+      error.message?.includes('FUNCTION_INVOCATION_TIMEOUT') ||
+      error.name === 'TimeoutError' ||
+      (stage === 'ai-call' && Date.now() - startTime > 280000)
+
+    if (isTimeout) {
+      return NextResponse.json(
+        { error: 'This task took too long. Try asking for one part at a time, or ask me to continue in parts.' },
+        { status: 504 }
+      )
+    }
+
     return NextResponse.json(
       { error: `Chat failed at ${stage}: ${error.message}` },
       { status: 500 }

@@ -32,6 +32,7 @@ interface MessageBubbleProps {
 
 const ARTIFACT_LOADING_MARKER = '__ARTIFACT_LOADING__'
 const ASSISTANT_LOADING_MARKER = '__ASSISTANT_LOADING__'
+const LONG_TASK_LOADING_MARKER = '__LONG_TASK_LOADING__'
 
 export function MessageBubble({ role, content, model, onRegenerate, attachments, hasArtifact, artifact, onOpenArtifact }: MessageBubbleProps) {
   const isUser = role === 'user'
@@ -42,9 +43,10 @@ export function MessageBubble({ role, content, model, onRegenerate, attachments,
   // Check for loading markers
   const isArtifactLoading = !isUser && safeContent === ARTIFACT_LOADING_MARKER
   const isAssistantLoading = !isUser && safeContent === ASSISTANT_LOADING_MARKER
+  const isLongTaskLoading = !isUser && safeContent === LONG_TASK_LOADING_MARKER
 
   // Check if this is a stuck/old loading marker (shouldn't persist in database)
-  const isStuckLoadingMarker = !isUser && (safeContent === ARTIFACT_LOADING_MARKER || safeContent === ASSISTANT_LOADING_MARKER)
+  const isStuckLoadingMarker = !isUser && (safeContent === ARTIFACT_LOADING_MARKER || safeContent === ASSISTANT_LOADING_MARKER || safeContent === LONG_TASK_LOADING_MARKER)
 
   const hasArtifactCard = !isUser && (hasArtifact || (artifact && artifact.title && artifact.code))
 
@@ -218,6 +220,24 @@ export function MessageBubble({ role, content, model, onRegenerate, attachments,
                   <div className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
                   <div className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
                 </div>
+              </div>
+            </div>
+          ) : isLongTaskLoading ? (
+            <div className="flex items-center gap-3 py-2">
+              <div className="relative">
+                <Sparkles className="h-5 w-5 text-amber-400 animate-pulse" />
+                <div className="absolute inset-0 bg-amber-500/20 blur-lg animate-pulse" />
+              </div>
+              <div className="flex flex-col gap-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-white font-medium">Working through a larger task</span>
+                  <div className="flex gap-1">
+                    <div className="w-1.5 h-1.5 bg-amber-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                    <div className="w-1.5 h-1.5 bg-amber-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                    <div className="w-1.5 h-1.5 bg-amber-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                  </div>
+                </div>
+                <span className="text-xs text-gray-400">This may take longer than usual</span>
               </div>
             </div>
           ) : hasArtifactCard && onOpenArtifact ? (
