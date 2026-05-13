@@ -364,6 +364,51 @@ RULES FOR USING THESE RESULTS:
       }
     }) as ChatMessage[]
 
+    // Stage: Save user message BEFORE AI call
+    stage = 'save-user-message'
+    let userMessageOrderIndex: number | null = null
+
+    if (conversationId) {
+      try {
+        const { data: maxOrderData } = await db
+          .from('messages')
+          .select('order_index')
+          .eq('conversation_id', conversationId)
+          .order('order_index', { ascending: false })
+          .limit(1)
+          .single()
+
+        const maxOrder = maxOrderData?.order_index || 0
+        userMessageOrderIndex = (typeof maxOrder === 'number' ? maxOrder : 0) + 1
+
+        const safeAttachments = sanitizeAttachmentsForStorage(userMessage.attachments)
+        const { error: userInsertError } = await db.from('messages').insert({
+          conversation_id: conversationId,
+          role: 'user',
+          content: userMessage.content,
+          model: validatedModel,
+          order_index: userMessageOrderIndex,
+          ...(safeAttachments ? { attachments: safeAttachments } : {}),
+        })
+
+        if (userInsertError) {
+          console.error('[Chat API] User message insert failed:', userInsertError.message)
+          return NextResponse.json(
+            { error: `Failed to save user message: ${userInsertError.message}` },
+            { status: 500 }
+          )
+        }
+
+        console.log('[Chat API] User message saved, order_index:', userMessageOrderIndex)
+      } catch (saveErr: any) {
+        console.error('[Chat API] User message save exception:', saveErr.message)
+        return NextResponse.json(
+          { error: `Failed to save user message: ${saveErr.message}` },
+          { status: 500 }
+        )
+      }
+    }
+
     console.log('[Chat API] Calling provider:', {
       provider: selectedModel.provider,
       modelId: validatedModel,
@@ -402,41 +447,27 @@ RULES FOR USING THESE RESULTS:
       async flush() {
         if (conversationId && fullResponse) {
           try {
-            const { data: maxOrderData } = await db
-              .from('messages')
-              .select('order_index')
-              .eq('conversation_id', conversationId)
-              .order('order_index', { ascending: false })
-              .limit(1)
-              .single()
-
-            const maxOrder = maxOrderData?.order_index || 0
-            const nextOrder = (typeof maxOrder === 'number' ? maxOrder : 0) + 1
-
-            const safeAttachments = sanitizeAttachmentsForStorage(userMessage.attachments)
-            await db.from('messages').insert({
-              conversation_id: conversationId,
-              role: 'user',
-              content: userMessage.content,
-              model: validatedModel,
-              order_index: nextOrder,
-              ...(safeAttachments ? { attachments: safeAttachments } : {}),
-            })
-
-            await db.from('messages').insert({
+            const assistantOrder = userMessageOrderIndex != null ? userMessageOrderIndex + 1 : 1
+            const { error: assistantInsertError } = await db.from('messages').insert({
               conversation_id: conversationId,
               role: 'assistant',
               content: fullResponse,
               model: validatedModel,
-              order_index: nextOrder + 1,
+              order_index: assistantOrder,
             })
+
+            if (assistantInsertError) {
+              console.error('[Chat API] Assistant message insert failed:', assistantInsertError.message)
+            } else {
+              console.log('[Chat API] Assistant message saved, order_index:', assistantOrder)
+            }
 
             await db
               .from('conversations')
               .update({ updated_at: new Date().toISOString() })
               .eq('id', conversationId)
           } catch (saveErr: any) {
-            console.error('[Chat API] Message save error (non-fatal):', saveErr.message)
+            console.error('[Chat API] Assistant message save error:', saveErr.message)
           }
         }
       },
