@@ -224,15 +224,24 @@ RULES FOR USING THESE RESULTS:
     }
 
     // Extract document text from attachments in the latest user message
+    // Use userMessage (raw from request body) to guarantee attachments are present
     let documentContext = ''
-    if (latestUserMessage.attachments && latestUserMessage.attachments.length > 0) {
-      const docAttachments = latestUserMessage.attachments.filter((a: any) => a.type === 'document')
+    if (userMessage.attachments && userMessage.attachments.length > 0) {
+      const docAttachments = userMessage.attachments.filter((a: any) => a.type === 'document')
       if (docAttachments.length > 0) {
         try {
-          documentContext = await buildDocumentContext(docAttachments)
+          const result = await buildDocumentContext(docAttachments)
+          documentContext = result.context
+          if (result.error) {
+            console.warn('[Chat API] Document extraction warning:', result.error)
+          }
           console.log('[Chat API] Document context extracted, length:', documentContext.length)
         } catch (docErr: any) {
-          console.error('[Chat API] Document extraction error:', docErr.message)
+          console.error('[Chat API] Document extraction error:', docErr.message, docErr.stack)
+          return NextResponse.json(
+            { error: 'Document processing failed. Please try re-uploading the file.', details: docErr.message },
+            { status: 400 }
+          )
         }
       }
     }
@@ -298,14 +307,26 @@ RULES FOR USING THESE RESULTS:
     const queryType = detectQueryType(latestUserMessage.content)
     const temperature = queryType === 'creative' ? 0.7 : queryType === 'factual' ? 0.3 : 0.4
 
+    // Strip document dataUrls from messages before sending to model (text already extracted above)
+    // Keep image dataUrls since models need them for vision
+    const messagesForModel = messagesToSend.map((m) => {
+      if (!m.attachments) return m
+      const cleanedAttachments = m.attachments
+        .filter((a) => a.type === 'image')
+      return {
+        ...m,
+        attachments: cleanedAttachments.length > 0 ? cleanedAttachments : undefined,
+      }
+    }) as ChatMessage[]
+
     let stream: ReadableStream
 
     if (selectedModel.provider === 'google') {
       console.log('[Chat API] Using Gemini provider, temp:', temperature)
-      stream = await streamGeminiResponse(validatedModel, messagesToSend, systemPrompt, temperature)
+      stream = await streamGeminiResponse(validatedModel, messagesForModel, systemPrompt, temperature)
     } else if (selectedModel.provider === 'anthropic') {
       console.log('[Chat API] Using Bedrock/Claude provider, temp:', temperature)
-      stream = await streamBedrockResponse(validatedModel, messagesToSend, systemPrompt, temperature)
+      stream = await streamBedrockResponse(validatedModel, messagesForModel, systemPrompt, temperature)
     } else {
       console.error('[Chat API] Unsupported provider:', selectedModel.provider)
       return NextResponse.json(

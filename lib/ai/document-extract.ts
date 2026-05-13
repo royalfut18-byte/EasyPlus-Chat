@@ -34,13 +34,18 @@ function extractTextFromMarkdown(dataUrl: string): string {
 async function extractTextFromPdf(dataUrl: string): Promise<string> {
   try {
     const base64Match = dataUrl.match(/^data:[^;]+;base64,(.+)$/)
-    if (!base64Match) return ''
+    if (!base64Match) return '__PDF_EXTRACTION_FAILED__'
     const buffer = Buffer.from(base64Match[1], 'base64')
-    const { PDFParse } = await import('pdf-parse')
-    const parser = new PDFParse({ data: new Uint8Array(buffer) })
-    const result = await parser.getText()
-    await parser.destroy()
-    return result.text || ''
+
+    // pdf-parse v1: default export is a function(buffer) => Promise<{text, numpages, info}>
+    const pdfParse = (await import('pdf-parse')).default
+    const result = await pdfParse(buffer)
+
+    if (!result.text || result.text.trim().length === 0) {
+      return '__PDF_NO_TEXT__'
+    }
+
+    return result.text
   } catch (err: any) {
     console.error('[Document Extract] PDF extraction failed:', err.message)
     return '__PDF_EXTRACTION_FAILED__'
@@ -52,7 +57,7 @@ export async function extractTextFromAttachment(attachment: ChatAttachment): Pro
   if (attachment.textContent) return attachment.textContent
 
   const dataUrl = attachment.dataUrl
-  if (!dataUrl) return ''
+  if (!dataUrl) return '__MISSING_DATA__'
 
   const mime = attachment.mimeType.toLowerCase()
 
@@ -75,19 +80,46 @@ export async function extractTextFromAttachment(attachment: ChatAttachment): Pro
   return ''
 }
 
-export async function buildDocumentContext(attachments: ChatAttachment[]): Promise<string> {
+export interface DocumentExtractionResult {
+  context: string
+  error?: string
+}
+
+export async function buildDocumentContext(attachments: ChatAttachment[]): Promise<DocumentExtractionResult> {
   const docAttachments = attachments.filter((a) => a.type === 'document')
-  if (docAttachments.length === 0) return ''
+  if (docAttachments.length === 0) return { context: '' }
 
   let totalChars = 0
   const blocks: string[] = []
+  let extractionError: string | undefined
 
   for (const attachment of docAttachments) {
-    let text = await extractTextFromAttachment(attachment)
+    console.log('[Document Extract] Processing:', {
+      name: attachment.name,
+      mimeType: attachment.mimeType,
+      size: attachment.size,
+      hasDataUrl: !!attachment.dataUrl,
+    })
+
+    const text = await extractTextFromAttachment(attachment)
+
+    if (text === '__MISSING_DATA__') {
+      extractionError = `Document data was missing for "${attachment.name}". Please re-upload the file.`
+      continue
+    }
 
     if (text === '__PDF_EXTRACTION_FAILED__') {
+      extractionError = `PDF text extraction failed for "${attachment.name}". The file may be corrupted or unsupported.`
       blocks.push(
         `[Attached document: ${attachment.name}]\nPDF text extraction failed. The PDF may be scanned/image-based or corrupted. Please upload a text-based PDF or convert to .txt.\n[/Attached document]`
+      )
+      continue
+    }
+
+    if (text === '__PDF_NO_TEXT__') {
+      extractionError = `No readable text found in "${attachment.name}". This may be a scanned/image-only PDF.`
+      blocks.push(
+        `[Attached document: ${attachment.name}]\nNo readable text found in this PDF. It may be a scanned/image-only document.\n[/Attached document]`
       )
       continue
     }
@@ -107,13 +139,22 @@ export async function buildDocumentContext(attachments: ChatAttachment[]): Promi
       break
     }
 
-    if (text.length > remaining) {
-      text = text.substring(0, remaining) + '\n\n[Document truncated due to length]'
+    let finalText = text
+    if (finalText.length > remaining) {
+      finalText = finalText.substring(0, remaining) + '\n\n[Document truncated due to length]'
     }
 
-    totalChars += text.length
-    blocks.push(`[Attached document: ${attachment.name}]\n${text}\n[/Attached document]`)
+    totalChars += finalText.length
+    blocks.push(`[Attached document: ${attachment.name}]\n${finalText}\n[/Attached document]`)
+
+    console.log('[Document Extract] Success:', {
+      name: attachment.name,
+      extractedLength: finalText.length,
+    })
   }
 
-  return blocks.join('\n\n')
+  return {
+    context: blocks.join('\n\n'),
+    error: extractionError,
+  }
 }
