@@ -24,8 +24,10 @@ export async function GET(
 
     if (error) throw error
 
-    // Cast to Message[] and filter to only this conversation (safety check)
-    const messages = (rawMessages || []) as Message[]
+    const messages = (rawMessages || []).map((m: any) => ({
+      ...m,
+      attachments: m.attachments || [],
+    })) as Message[]
     const filtered = messages.filter(m => m?.conversation_id === id)
 
     // Server-side sort with robust tie-breaking

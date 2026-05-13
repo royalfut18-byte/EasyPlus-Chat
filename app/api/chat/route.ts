@@ -5,6 +5,7 @@ import { streamGeminiResponse } from '@/lib/ai/gemini'
 import { searchWeb, buildWebSearchQuery } from '@/lib/ai/web-search'
 import { buildSystemPrompt, isTimeSensitiveQuery, detectQueryType } from '@/lib/ai/system-prompt'
 import { buildDocumentContext } from '@/lib/ai/document-extract'
+import { sanitizeAttachmentsForStorage } from '@/lib/ai/sanitize-attachments'
 import {
   getUserMemories,
   formatMemoriesForPrompt,
@@ -412,12 +413,14 @@ RULES FOR USING THESE RESULTS:
             const maxOrder = maxOrderData?.order_index || 0
             const nextOrder = (typeof maxOrder === 'number' ? maxOrder : 0) + 1
 
+            const safeAttachments = sanitizeAttachmentsForStorage(userMessage.attachments)
             await db.from('messages').insert({
               conversation_id: conversationId,
               role: 'user',
               content: userMessage.content,
               model: validatedModel,
               order_index: nextOrder,
+              ...(safeAttachments ? { attachments: safeAttachments } : {}),
             })
 
             await db.from('messages').insert({

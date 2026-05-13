@@ -43,6 +43,9 @@ export interface ChatAttachment {
   size?: number
   dataUrl?: string
   textContent?: string
+  url?: string
+  storagePath?: string
+  bucket?: string
 }
 
 export interface ChatMessage {

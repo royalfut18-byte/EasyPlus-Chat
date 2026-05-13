@@ -1,7 +1,7 @@
 'use client'
 
 import { motion } from 'framer-motion'
-import { Copy, ThumbsUp, ThumbsDown, RotateCw, FileCode, Sparkles, PanelRightOpen, Sparkles as GeminiIcon, Download, FileText, FileSpreadsheet, FileJson, File as FileIcon } from 'lucide-react'
+import { Copy, ThumbsUp, ThumbsDown, RotateCw, FileCode, Sparkles, PanelRightOpen, Sparkles as GeminiIcon, Download, FileText, FileSpreadsheet, FileJson, File as FileIcon, ImageIcon } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism'
@@ -140,14 +140,16 @@ export function MessageBubble({ role, content, model, onRegenerate, attachments,
                       </div>
                     )}
                   </>
-                ) : (attachment.type === 'document' || (attachment.type !== 'image')) ? (
+                ) : (
                   <div className={cn(
                     'flex items-center gap-3 px-3.5 py-3 rounded-xl border',
                     isUser
                       ? 'border-white/20 bg-white/10'
                       : 'border-white/10 bg-white/5'
                   )}>
-                    {attachment.mimeType === 'application/pdf' ? (
+                    {attachment.type === 'image' ? (
+                      <ImageIcon className="h-5 w-5 text-purple-400 shrink-0" />
+                    ) : attachment.mimeType === 'application/pdf' ? (
                       <FileText className="h-5 w-5 text-red-400 shrink-0" />
                     ) : attachment.mimeType === 'text/csv' ? (
                       <FileSpreadsheet className="h-5 w-5 text-green-400 shrink-0" />
@@ -159,19 +161,21 @@ export function MessageBubble({ role, content, model, onRegenerate, attachments,
                       <FileIcon className="h-5 w-5 text-gray-400 shrink-0" />
                     )}
                     <div className="min-w-0">
-                      <p className="text-xs font-medium text-white truncate max-w-[200px]">{attachment.name || 'Document'}</p>
+                      <p className="text-xs font-medium text-white truncate max-w-[200px]">{attachment.name || (attachment.type === 'image' ? 'Image' : 'Document')}</p>
                       <p className="text-[10px] text-gray-400 mt-0.5">
-                        {attachment.mimeType === 'application/pdf' ? 'PDF document' :
+                        {attachment.type === 'image' ? 'Image file' :
+                         attachment.mimeType === 'application/pdf' ? 'PDF document' :
                          attachment.mimeType === 'text/csv' ? 'CSV file' :
                          attachment.mimeType === 'application/json' ? 'JSON file' :
                          attachment.mimeType === 'text/markdown' ? 'Markdown file' :
                          attachment.mimeType === 'text/plain' ? 'Text file' :
                          'Document attached'}
                         {attachment.size ? ` · ${attachment.size < 1024 * 1024 ? `${(attachment.size / 1024).toFixed(0)} KB` : `${(attachment.size / (1024 * 1024)).toFixed(1)} MB`}` : ''}
+                        {attachment.storagePath ? ' · Stored' : ''}
                       </p>
                     </div>
                   </div>
-                ) : null}
+                )}
               </div>
             ))}
           </div>
