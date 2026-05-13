@@ -99,7 +99,7 @@ export function MessageBubble({ role, content, model, onRegenerate, attachments,
         {attachments && attachments.length > 0 && (
           <div className={cn(
             'flex flex-wrap gap-2 md:gap-3',
-            isUser ? 'mb-3 p-3 md:p-4' : 'mb-3'
+            isUser ? 'px-3 pt-3 pb-2 md:px-4 md:pt-4 md:pb-3' : 'mb-3'
           )}>
             {attachments.map((attachment, index) => (
               <div key={index} className="relative group">
@@ -140,12 +140,12 @@ export function MessageBubble({ role, content, model, onRegenerate, attachments,
                       </div>
                     )}
                   </>
-                ) : attachment.type === 'document' ? (
+                ) : (attachment.type === 'document' || (attachment.type !== 'image')) ? (
                   <div className={cn(
-                    'flex items-center gap-2.5 px-3 py-2.5 rounded-xl border backdrop-blur-sm',
+                    'flex items-center gap-3 px-3.5 py-3 rounded-xl border',
                     isUser
                       ? 'border-white/20 bg-white/10'
-                      : 'border-white/15 bg-white/5'
+                      : 'border-white/10 bg-white/5'
                   )}>
                     {attachment.mimeType === 'application/pdf' ? (
                       <FileText className="h-5 w-5 text-red-400 shrink-0" />
@@ -159,8 +159,16 @@ export function MessageBubble({ role, content, model, onRegenerate, attachments,
                       <FileIcon className="h-5 w-5 text-gray-400 shrink-0" />
                     )}
                     <div className="min-w-0">
-                      <p className="text-xs font-medium text-white truncate max-w-[180px]">{attachment.name}</p>
-                      <p className="text-[10px] text-gray-400">Document attached</p>
+                      <p className="text-xs font-medium text-white truncate max-w-[200px]">{attachment.name || 'Document'}</p>
+                      <p className="text-[10px] text-gray-400 mt-0.5">
+                        {attachment.mimeType === 'application/pdf' ? 'PDF document' :
+                         attachment.mimeType === 'text/csv' ? 'CSV file' :
+                         attachment.mimeType === 'application/json' ? 'JSON file' :
+                         attachment.mimeType === 'text/markdown' ? 'Markdown file' :
+                         attachment.mimeType === 'text/plain' ? 'Text file' :
+                         'Document attached'}
+                        {attachment.size ? ` · ${attachment.size < 1024 * 1024 ? `${(attachment.size / 1024).toFixed(0)} KB` : `${(attachment.size / (1024 * 1024)).toFixed(1)} MB`}` : ''}
+                      </p>
                     </div>
                   </div>
                 ) : null}

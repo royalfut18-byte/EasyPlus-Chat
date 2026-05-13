@@ -572,10 +572,10 @@ export default function ChatPage() {
         .filter(m => m.content && !isLoadingMarker(m.content)) // Exclude empty and loading markers
         .slice(-16) // Last 16 messages for context
 
-      const messagesToSend = [...contextMessages, userMessage].map((m) => ({
+      const messagesToSend = [...contextMessages, userMessage].map((m, idx, arr) => ({
         role: m.role,
         content: m.content,
-        attachments: m.attachments,
+        attachments: idx === arr.length - 1 ? m.attachments : undefined,
       }))
 
       if (requestArtifactMode) {
