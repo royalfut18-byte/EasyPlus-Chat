@@ -644,13 +644,21 @@ Rules:
       }
 
       if (!response.ok) {
-        let errorMessage = 'Failed to send message'
+        let errorMessage = `Server error (${response.status})`
         try {
-          const errorData = await response.json()
-          errorMessage = errorData.error || errorMessage
+          const text = await response.text()
+          try {
+            const errorData = JSON.parse(text)
+            errorMessage = errorData.error || errorMessage
+          } catch {
+            if (text.length > 0 && text.length < 500) {
+              errorMessage = text
+            }
+          }
         } catch (e) {
-          // ignore
+          errorMessage = `Connection failed (${response.status})`
         }
+        console.error('[Chat] API error:', response.status, errorMessage)
         throw new Error(errorMessage)
       }
 

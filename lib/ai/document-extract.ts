@@ -37,8 +37,8 @@ async function extractTextFromPdf(dataUrl: string): Promise<string> {
     if (!base64Match) return '__PDF_EXTRACTION_FAILED__'
     const buffer = Buffer.from(base64Match[1], 'base64')
 
-    // pdf-parse v1: default export is a function(buffer) => Promise<{text, numpages, info}>
-    const pdfParse = (await import('pdf-parse')).default
+    // Import pdf-parse internal lib directly to avoid test-file auto-run in index.js
+    const pdfParse = (await import('pdf-parse/lib/pdf-parse.js')).default
     const result = await pdfParse(buffer)
 
     if (!result.text || result.text.trim().length === 0) {

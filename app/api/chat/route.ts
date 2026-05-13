@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { streamBedrockResponse, getModelCost } from '@/lib/ai/bedrock'
 import { streamGeminiResponse } from '@/lib/ai/gemini'
-import { needsWebSearch, searchWeb, buildWebSearchQuery } from '@/lib/ai/web-search'
+import { searchWeb, buildWebSearchQuery } from '@/lib/ai/web-search'
 import { buildSystemPrompt, isTimeSensitiveQuery, detectQueryType } from '@/lib/ai/system-prompt'
 import { buildDocumentContext } from '@/lib/ai/document-extract'
 import {
@@ -18,6 +18,7 @@ import { AI_MODELS } from '@/types/models'
 import type { ChatMessage } from '@/types/models'
 
 export const runtime = 'nodejs'
+export const maxDuration = 60
 
 type ProfileRow = {
   credits: number
@@ -26,7 +27,12 @@ type ProfileRow = {
 }
 
 export async function POST(request: NextRequest) {
+  const startTime = Date.now()
+  let stage = 'init'
+
   try {
+    // Stage: Check env
+    stage = 'env-check'
     const awsToken = process.env.AWS_BEARER_TOKEN_BEDROCK
 
     if (!awsToken) {
@@ -37,6 +43,8 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Stage: Auth
+    stage = 'auth'
     const supabase = await createClient()
     const db = supabase as any
 
@@ -46,18 +54,41 @@ export async function POST(request: NextRequest) {
     } = await supabase.auth.getUser()
 
     if (userError || !user) {
-      console.error('[Chat API] Auth error:', userError)
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      console.error('[Chat API] Auth error:', userError?.message || 'No user')
+      return NextResponse.json({ error: 'Unauthorized — please log in again' }, { status: 401 })
     }
 
-    const { model, messages, conversationId, artifactMode, webSearchEnabled } = await request.json()
-
-    if (!model || !messages || !Array.isArray(messages)) {
-      console.error('[Chat API] Invalid request params')
-      return NextResponse.json({ error: 'Invalid request' }, { status: 400 })
+    // Stage: Parse body
+    stage = 'parse-body'
+    let body: any
+    try {
+      body = await request.json()
+    } catch (parseErr: any) {
+      console.error('[Chat API] Body parse failed:', parseErr.message)
+      return NextResponse.json(
+        { error: 'Request body too large or malformed. Try a smaller file.' },
+        { status: 400 }
+      )
     }
 
-    // Validate model matches conversation if conversationId exists
+    const { model, messages, conversationId, artifactMode, webSearchEnabled } = body
+
+    if (!model || !messages || !Array.isArray(messages) || messages.length === 0) {
+      console.error('[Chat API] Invalid request params:', { model: !!model, messages: Array.isArray(messages), len: messages?.length })
+      return NextResponse.json({ error: 'Invalid request: missing model or messages' }, { status: 400 })
+    }
+
+    console.log('[Chat API] Request received:', {
+      model,
+      messageCount: messages.length,
+      conversationId: conversationId || 'new',
+      artifactMode: !!artifactMode,
+      webSearchEnabled: !!webSearchEnabled,
+      userId: user.id.substring(0, 8) + '...',
+    })
+
+    // Stage: Validate model
+    stage = 'validate-model'
     let validatedModel = model
     if (conversationId) {
       const { data: conversation, error: convError } = await db
@@ -68,22 +99,14 @@ export async function POST(request: NextRequest) {
 
       if (!convError && conversation) {
         if (conversation.model_used !== model) {
-          console.warn('[Chat API] Model mismatch detected, using conversation model:', conversation.model_used)
+          console.warn('[Chat API] Model mismatch, using conversation model:', conversation.model_used)
           validatedModel = conversation.model_used
         }
       }
     }
 
-    // Log artifact mode (not the content)
-    if (artifactMode) {
-      console.log('[Chat API] Artifact mode enabled for this request')
-    }
-
-    // Log web search mode
-    if (webSearchEnabled) {
-      console.log('[Chat API] Web search enabled for this request')
-    }
-
+    // Stage: Profile
+    stage = 'profile'
     const { data: profile, error: profileError } = await db
       .from('profiles')
       .select('credits, role, unlimited_credits')
@@ -91,7 +114,7 @@ export async function POST(request: NextRequest) {
       .single()
 
     if (profileError) {
-      console.error('[Chat API] Profile query error:', profileError)
+      console.error('[Chat API] Profile query error:', profileError.message)
       return NextResponse.json(
         { error: `Profile error: ${profileError.message}` },
         { status: 500 }
@@ -102,16 +125,15 @@ export async function POST(request: NextRequest) {
 
     if (!typedProfile) {
       console.error('[Chat API] Profile not found for user:', user.id)
-      return NextResponse.json({ error: 'Profile not found' }, { status: 404 })
+      return NextResponse.json({ error: 'Profile not found. Please contact support.' }, { status: 404 })
     }
 
+    // Stage: Credits
+    stage = 'credits'
     const cost = getModelCost(validatedModel)
-
-    // Check if user has unlimited credits (admin or unlimited_credits flag)
     const hasUnlimitedCredits = typedProfile.role === 'admin' || typedProfile.unlimited_credits === true
 
     if (!hasUnlimitedCredits) {
-      // Normal credit check for regular users
       if (typedProfile.credits < cost) {
         return NextResponse.json(
           { error: 'Insufficient credits', credits: typedProfile.credits },
@@ -119,7 +141,6 @@ export async function POST(request: NextRequest) {
         )
       }
 
-      // Deduct credits and log transaction in parallel (non-blocking optimizations)
       const [updateResult, transactionResult] = await Promise.allSettled([
         db
           .from('profiles')
@@ -135,18 +156,19 @@ export async function POST(request: NextRequest) {
 
       if (updateResult.status === 'rejected' || (updateResult.value as any).error) {
         console.error('[Chat API] Failed to update credits:', updateResult)
-        throw new Error('Failed to update credits')
+        return NextResponse.json({ error: 'Failed to deduct credits. Please try again.' }, { status: 500 })
       }
 
-      // Transaction logging is non-critical, just log if it fails but don't block
       if (transactionResult.status === 'rejected') {
         console.error('[Chat API] Failed to log transaction (non-critical):', transactionResult)
       }
     }
 
+    // Stage: Prepare messages
+    stage = 'prepare-messages'
     const userMessage = messages[messages.length - 1]
 
-    // Check if user sent images and model doesn't support them
+    // Check image support
     if (userMessage.attachments && userMessage.attachments.length > 0) {
       const hasImageAttachments = userMessage.attachments.some((a: any) => a.type === 'image')
 
@@ -161,22 +183,34 @@ export async function POST(request: NextRequest) {
           )
         }
       }
+
+      console.log('[Chat API] Attachments:', userMessage.attachments.map((a: any) => ({
+        type: a.type,
+        name: a.name,
+        mimeType: a.mimeType,
+        size: a.size,
+        hasDataUrl: !!a.dataUrl,
+      })))
     }
 
-    // Filter and validate conversation context
     const isLoadingMarker = (content: string) => {
       return content === '__ARTIFACT_LOADING__' || content === '__ASSISTANT_LOADING__'
     }
 
-    // Clean messages: filter out loading markers, empty content, non-user/assistant roles
     let cleanedMessages = messages
       .filter((m: ChatMessage) => m.role === 'user' || m.role === 'assistant')
       .filter((m: ChatMessage) => m.content && !isLoadingMarker(m.content))
-      .slice(-16) // Last 16 messages for reasonable context window
+      .slice(-16)
 
-    // Determine if we need search: manual toggle OR auto-detect time-sensitive
+    if (cleanedMessages.length === 0) {
+      return NextResponse.json({ error: 'No valid messages to process' }, { status: 400 })
+    }
+
     const latestUserMessage = cleanedMessages[cleanedMessages.length - 1]
     let messagesToSend = cleanedMessages as ChatMessage[]
+
+    // Stage: Web search
+    stage = 'web-search'
     const shouldSearch = webSearchEnabled === true ||
       (isTimeSensitiveQuery(latestUserMessage.content) && !!process.env.TAVILY_API_KEY)
 
@@ -185,19 +219,19 @@ export async function POST(request: NextRequest) {
     let hasSearchResults = false
 
     if (shouldSearch) {
-      console.log('[Chat API] Running web search', { manual: webSearchEnabled, autoDetected: !webSearchEnabled })
+      try {
+        console.log('[Chat API] Running web search')
+        const searchQuery = buildWebSearchQuery(latestUserMessage.content, cleanedMessages)
+        const searchResult = await searchWeb(searchQuery, latestUserMessage.content)
 
-      const searchQuery = buildWebSearchQuery(latestUserMessage.content, cleanedMessages)
-      const searchResult = await searchWeb(searchQuery, latestUserMessage.content)
+        webSearchPerformed = true
+        webSearchFailed = searchResult.failed
+        hasSearchResults = searchResult.resultCount > 0
 
-      webSearchPerformed = true
-      webSearchFailed = searchResult.failed
-      hasSearchResults = searchResult.resultCount > 0
-
-      if (searchResult.context) {
-        const searchInstruction: ChatMessage = {
-          role: 'user',
-          content: `[WEB SEARCH RESULTS - USE THESE FOR YOUR ANSWER]
+        if (searchResult.context) {
+          const searchInstruction: ChatMessage = {
+            role: 'user',
+            content: `[WEB SEARCH RESULTS - USE THESE FOR YOUR ANSWER]
 User's question: "${latestUserMessage.content}"
 
 The following are real search results retrieved just now. Use them to answer the user's question accurately.
@@ -213,18 +247,19 @@ RULES FOR USING THESE RESULTS:
 - Do not invent information beyond what these sources provide.
 - Clearly distinguish between what the sources say vs your own analysis.
 - If results conflict with each other, note the disagreement.`,
-        }
+          }
 
-        messagesToSend = [...cleanedMessages.slice(0, -1), searchInstruction, latestUserMessage] as ChatMessage[]
-      } else if (searchResult.failed) {
-        console.warn('[Chat API] Web search failed')
-      } else {
-        console.warn('[Chat API] Web search returned no relevant results')
+          messagesToSend = [...cleanedMessages.slice(0, -1), searchInstruction, latestUserMessage] as ChatMessage[]
+        }
+      } catch (searchErr: any) {
+        console.error('[Chat API] Web search error (non-fatal):', searchErr.message)
+        webSearchPerformed = true
+        webSearchFailed = true
       }
     }
 
-    // Extract document text from attachments in the latest user message
-    // Use userMessage (raw from request body) to guarantee attachments are present
+    // Stage: Document extraction
+    stage = 'document-extraction'
     let documentContext = ''
     if (userMessage.attachments && userMessage.attachments.length > 0) {
       const docAttachments = userMessage.attachments.filter((a: any) => a.type === 'document')
@@ -237,16 +272,15 @@ RULES FOR USING THESE RESULTS:
           }
           console.log('[Chat API] Document context extracted, length:', documentContext.length)
         } catch (docErr: any) {
-          console.error('[Chat API] Document extraction error:', docErr.message, docErr.stack)
+          console.error('[Chat API] Document extraction error:', docErr.message)
           return NextResponse.json(
-            { error: 'Document processing failed. Please try re-uploading the file.', details: docErr.message },
+            { error: `Document processing failed: ${docErr.message}` },
             { status: 400 }
           )
         }
       }
     }
 
-    // If document context exists, inject it into the messages
     if (documentContext) {
       const docInstruction: ChatMessage = {
         role: 'user',
@@ -255,7 +289,8 @@ RULES FOR USING THESE RESULTS:
       messagesToSend = [...messagesToSend.slice(0, -1), docInstruction, latestUserMessage] as ChatMessage[]
     }
 
-    // Retrieve long-term memory for this user (non-blocking if table doesn't exist)
+    // Stage: Memory
+    stage = 'memory'
     let memoryContext = ''
     let memorySaveResult: { saved: boolean; memoryText?: string } | null = null
 
@@ -263,14 +298,12 @@ RULES FOR USING THESE RESULTS:
       const memories = await getUserMemories(db, user.id, latestUserMessage.content)
       memoryContext = formatMemoriesForPrompt(memories)
 
-      // Check if user wants to save or forget a memory
       if (shouldExtractMemory(latestUserMessage.content)) {
         const memText = extractMemoryText(latestUserMessage.content)
         if (memText) {
           const result = await saveMemory(db, user.id, memText, conversationId)
           if (result.saved) {
             memorySaveResult = { saved: true, memoryText: memText }
-            console.log('[Chat API] Memory saved:', memText.substring(0, 50))
           }
         }
       } else if (isForgetRequest(latestUserMessage.content)) {
@@ -278,21 +311,23 @@ RULES FOR USING THESE RESULTS:
           .replace(/^(forget|delete|remove)\s+(that|about|my)?\s*/i, '')
           .trim()
         await deleteMemoryByContent(db, user.id, forgetText)
-        console.log('[Chat API] Memory deletion attempted for:', forgetText.substring(0, 50))
       }
     } catch (memErr: any) {
-      console.warn('[Chat API] Memory retrieval non-fatal error:', memErr.message)
+      console.warn('[Chat API] Memory non-fatal error:', memErr.message)
     }
 
-    // Route to appropriate AI provider based on validated model
+    // Stage: Route to provider
+    stage = 'provider-routing'
     const selectedModel = AI_MODELS.find((m) => m.id === validatedModel)
 
     if (!selectedModel) {
-      console.error('[Chat API] Unknown model:', validatedModel)
-      return NextResponse.json({ error: 'Unknown model' }, { status: 400 })
+      console.error('[Chat API] Unknown model after validation:', validatedModel)
+      return NextResponse.json(
+        { error: `Model "${validatedModel}" is not available. Please start a new chat.` },
+        { status: 400 }
+      )
     }
 
-    // Build production system prompt (includes memory context)
     const systemPrompt = buildSystemPrompt({
       model: selectedModel,
       webSearchEnabled: webSearchEnabled === true,
@@ -303,39 +338,45 @@ RULES FOR USING THESE RESULTS:
       memoryContext,
     })
 
-    // Determine temperature based on query type
     const queryType = detectQueryType(latestUserMessage.content)
     const temperature = queryType === 'creative' ? 0.7 : queryType === 'factual' ? 0.3 : 0.4
 
-    // Strip document dataUrls from messages before sending to model (text already extracted above)
-    // Keep image dataUrls since models need them for vision
+    // Strip document dataUrls from messages before sending to model
     const messagesForModel = messagesToSend.map((m) => {
       if (!m.attachments) return m
-      const cleanedAttachments = m.attachments
-        .filter((a) => a.type === 'image')
+      const imageOnly = m.attachments.filter((a) => a.type === 'image')
       return {
         ...m,
-        attachments: cleanedAttachments.length > 0 ? cleanedAttachments : undefined,
+        attachments: imageOnly.length > 0 ? imageOnly : undefined,
       }
     }) as ChatMessage[]
 
+    console.log('[Chat API] Calling provider:', {
+      provider: selectedModel.provider,
+      modelId: validatedModel,
+      bedrockId: selectedModel.bedrockModelId,
+      geminiId: selectedModel.geminiModelId,
+      messageCount: messagesForModel.length,
+      temperature,
+    })
+
+    // Stage: Call AI provider
+    stage = 'ai-call'
     let stream: ReadableStream
 
     if (selectedModel.provider === 'google') {
-      console.log('[Chat API] Using Gemini provider, temp:', temperature)
       stream = await streamGeminiResponse(validatedModel, messagesForModel, systemPrompt, temperature)
     } else if (selectedModel.provider === 'anthropic') {
-      console.log('[Chat API] Using Bedrock/Claude provider, temp:', temperature)
       stream = await streamBedrockResponse(validatedModel, messagesForModel, systemPrompt, temperature)
     } else {
-      console.error('[Chat API] Unsupported provider:', selectedModel.provider)
       return NextResponse.json(
-        { error: `Provider ${selectedModel.provider} is not supported` },
+        { error: `Provider "${selectedModel.provider}" is not supported` },
         { status: 400 }
       )
     }
 
-    const encoder = new TextEncoder()
+    // Stage: Stream response
+    stage = 'streaming'
     const decoder = new TextDecoder()
     let fullResponse = ''
 
@@ -347,49 +388,41 @@ RULES FOR USING THESE RESULTS:
       },
       async flush() {
         if (conversationId && fullResponse) {
-          // Get max order_index for this conversation
-          const { data: maxOrderData } = await db
-            .from('messages')
-            .select('order_index')
-            .eq('conversation_id', conversationId)
-            .order('order_index', { ascending: false })
-            .limit(1)
-            .single()
+          try {
+            const { data: maxOrderData } = await db
+              .from('messages')
+              .select('order_index')
+              .eq('conversation_id', conversationId)
+              .order('order_index', { ascending: false })
+              .limit(1)
+              .single()
 
-          const maxOrder = maxOrderData?.order_index || 0
-          const nextOrder = (typeof maxOrder === 'number' ? maxOrder : 0) + 1
+            const maxOrder = maxOrderData?.order_index || 0
+            const nextOrder = (typeof maxOrder === 'number' ? maxOrder : 0) + 1
 
-          // IMPORTANT: Save user message FIRST, then assistant message
-          // User message gets order_index N, assistant gets N+1
-          const userResult = await db.from('messages').insert({
-            conversation_id: conversationId,
-            role: 'user',
-            content: userMessage.content,
-            model: validatedModel,
-            order_index: nextOrder,
-          })
+            await db.from('messages').insert({
+              conversation_id: conversationId,
+              role: 'user',
+              content: userMessage.content,
+              model: validatedModel,
+              order_index: nextOrder,
+            })
 
-          if (userResult.error) {
-            console.error('[Chat API] Failed to save user message:', userResult.error)
+            await db.from('messages').insert({
+              conversation_id: conversationId,
+              role: 'assistant',
+              content: fullResponse,
+              model: validatedModel,
+              order_index: nextOrder + 1,
+            })
+
+            await db
+              .from('conversations')
+              .update({ updated_at: new Date().toISOString() })
+              .eq('id', conversationId)
+          } catch (saveErr: any) {
+            console.error('[Chat API] Message save error (non-fatal):', saveErr.message)
           }
-
-          const assistantResult = await db.from('messages').insert({
-            conversation_id: conversationId,
-            role: 'assistant',
-            content: fullResponse,
-            model: validatedModel,
-            order_index: nextOrder + 1,
-          })
-
-          if (assistantResult.error) {
-            console.error('[Chat API] Failed to save assistant message:', assistantResult.error)
-          }
-
-          // Update conversation timestamp
-          await db
-            .from('conversations')
-            .update({ updated_at: new Date().toISOString() })
-            .eq('id', conversationId)
         }
       },
     })
@@ -404,17 +437,19 @@ RULES FOR USING THESE RESULTS:
       responseHeaders['X-Memory-Saved'] = 'true'
     }
 
+    console.log('[Chat API] Success, streaming response. Duration:', Date.now() - startTime, 'ms')
+
     return new Response(stream.pipeThrough(transformStream), {
       headers: responseHeaders,
     })
   } catch (error: any) {
-    console.error('[Chat API] Fatal error:', {
+    console.error('[Chat API] Fatal error at stage:', stage, {
       message: error.message,
-      stack: error.stack,
       name: error.name,
+      stack: error.stack?.substring(0, 500),
     })
     return NextResponse.json(
-      { error: error.message || 'Internal server error' },
+      { error: `Chat failed at ${stage}: ${error.message}` },
       { status: 500 }
     )
   }
