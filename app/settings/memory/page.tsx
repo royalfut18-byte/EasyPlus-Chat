@@ -112,7 +112,7 @@ export default function MemorySettingsPage() {
 
   const getCategoryColor = (category: string) => {
     switch (category) {
-      case 'preference': return 'text-purple-400 bg-purple-500/10 border-purple-500/30'
+      case 'preference': return 'text-violet-400 bg-violet-500/10 border-violet-500/20'
       case 'project': return 'text-blue-400 bg-blue-500/10 border-blue-500/30'
       case 'personal': return 'text-green-400 bg-green-500/10 border-green-500/30'
       case 'workflow': return 'text-orange-400 bg-orange-500/10 border-orange-500/30'
@@ -121,7 +121,7 @@ export default function MemorySettingsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0A0A0F] p-4 md:p-8">
+    <div className="min-h-screen bg-[#08070d] p-4 md:p-8">
       <div className="max-w-3xl mx-auto space-y-6">
         {/* Header */}
         <div className="flex items-center gap-4">
@@ -132,8 +132,8 @@ export default function MemorySettingsPage() {
             <ArrowLeft className="h-5 w-5 text-gray-400" />
           </button>
           <div className="flex items-center gap-3">
-            <div className="p-2.5 rounded-xl bg-gradient-to-br from-purple-500/20 to-blue-500/20 border border-purple-500/30">
-              <Brain className="h-6 w-6 text-purple-400" />
+            <div className="p-2.5 rounded-xl bg-violet-500/10 border border-violet-500/20">
+              <Brain className="h-6 w-6 text-violet-400" />
             </div>
             <div>
               <h1 className="text-2xl font-bold text-white">Memory</h1>
@@ -146,7 +146,7 @@ export default function MemorySettingsPage() {
 
         {/* Setup notice */}
         {!tableExists && (
-          <div className="glass-strong rounded-xl p-4 border border-yellow-500/30 bg-yellow-500/5">
+          <div className="bg-white/[0.02] border border-white/[0.06] rounded-xl p-4 border border-yellow-500/30 bg-yellow-500/5">
             <div className="flex items-center gap-3">
               <AlertTriangle className="h-5 w-5 text-yellow-400 shrink-0" />
               <p className="text-sm text-yellow-200">
@@ -191,14 +191,14 @@ export default function MemorySettingsPage() {
         {isLoading ? (
           <div className="space-y-3">
             {[1, 2, 3].map(i => (
-              <div key={i} className="glass-strong rounded-xl p-4 animate-pulse">
+              <div key={i} className="bg-white/[0.02] border border-white/[0.06] rounded-xl p-4 animate-pulse">
                 <div className="h-4 bg-white/10 rounded w-3/4 mb-2" />
                 <div className="h-3 bg-white/10 rounded w-1/4" />
               </div>
             ))}
           </div>
         ) : memories.length === 0 ? (
-          <div className="glass-strong rounded-xl p-12 text-center">
+          <div className="bg-white/[0.02] border border-white/[0.06] rounded-xl p-12 text-center">
             <Brain className="h-12 w-12 text-gray-600 mx-auto mb-4" />
             <h3 className="text-lg font-medium text-gray-300 mb-2">No memories yet</h3>
             <p className="text-sm text-gray-500 max-w-sm mx-auto">
@@ -216,14 +216,14 @@ export default function MemorySettingsPage() {
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, x: -20 }}
-                  className="glass-strong rounded-xl p-4 group"
+                  className="bg-white/[0.02] border border-white/[0.06] rounded-xl p-4 group"
                 >
                   {editingId === memory.id ? (
                     <div className="space-y-3">
                       <textarea
                         value={editText}
                         onChange={e => setEditText(e.target.value)}
-                        className="w-full bg-black/30 border border-white/20 rounded-lg p-3 text-sm text-white resize-none focus:outline-none focus:border-purple-500/50"
+                        className="w-full bg-black/30 border border-white/20 rounded-lg p-3 text-sm text-white resize-none focus:outline-none focus:border-violet-500/40"
                         rows={3}
                         autoFocus
                       />

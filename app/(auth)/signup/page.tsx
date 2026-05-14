@@ -20,13 +20,13 @@ export default function SignupPage() {
   }, [router])
 
   return (
-    <div className="min-h-screen bg-[#0A0A0F] flex items-center justify-center p-6">
-      <div className="absolute inset-0 bg-gradient-radial from-purple-900/20 via-transparent to-transparent" />
+    <div className="min-h-screen bg-[#08070d] flex items-center justify-center p-6">
+      <div className="absolute inset-0 bg-gradient-radial from-violet-900/10 via-transparent to-transparent" />
 
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="glass-strong rounded-3xl p-8 w-full max-w-md relative z-10 text-center"
+        className="bg-[#0e0d14]/80 border border-white/[0.08] rounded-2xl p-8 w-full max-w-md relative z-10 text-center"
       >
         <div className="flex items-center justify-center mb-6">
           <div className="h-20 w-20 rounded-2xl bg-red-500/10 border border-red-500/20 flex items-center justify-center">
@@ -50,7 +50,7 @@ export default function SignupPage() {
 
         <div className="space-y-3">
           <Link href="/login">
-            <Button className="w-full gradient-primary" size="lg">
+            <Button className="w-full bg-violet-600 hover:bg-violet-500 text-white" size="lg">
               Go to Login
             </Button>
           </Link>

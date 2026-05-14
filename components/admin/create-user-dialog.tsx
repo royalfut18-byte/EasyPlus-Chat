@@ -101,12 +101,12 @@ export function CreateUserDialog({ onUserCreated }: CreateUserDialogProps) {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button className="gradient-primary">
+        <Button className="bg-violet-600/80 hover:bg-violet-600 text-white">
           <UserPlus className="mr-2 h-4 w-4" />
           Create User
         </Button>
       </DialogTrigger>
-      <DialogContent className="glass-strong border-white/10 max-w-md">
+      <DialogContent className="bg-[#111018] border-white/[0.08] max-w-md">
         <DialogHeader>
           <DialogTitle>Create New User Account</DialogTitle>
           <DialogDescription className="text-gray-400">
@@ -162,7 +162,7 @@ export function CreateUserDialog({ onUserCreated }: CreateUserDialogProps) {
               <SelectTrigger className="glass">
                 <SelectValue />
               </SelectTrigger>
-              <SelectContent className="glass-strong border-white/10">
+              <SelectContent className="bg-[#111018] border-white/[0.08]">
                 <SelectItem value="user">User</SelectItem>
                 <SelectItem value="admin">Admin</SelectItem>
               </SelectContent>
@@ -209,7 +209,7 @@ export function CreateUserDialog({ onUserCreated }: CreateUserDialogProps) {
             </Button>
             <Button
               type="submit"
-              className="flex-1 gradient-primary"
+              className="flex-1 bg-violet-600/80 hover:bg-violet-600 text-white"
               disabled={isLoading}
             >
               {isLoading ? (

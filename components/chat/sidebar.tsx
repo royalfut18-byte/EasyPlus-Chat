@@ -98,11 +98,11 @@ export function Sidebar({
             transition={{ type: 'spring', stiffness: 300, damping: 30 }}
             className={cn(
               'fixed left-0 top-0 h-screen w-80 z-40',
-              'glass-strong border-r border-white/10',
+              'bg-[#0a0a10]/95 backdrop-blur-xl border-r border-white/[0.06]',
               'flex flex-col'
             )}
           >
-            <div className="p-4 border-b border-white/10">
+            <div className="p-4 border-b border-white/[0.06]">
               <div className="flex items-center gap-3 mb-4">
                 <div className="flex-1">
                   <Logo size="sm" showText />
@@ -112,13 +112,13 @@ export function Sidebar({
                     <Button variant="ghost" size="icon" className="rounded-full">
                       <Avatar className="h-8 w-8">
                         <AvatarImage src={userProfile.avatar_url || undefined} />
-                        <AvatarFallback className="gradient-primary text-white text-xs">
+                        <AvatarFallback className="bg-violet-600/80 text-white text-xs">
                           {initials}
                         </AvatarFallback>
                       </Avatar>
                     </Button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-56 glass-strong border-white/10">
+                  <DropdownMenuContent align="end" className="w-56 bg-[#111018] border-white/[0.08]">
                     <div className="px-2 py-2">
                       <p className="text-sm font-medium text-white">
                         {userProfile.display_name || 'User'}
@@ -158,7 +158,7 @@ export function Sidebar({
                   </DropdownMenuContent>
                 </DropdownMenu>
               </div>
-              <Button onClick={onNewChat} className="w-full gradient-primary" size="lg">
+              <Button onClick={onNewChat} className="w-full bg-violet-600/80 hover:bg-violet-600 text-white rounded-xl" size="lg">
                 <PlusCircle className="mr-2 h-4 w-4" />
                 New Chat
               </Button>
@@ -179,8 +179,8 @@ export function Sidebar({
                     className={cn(
                       'w-full text-left p-3 rounded-xl transition-all group relative',
                       currentConversationId === conv.id
-                        ? 'bg-gradient-to-r from-purple-500/20 to-blue-500/20 glow-border shadow-lg'
-                        : 'hover:bg-white/5 border border-transparent hover:border-white/10'
+                        ? 'bg-white/[0.05] border border-violet-500/20'
+                        : 'hover:bg-white/[0.03] border border-transparent hover:border-white/[0.06]'
                     )}
                     whileHover={{ scale: 1.01 }}
                     whileTap={{ scale: 0.99 }}
@@ -188,7 +188,7 @@ export function Sidebar({
                     <div className="flex items-start gap-3 pr-8">
                       <MessageSquare className={cn(
                         'h-4 w-4 mt-1 shrink-0 transition-colors',
-                        currentConversationId === conv.id ? 'text-purple-400' : 'text-gray-400'
+                        currentConversationId === conv.id ? 'text-violet-400' : 'text-gray-500'
                       )} />
                       <div className="flex-1 min-w-0">
                         <p className={cn(
@@ -206,7 +206,7 @@ export function Sidebar({
                         </p>
                       </div>
                       {pendingConversationIds.includes(conv.id) && (
-                        <span className="absolute top-3 right-10 h-2.5 w-2.5 rounded-full bg-purple-500 animate-pulse" />
+                        <span className="absolute top-3 right-10 h-2 w-2 rounded-full bg-violet-400 animate-pulse" />
                       )}
                     </div>
                     <Button

@@ -95,17 +95,17 @@ export function ModelSelector({ selectedModel, onSelectModel, disabled = false, 
             'relative px-2.5 md:px-4 py-1.5 md:py-2 rounded-full text-xs md:text-sm font-medium transition-all duration-200',
             'border flex items-center gap-1.5 md:gap-2 h-9 md:h-auto',
             selectedModel === model.id
-              ? 'border-transparent shadow-md md:shadow-lg'
-              : 'border-white/10 hover:border-white/20 bg-white/5',
+              ? 'border-white/[0.12] bg-white/[0.06]'
+              : 'border-white/[0.06] hover:border-white/[0.12] bg-white/[0.02]',
             disabled && 'opacity-60 cursor-not-allowed'
           )}
           style={{
             background:
               selectedModel === model.id
-                ? `linear-gradient(135deg, ${model.color}40, ${model.color}20)`
+                ? `linear-gradient(135deg, ${model.color}15, ${model.color}08)`
                 : undefined,
             boxShadow:
-              selectedModel === model.id ? `0 0 15px ${model.color}40` : undefined,
+              selectedModel === model.id ? `0 0 10px ${model.color}20` : undefined,
           }}
           whileHover={disabled ? {} : { scale: 1.05 }}
           whileTap={disabled ? {} : { scale: 0.95 }}
@@ -124,8 +124,8 @@ export function ModelSelector({ selectedModel, onSelectModel, disabled = false, 
             <motion.div
               className="absolute inset-0 rounded-full"
               style={{
-                border: `2px solid ${model.color}`,
-                boxShadow: `0 0 15px ${model.color}60`,
+                border: `1px solid ${model.color}50`,
+                boxShadow: `0 0 8px ${model.color}20`,
               }}
               layoutId="model-indicator"
               transition={{ type: 'spring', stiffness: 300, damping: 30 }}

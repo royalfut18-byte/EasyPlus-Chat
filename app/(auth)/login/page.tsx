@@ -41,21 +41,21 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0A0A0F] flex items-center justify-center p-6">
-      <div className="absolute inset-0 bg-gradient-radial from-purple-900/20 via-transparent to-transparent" />
+    <div className="min-h-screen bg-[#08070d] flex items-center justify-center p-6">
+      <div className="absolute inset-0 bg-gradient-radial from-violet-900/10 via-transparent to-transparent" />
 
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="glass-strong rounded-3xl p-8 w-full max-w-md relative z-10"
+        className="bg-[#0e0d14]/80 border border-white/[0.08] rounded-2xl p-8 w-full max-w-md relative z-10"
       >
         <div className="text-center mb-6">
           <div className="mb-5 flex items-center justify-center gap-3">
             <Logo size="md" showText={false} />
-            <span className="text-xl font-bold gradient-text">EasyPlus AI</span>
+            <span className="text-xl font-semibold text-white/90">EasyPlus AI</span>
           </div>
-          <h1 className="text-3xl font-bold mb-2">Welcome Back</h1>
-          <p className="text-gray-400">Sign in to continue your AI journey</p>
+          <h1 className="text-2xl font-semibold mb-2 text-white/90">Welcome Back</h1>
+          <p className="text-gray-500 text-sm">Sign in to continue</p>
         </div>
 
         <form onSubmit={handleEmailLogin} className="space-y-4">
@@ -93,7 +93,7 @@ export default function LoginPage() {
 
           <Button
             type="submit"
-            className="w-full gradient-primary"
+            className="w-full bg-violet-600 hover:bg-violet-500 text-white"
             size="lg"
             disabled={isLoading}
           >

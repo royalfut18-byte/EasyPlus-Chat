@@ -39,15 +39,15 @@ export default async function AdminPage() {
     .select('*', { count: 'exact', head: true })
 
   return (
-    <div className="min-h-screen bg-[#0A0A0F] p-6">
+    <div className="min-h-screen bg-[#08070d] p-6">
       <div className="max-w-7xl mx-auto space-y-8">
         <div>
-          <h1 className="text-4xl font-bold gradient-text">Admin Panel</h1>
-          <p className="text-gray-400 mt-2">Manage users and monitor platform usage</p>
+          <h1 className="text-3xl font-semibold text-white/90">Admin Panel</h1>
+          <p className="text-gray-500 mt-2">Manage users and monitor platform usage</p>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <Card className="glass-strong border-white/10">
+          <Card className="bg-white/[0.02] border-white/[0.06]">
             <CardHeader className="flex flex-row items-center justify-between pb-2">
               <CardTitle className="text-sm font-medium text-gray-400">
                 Total Users
@@ -59,7 +59,7 @@ export default async function AdminPage() {
             </CardContent>
           </Card>
 
-          <Card className="glass-strong border-white/10">
+          <Card className="bg-white/[0.02] border-white/[0.06]">
             <CardHeader className="flex flex-row items-center justify-between pb-2">
               <CardTitle className="text-sm font-medium text-gray-400">
                 Total Credits
@@ -73,7 +73,7 @@ export default async function AdminPage() {
             </CardContent>
           </Card>
 
-          <Card className="glass-strong border-white/10">
+          <Card className="bg-white/[0.02] border-white/[0.06]">
             <CardHeader className="flex flex-row items-center justify-between pb-2">
               <CardTitle className="text-sm font-medium text-gray-400">
                 Total Messages
@@ -86,7 +86,7 @@ export default async function AdminPage() {
           </Card>
         </div>
 
-        <Card className="glass-strong border-white/10">
+        <Card className="bg-white/[0.02] border-white/[0.06]">
           <CardHeader>
             <CardTitle>All Users</CardTitle>
           </CardHeader>

@@ -25,58 +25,58 @@ import { WorkspacePreview } from './workspace-preview'
 
 export function LandingPage() {
   return (
-    <div className="min-h-screen bg-[#050508] text-white relative overflow-hidden">
-      {/* Animated Background Orbs */}
+    <div className="min-h-screen bg-[#05050a] text-white relative overflow-hidden">
+      {/* Subtle Background Glow */}
       <div className="absolute inset-0 overflow-hidden">
         <motion.div
           animate={{
-            x: [0, 100, 0],
-            y: [0, -100, 0],
-            scale: [1, 1.2, 1],
-          }}
-          transition={{
-            duration: 20,
-            repeat: Infinity,
-            ease: 'linear',
-          }}
-          className="absolute top-0 -left-20 w-[600px] h-[600px] bg-purple-500/10 rounded-full blur-[120px]"
-        />
-        <motion.div
-          animate={{
-            x: [0, -100, 0],
-            y: [0, 100, 0],
-            scale: [1, 1.3, 1],
+            x: [0, 60, 0],
+            y: [0, -60, 0],
+            scale: [1, 1.1, 1],
           }}
           transition={{
             duration: 25,
             repeat: Infinity,
             ease: 'linear',
           }}
-          className="absolute bottom-0 right-0 w-[700px] h-[700px] bg-blue-500/8 rounded-full blur-[120px]"
+          className="absolute top-0 -left-20 w-[600px] h-[600px] bg-violet-600/5 rounded-full blur-[150px]"
         />
         <motion.div
           animate={{
-            x: [0, 50, 0],
-            y: [0, -50, 0],
+            x: [0, -60, 0],
+            y: [0, 60, 0],
+            scale: [1, 1.15, 1],
           }}
           transition={{
-            duration: 15,
+            duration: 30,
             repeat: Infinity,
             ease: 'linear',
           }}
-          className="absolute top-1/3 right-1/4 w-[500px] h-[500px] bg-cyan-500/6 rounded-full blur-[100px]"
+          className="absolute bottom-0 right-0 w-[700px] h-[700px] bg-indigo-600/4 rounded-full blur-[150px]"
+        />
+        <motion.div
+          animate={{
+            x: [0, 30, 0],
+            y: [0, -30, 0],
+          }}
+          transition={{
+            duration: 20,
+            repeat: Infinity,
+            ease: 'linear',
+          }}
+          className="absolute top-1/3 right-1/4 w-[500px] h-[500px] bg-violet-500/3 rounded-full blur-[130px]"
         />
       </div>
 
-      {/* Animated Grid Pattern */}
-      <div className="absolute inset-0 opacity-20">
+      {/* Subtle Grid Pattern */}
+      <div className="absolute inset-0 opacity-[0.08]">
         <div
           className="absolute inset-0"
           style={{
-            backgroundImage: `linear-gradient(rgba(139, 92, 246, 0.1) 1px, transparent 1px),
-                             linear-gradient(90deg, rgba(139, 92, 246, 0.1) 1px, transparent 1px)`,
-            backgroundSize: '50px 50px',
-            maskImage: 'radial-gradient(ellipse at center, black 20%, transparent 70%)',
+            backgroundImage: `linear-gradient(rgba(139, 92, 246, 0.15) 1px, transparent 1px),
+                             linear-gradient(90deg, rgba(139, 92, 246, 0.15) 1px, transparent 1px)`,
+            backgroundSize: '60px 60px',
+            maskImage: 'radial-gradient(ellipse at center, black 15%, transparent 65%)',
           }}
         />
       </div>
@@ -94,7 +94,7 @@ export function LandingPage() {
           animate={{ opacity: 1, x: 0 }}
         >
           <Link href="/login">
-            <Button className="gradient-primary shadow-xl md:shadow-2xl shadow-purple-500/50 hover:shadow-purple-500/70 transition-all hover:scale-105 text-sm md:text-base px-4 md:px-6 h-9 md:h-10">
+            <Button className="bg-violet-600/80 hover:bg-violet-600 text-white border border-violet-500/30 transition-all hover:scale-105 text-sm md:text-base px-4 md:px-6 h-9 md:h-10">
               <Lock className="mr-1.5 md:mr-2 h-3.5 w-3.5 md:h-4 md:w-4" />
               Sign In
             </Button>
@@ -114,15 +114,10 @@ export function LandingPage() {
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ delay: 0.2 }}
-            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full glass-strong border border-purple-500/30 text-sm backdrop-blur-xl shadow-xl shadow-purple-500/20"
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/[0.03] border border-white/[0.08] text-sm"
           >
-            <div className="relative">
-              <Lock className="h-4 w-4 text-purple-300" />
-              <div className="absolute inset-0 animate-ping">
-                <Lock className="h-4 w-4 text-purple-300 opacity-20" />
-              </div>
-            </div>
-            <span className="text-gray-200 font-medium">Private Access • Admin Managed</span>
+            <Lock className="h-3.5 w-3.5 text-violet-400" />
+            <span className="text-gray-400 font-medium text-xs">Private Access</span>
           </motion.div>
 
           <motion.h1
@@ -134,8 +129,8 @@ export function LandingPage() {
             Your private
             <br />
             <span className="relative inline-block">
-              <span className="absolute inset-0 blur-xl md:blur-2xl bg-gradient-to-r from-purple-400 via-blue-500 to-cyan-400 opacity-50" />
-              <span className="relative bg-gradient-to-r from-purple-400 via-blue-500 to-cyan-400 bg-clip-text text-transparent">
+              <span className="absolute inset-0 blur-xl md:blur-2xl bg-gradient-to-r from-violet-400 via-indigo-400 to-violet-300 opacity-30" />
+              <span className="relative bg-gradient-to-r from-violet-300 via-indigo-300 to-violet-400 bg-clip-text text-transparent">
                 AI workspace.
               </span>
             </span>
@@ -160,7 +155,7 @@ export function LandingPage() {
             <Link href="/login">
               <Button
                 size="lg"
-                className="gradient-primary text-base md:text-lg px-8 md:px-12 py-5 md:py-7 rounded-xl md:rounded-2xl shadow-xl md:shadow-2xl shadow-purple-500/50 hover:shadow-purple-500/70 hover:scale-105 transition-all group"
+                className="bg-violet-600 hover:bg-violet-500 text-white text-base md:text-lg px-8 md:px-12 py-5 md:py-7 rounded-xl md:rounded-2xl transition-all group"
               >
                 <Lock className="mr-2 h-4 w-4 md:h-5 md:w-5 group-hover:rotate-12 transition-transform" />
                 Sign In
@@ -192,29 +187,29 @@ export function LandingPage() {
             className="relative"
           >
             {/* Glow Effect */}
-            <div className="absolute -inset-4 bg-gradient-to-r from-purple-500/20 via-blue-500/20 to-cyan-500/20 rounded-[2.5rem] blur-3xl" />
+            <div className="absolute -inset-4 bg-gradient-to-r from-violet-500/8 via-indigo-500/8 to-violet-500/8 rounded-[2.5rem] blur-3xl" />
 
-            <div className="relative glass-strong rounded-[2rem] border-2 border-white/10 overflow-hidden shadow-2xl backdrop-blur-2xl">
+            <div className="relative bg-[#0a0a10]/90 rounded-[2rem] border border-white/[0.08] overflow-hidden shadow-2xl backdrop-blur-2xl">
               {/* Window Chrome */}
-              <div className="bg-gradient-to-r from-white/10 to-white/5 p-4 border-b border-white/10 backdrop-blur-xl">
+              <div className="bg-white/[0.03] p-4 border-b border-white/[0.06] backdrop-blur-xl">
                 <div className="flex items-center justify-between">
                   <div className="flex gap-2">
                     <div className="w-3 h-3 rounded-full bg-red-500/90 shadow-lg shadow-red-500/50" />
                     <div className="w-3 h-3 rounded-full bg-yellow-500/90 shadow-lg shadow-yellow-500/50" />
                     <div className="w-3 h-3 rounded-full bg-green-500/90 shadow-lg shadow-green-500/50" />
                   </div>
-                  <div className="flex items-center gap-2 px-4 py-1.5 rounded-lg glass border border-white/10">
-                    <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
-                    <span className="text-xs text-gray-300">EasyPlus AI</span>
+                  <div className="flex items-center gap-2 px-4 py-1.5 rounded-lg bg-white/[0.03] border border-white/[0.06]">
+                    <div className="w-2 h-2 rounded-full bg-violet-400/60 animate-pulse" />
+                    <span className="text-xs text-gray-400">EasyPlus AI</span>
                   </div>
                   <div className="w-16" />
                 </div>
               </div>
 
               {/* Chat Interface */}
-              <div className="flex bg-gradient-to-b from-transparent to-white/5">
+              <div className="flex bg-gradient-to-b from-transparent to-white/[0.02]">
                 {/* Sidebar */}
-                <div className="w-64 border-r border-white/10 p-4 space-y-2 hidden md:block">
+                <div className="w-64 border-r border-white/[0.06] p-4 space-y-2 hidden md:block">
                   <div className="flex items-center justify-between mb-4">
                     <span className="text-xs font-semibold text-gray-400">Conversations</span>
                     <Crown className="h-3 w-3 text-yellow-500" />
@@ -226,7 +221,7 @@ export function LandingPage() {
                       animate={{ opacity: 1, x: 0 }}
                       transition={{ delay: 1 + i * 0.1 }}
                       className={`p-3 rounded-xl transition-all cursor-pointer ${
-                        i === 0 ? 'glass-strong border border-purple-500/30' : 'hover:bg-white/5'
+                        i === 0 ? 'bg-white/[0.04] border border-violet-500/20' : 'hover:bg-white/[0.03]'
                       }`}
                     >
                       <div className="flex items-center gap-2">
@@ -245,7 +240,7 @@ export function LandingPage() {
                     transition={{ delay: 1.2 }}
                     className="flex justify-end"
                   >
-                    <div className="max-w-lg gradient-primary rounded-2xl rounded-br-sm p-4 shadow-lg">
+                    <div className="max-w-lg bg-gradient-to-br from-indigo-600/70 to-violet-700/60 rounded-2xl rounded-br-sm p-4">
                       <p className="text-sm text-white">
                         What's the latest news about AI today? Search the web.
                       </p>
@@ -258,8 +253,8 @@ export function LandingPage() {
                     transition={{ delay: 1.4 }}
                     className="flex justify-start"
                   >
-                    <div className="max-w-2xl glass-strong rounded-2xl rounded-bl-sm p-5 border border-purple-500/20 space-y-4 shadow-xl">
-                      <div className="flex items-center gap-2 text-xs text-purple-300">
+                    <div className="max-w-2xl bg-white/[0.03] rounded-2xl rounded-bl-sm p-5 border border-white/[0.06] space-y-4">
+                      <div className="flex items-center gap-2 text-xs text-violet-300">
                         <Search className="h-3.5 w-3.5 animate-pulse" />
                         <span>Searching the web...</span>
                       </div>
@@ -275,7 +270,7 @@ export function LandingPage() {
                             transition={{ delay: 1.6 + i * 0.1 }}
                             className="flex items-center gap-2 text-sm text-gray-300"
                           >
-                            <div className="w-1.5 h-1.5 rounded-full bg-purple-400" />
+                            <div className="w-1.5 h-1.5 rounded-full bg-violet-400/70" />
                             <span>{item}</span>
                           </motion.div>
                         ))}
@@ -287,7 +282,7 @@ export function LandingPage() {
                             initial={{ opacity: 0, scale: 0.8 }}
                             animate={{ opacity: 1, scale: 1 }}
                             transition={{ delay: 1.9 + i * 0.1 }}
-                            className="px-2.5 py-1 rounded-full glass border border-white/10 text-xs text-gray-400 flex items-center gap-1"
+                            className="px-2.5 py-1 rounded-full bg-white/[0.03] border border-white/[0.06] text-xs text-gray-400 flex items-center gap-1"
                           >
                             <Globe2 className="h-3 w-3" />
                             {source}
@@ -307,17 +302,17 @@ export function LandingPage() {
                       <motion.div
                         animate={{ scale: [1, 1.2, 1] }}
                         transition={{ duration: 1, repeat: Infinity, delay: 0 }}
-                        className="w-2 h-2 rounded-full bg-purple-500"
+                        className="w-1.5 h-1.5 rounded-full bg-violet-400/60"
                       />
                       <motion.div
                         animate={{ scale: [1, 1.2, 1] }}
                         transition={{ duration: 1, repeat: Infinity, delay: 0.2 }}
-                        className="w-2 h-2 rounded-full bg-purple-500"
+                        className="w-1.5 h-1.5 rounded-full bg-violet-400/60"
                       />
                       <motion.div
                         animate={{ scale: [1, 1.2, 1] }}
                         transition={{ duration: 1, repeat: Infinity, delay: 0.4 }}
-                        className="w-2 h-2 rounded-full bg-purple-500"
+                        className="w-1.5 h-1.5 rounded-full bg-violet-400/60"
                       />
                     </div>
                     <span>Claude is responding...</span>
@@ -444,7 +439,7 @@ export function LandingPage() {
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true }}
                 transition={{ delay: i * 0.1 }}
-                className="glass-strong rounded-2xl border border-white/10 p-6 hover:border-white/20 transition-all group"
+                className="bg-white/[0.02] rounded-2xl border border-white/[0.06] p-6 hover:border-white/[0.12] transition-all group"
               >
                 <div className={`h-12 w-12 rounded-xl bg-gradient-to-br ${feature.bgGradient} border border-white/10 flex items-center justify-center mb-4 ${feature.color}`}>
                   {feature.icon}
@@ -469,7 +464,7 @@ export function LandingPage() {
           transition={{ duration: 0.8 }}
           className="relative text-center pb-32 pt-20"
         >
-          <div className="absolute inset-0 bg-gradient-to-b from-purple-500/5 via-blue-500/5 to-transparent rounded-3xl blur-3xl" />
+          <div className="absolute inset-0 bg-gradient-to-b from-violet-500/3 via-indigo-500/2 to-transparent rounded-3xl blur-3xl" />
 
           <div className="relative space-y-8">
             <motion.div
@@ -495,7 +490,7 @@ export function LandingPage() {
               <Link href="/login">
                 <Button
                   size="lg"
-                  className="gradient-primary text-xl px-16 py-8 rounded-2xl shadow-2xl shadow-purple-500/50 hover:shadow-purple-500/70 hover:scale-105 transition-all group"
+                  className="bg-violet-600 hover:bg-violet-500 text-white text-xl px-16 py-8 rounded-2xl transition-all group"
                 >
                   <Lock className="mr-3 h-6 w-6 group-hover:rotate-12 transition-transform" />
                   Sign In
@@ -508,18 +503,18 @@ export function LandingPage() {
       </main>
 
       {/* Footer */}
-      <footer className="relative z-10 border-t border-white/5 py-12 backdrop-blur-xl">
+      <footer className="relative z-10 border-t border-white/[0.04] py-12">
         <div className="max-w-7xl mx-auto px-6">
           <div className="flex flex-col md:flex-row justify-between items-center gap-6">
             <div className="flex items-center gap-3">
               <Logo size="sm" />
               <div className="text-left">
-                <div className="font-semibold text-sm">EasyPlus AI</div>
-                <div className="text-xs text-gray-500">© 2026 All rights reserved</div>
+                <div className="font-medium text-sm text-gray-300">EasyPlus AI</div>
+                <div className="text-xs text-gray-600">© 2026 All rights reserved</div>
               </div>
             </div>
-            <div className="flex items-center gap-2 text-sm text-gray-400">
-              <Sparkles className="h-4 w-4 text-purple-400" />
+            <div className="flex items-center gap-2 text-sm text-gray-500">
+              <Sparkles className="h-3.5 w-3.5 text-violet-400/60" />
               <span>Powered by Claude Opus 4.6</span>
             </div>
           </div>
@@ -548,16 +543,15 @@ function FeatureCard({
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true }}
       transition={{ duration: 0.5, delay }}
-      whileHover={{ y: -8, scale: 1.02 }}
+      whileHover={{ y: -4, scale: 1.01 }}
       className="relative group"
     >
-      <div className={`absolute -inset-0.5 bg-gradient-to-r ${color} rounded-2xl blur-xl opacity-0 group-hover:opacity-20 transition-opacity duration-500`} />
-      <div className="relative glass-strong rounded-2xl p-7 border border-white/10 group-hover:border-white/20 transition-all space-y-4 h-full backdrop-blur-2xl">
-        <div className={`h-12 w-12 rounded-xl glass-strong border border-white/10 flex items-center justify-center text-white shadow-lg group-hover:shadow-xl transition-all`}>
+      <div className="relative bg-white/[0.02] rounded-2xl p-7 border border-white/[0.06] group-hover:border-white/[0.12] transition-all space-y-4 h-full">
+        <div className="h-11 w-11 rounded-xl bg-white/[0.04] border border-white/[0.08] flex items-center justify-center text-violet-300 transition-all">
           {icon}
         </div>
-        <h3 className="text-lg font-semibold text-white">{title}</h3>
-        <p className="text-gray-400 leading-relaxed text-sm">{description}</p>
+        <h3 className="text-lg font-semibold text-white/90">{title}</h3>
+        <p className="text-gray-500 leading-relaxed text-sm">{description}</p>
       </div>
     </motion.div>
   )

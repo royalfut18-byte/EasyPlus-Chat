@@ -69,10 +69,10 @@ export function MessageBubble({ role, content, model, onRegenerate, attachments,
     >
       <div
         className={cn(
-          'rounded-[22px] relative group',
+          'rounded-3xl relative group',
           isUser
-            ? 'max-w-[88%] md:max-w-[70%] bg-gradient-to-br from-purple-600/90 to-blue-600/90 backdrop-blur-sm text-white shadow-lg'
-            : 'w-full glass p-3 md:p-4 lg:p-6'
+            ? 'max-w-[85%] md:max-w-[70%] bg-gradient-to-br from-indigo-600/80 to-violet-700/70 backdrop-blur-sm text-white shadow-md shadow-indigo-500/10'
+            : 'w-full bg-white/[0.03] border border-white/[0.06] p-3 md:p-4 lg:p-6'
         )}
       >
         {!isUser && modelData && (
@@ -256,11 +256,11 @@ export function MessageBubble({ role, content, model, onRegenerate, attachments,
                 {safeContent}
               </ReactMarkdown>
               {artifact && artifact.title && (
-                <div className="mt-4 glass-strong p-4 rounded-xl border border-purple-500/30 hover:border-purple-500/50 transition-colors">
+                <div className="mt-4 bg-white/[0.03] p-4 rounded-xl border border-violet-500/20 hover:border-violet-500/30 transition-colors">
                   <div className="flex items-center justify-between gap-3">
                     <div className="flex items-center gap-3 flex-1 min-w-0">
-                      <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-purple-500/20 to-purple-500/10 flex items-center justify-center shrink-0">
-                        <FileCode className="h-5 w-5 text-purple-400" />
+                      <div className="w-10 h-10 rounded-lg bg-violet-500/10 border border-violet-500/20 flex items-center justify-center shrink-0">
+                        <FileCode className="h-5 w-5 text-violet-400" />
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="font-semibold text-white truncate">{artifact.title}</p>
@@ -270,7 +270,7 @@ export function MessageBubble({ role, content, model, onRegenerate, attachments,
                     <Button
                       onClick={() => onOpenArtifact(artifact)}
                       size="sm"
-                      className="gradient-primary shrink-0"
+                      className="bg-violet-600/80 hover:bg-violet-600 text-white shrink-0"
                     >
                       <PanelRightOpen className="h-4 w-4 mr-2" />
                       Open Artifact

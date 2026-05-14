@@ -22,14 +22,14 @@ export default async function BillingPage() {
     .single()
 
   return (
-    <div className="min-h-screen bg-[#0A0A0F] p-6">
+    <div className="min-h-screen bg-[#08070d] p-6">
       <div className="max-w-4xl mx-auto space-y-8">
         <div>
-          <h1 className="text-4xl font-bold gradient-text">Billing & Credits</h1>
+          <h1 className="text-3xl font-semibold text-white/90">Billing & Credits</h1>
           <p className="text-gray-400 mt-2">Your account and credits information</p>
         </div>
 
-        <Card className="glass-strong border-white/10">
+        <Card className="bg-white/[0.02] border-white/[0.06]">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Zap className="h-5 w-5 text-yellow-400" />
@@ -54,7 +54,7 @@ export default async function BillingPage() {
           </CardContent>
         </Card>
 
-        <Card className="glass-strong border-white/10">
+        <Card className="bg-white/[0.02] border-white/[0.06]">
           <CardHeader>
             <CardTitle>Account Information</CardTitle>
           </CardHeader>

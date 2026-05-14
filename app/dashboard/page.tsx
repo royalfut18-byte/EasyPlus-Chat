@@ -43,15 +43,15 @@ export default async function DashboardPage() {
     .eq('role', 'user')
 
   return (
-    <div className="min-h-screen bg-[#0A0A0F] p-6">
+    <div className="min-h-screen bg-[#08070d] p-6">
       <div className="max-w-7xl mx-auto space-y-8">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-4xl font-bold gradient-text">Dashboard</h1>
+            <h1 className="text-4xl font-bold text-white/90">Dashboard</h1>
             <p className="text-gray-400 mt-2">Welcome back, {profile?.display_name}</p>
           </div>
           <Link href="/chat">
-            <Button className="gradient-primary">
+            <Button className="bg-violet-600/80 hover:bg-violet-600 text-white">
               <MessageSquare className="mr-2 h-4 w-4" />
               Go to Chat
             </Button>
@@ -59,7 +59,7 @@ export default async function DashboardPage() {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <Card className="glass-strong border-white/10">
+          <Card className="bg-white/[0.02] border-white/[0.06]">
             <CardHeader className="flex flex-row items-center justify-between pb-2">
               <CardTitle className="text-sm font-medium text-gray-400">
                 Credit Balance
@@ -67,7 +67,7 @@ export default async function DashboardPage() {
               <Zap className="h-4 w-4 text-yellow-400" />
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-bold gradient-text">
+              <div className="text-3xl font-bold text-white/90">
                 {formatCredits(profile?.credits || 0)}
               </div>
               <p className="text-xs text-gray-500 mt-2">
@@ -76,7 +76,7 @@ export default async function DashboardPage() {
             </CardContent>
           </Card>
 
-          <Card className="glass-strong border-white/10">
+          <Card className="bg-white/[0.02] border-white/[0.06]">
             <CardHeader className="flex flex-row items-center justify-between pb-2">
               <CardTitle className="text-sm font-medium text-gray-400">
                 Messages Sent
@@ -89,7 +89,7 @@ export default async function DashboardPage() {
             </CardContent>
           </Card>
 
-          <Card className="glass-strong border-white/10">
+          <Card className="bg-white/[0.02] border-white/[0.06]">
             <CardHeader className="flex flex-row items-center justify-between pb-2">
               <CardTitle className="text-sm font-medium text-gray-400">
                 Subscription
@@ -110,7 +110,7 @@ export default async function DashboardPage() {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <Card className="glass-strong border-white/10">
+          <Card className="bg-white/[0.02] border-white/[0.06]">
             <CardHeader>
               <CardTitle>Recent Conversations</CardTitle>
             </CardHeader>
@@ -134,7 +134,7 @@ export default async function DashboardPage() {
             </CardContent>
           </Card>
 
-          <Card className="glass-strong border-white/10">
+          <Card className="bg-white/[0.02] border-white/[0.06]">
             <CardHeader>
               <CardTitle>Recent Transactions</CardTitle>
             </CardHeader>
@@ -170,13 +170,13 @@ export default async function DashboardPage() {
           </Card>
         </div>
 
-        <Card className="glass-strong border-white/10">
+        <Card className="bg-white/[0.02] border-white/[0.06]">
           <CardHeader>
             <CardTitle>Quick Actions</CardTitle>
           </CardHeader>
           <CardContent className="flex flex-wrap gap-4">
             <Link href="/billing">
-              <Button className="gradient-primary">
+              <Button className="bg-violet-600/80 hover:bg-violet-600 text-white">
                 <CreditCard className="mr-2 h-4 w-4" />
                 View Credits
               </Button>

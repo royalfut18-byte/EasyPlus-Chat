@@ -51,7 +51,7 @@ export function Logo({ size = 'md', showText = false, className }: LogoProps) {
         />
       </div>
       {showText && (
-        <span className="font-bold text-base md:text-lg gradient-text whitespace-nowrap">EasyPlus AI</span>
+        <span className="font-semibold text-base md:text-lg text-white/90 whitespace-nowrap">EasyPlus AI</span>
       )}
     </div>
   )

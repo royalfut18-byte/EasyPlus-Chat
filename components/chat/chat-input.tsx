@@ -216,22 +216,22 @@ export function ChatInput({ onSend, disabled, isLoading }: ChatInputProps) {
 
   return (
     <div
-      className="sticky bottom-0 border-t border-white/10 bg-[#0A0A0F]/90 backdrop-blur-sm md:backdrop-blur-xl p-3 md:p-4 shadow-xl md:shadow-2xl"
+      className="sticky bottom-0 border-t border-white/[0.06] bg-[#08070d]/90 backdrop-blur-sm md:backdrop-blur-xl p-3 md:p-4"
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
       {isDragging && (
-        <div className="absolute inset-0 bg-purple-500/10 backdrop-blur-md z-[60] flex items-center justify-center border-2 border-dashed border-purple-500/50 rounded-2xl m-3 md:m-4 pointer-events-none">
+        <div className="absolute inset-0 bg-violet-500/5 backdrop-blur-md z-[60] flex items-center justify-center border-2 border-dashed border-violet-500/30 rounded-2xl m-3 md:m-4 pointer-events-none">
           <div className="text-center">
-            <Paperclip className="h-12 w-12 text-purple-400 mx-auto mb-2" />
+            <Paperclip className="h-12 w-12 text-violet-400 mx-auto mb-2" />
             <p className="text-white font-medium">Drop files here</p>
             <p className="text-gray-400 text-sm mt-1">Images, PDFs, TXT, CSV, JSON, MD</p>
           </div>
         </div>
       )}
       <div className="max-w-4xl mx-auto">
-        <div className="glass-strong rounded-xl md:rounded-2xl p-2.5 md:p-3 shadow-md md:shadow-lg hover:shadow-purple-500/10 transition-shadow">
+        <div className="bg-white/[0.03] border border-white/[0.08] rounded-2xl md:rounded-3xl p-2.5 md:p-3 transition-colors hover:border-white/[0.12]">
           {attachments.length > 0 && (
             <div className="flex gap-2 mb-2 md:mb-3 pb-2 md:pb-3 border-b border-white/10 overflow-x-auto">
               {attachments.map((attachment, index) => (
@@ -314,7 +314,7 @@ export function ChatInput({ onSend, disabled, isLoading }: ChatInputProps) {
               onClick={handleSubmit}
               disabled={(!message.trim() && attachments.length === 0) || disabled || isLoading}
               size="icon"
-              className="gradient-primary h-10 w-10 md:h-11 md:w-11 rounded-xl shrink-0 hover:shadow-lg hover:shadow-purple-500/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              className="bg-violet-600 hover:bg-violet-500 h-9 w-9 md:h-10 md:w-10 rounded-xl shrink-0 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isLoading ? (
                 <Loader2 className="h-4 w-4 md:h-5 md:w-5 animate-spin" />
@@ -324,8 +324,8 @@ export function ChatInput({ onSend, disabled, isLoading }: ChatInputProps) {
             </Button>
           </div>
         </div>
-        <p className="text-xs text-gray-500 text-center mt-2 md:mt-2.5 hidden sm:block">
-          Press <kbd className="px-1.5 py-0.5 bg-white/10 rounded text-gray-400">Enter</kbd> to send, <kbd className="px-1.5 py-0.5 bg-white/10 rounded text-gray-400">Shift+Enter</kbd> for new line
+        <p className="text-xs text-gray-600 text-center mt-2 md:mt-2.5 hidden sm:block">
+          Press <kbd className="px-1.5 py-0.5 bg-white/[0.05] rounded text-gray-500">Enter</kbd> to send, <kbd className="px-1.5 py-0.5 bg-white/[0.05] rounded text-gray-500">Shift+Enter</kbd> for new line
         </p>
       </div>
     </div>

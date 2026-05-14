@@ -149,7 +149,7 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
       )}
 
       {/* Header */}
-      <div className="glass border-b border-white/10 p-4 flex items-center justify-between">
+      <div className="bg-white/[0.02] border-b border-white/[0.06] p-4 flex items-center justify-between">
         <div className="flex-1 min-w-0">
           <h3 className="text-lg font-semibold text-white truncate">
             {artifact?.title || 'No Artifact'}
@@ -169,7 +169,7 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
       </div>
 
       {/* Tabs and Controls */}
-      <div className="glass border-b border-white/10 px-4 flex items-center gap-2 justify-between">
+      <div className="bg-white/[0.02] border-b border-white/[0.06] px-4 flex items-center gap-2 justify-between">
         <div className="flex items-center gap-2">
           {canPreview && (
             <button
@@ -177,7 +177,7 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
               className={cn(
                 'px-4 py-3 text-sm font-medium transition-colors border-b-2 flex items-center gap-2',
                 currentTab === 'preview'
-                  ? 'text-white border-purple-500'
+                  ? 'text-white border-violet-500'
                   : 'text-gray-400 border-transparent hover:text-white'
               )}
             >
@@ -190,7 +190,7 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
             className={cn(
               'px-4 py-3 text-sm font-medium transition-colors border-b-2 flex items-center gap-2',
               currentTab === 'code'
-                ? 'text-white border-purple-500'
+                ? 'text-white border-violet-500'
                 : 'text-gray-400 border-transparent hover:text-white'
             )}
           >
@@ -208,7 +208,7 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
               className={cn(
                 'p-2 rounded transition-colors',
                 previewDevice === 'desktop'
-                  ? 'bg-purple-500/20 text-purple-400'
+                  ? 'bg-violet-500/15 text-violet-400'
                   : 'text-gray-400 hover:text-white hover:bg-white/5'
               )}
             >
@@ -220,7 +220,7 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
               className={cn(
                 'p-2 rounded transition-colors',
                 previewDevice === 'tablet'
-                  ? 'bg-purple-500/20 text-purple-400'
+                  ? 'bg-violet-500/15 text-violet-400'
                   : 'text-gray-400 hover:text-white hover:bg-white/5'
               )}
             >
@@ -232,7 +232,7 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
               className={cn(
                 'p-2 rounded transition-colors',
                 previewDevice === 'mobile'
-                  ? 'bg-purple-500/20 text-purple-400'
+                  ? 'bg-violet-500/15 text-violet-400'
                   : 'text-gray-400 hover:text-white hover:bg-white/5'
               )}
             >
@@ -251,7 +251,7 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-hidden flex flex-col min-h-0 bg-[#0A0A0F]">
+      <div className="flex-1 overflow-hidden flex flex-col min-h-0 bg-[#08070d]">
         {!artifact ? (
           <div className="flex items-center justify-center h-full p-8 text-center">
             <div className="max-w-md space-y-4">
@@ -366,10 +366,10 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
 
       {/* Actions */}
       {artifact && artifact.code && (
-        <div className="glass border-t border-white/10 p-4 flex gap-3">
+        <div className="bg-white/[0.02] border-t border-white/[0.06] p-4 flex gap-3">
           <Button
             onClick={handleCopy}
-            className="flex-1 glass hover:bg-white/10 border border-white/20"
+            className="flex-1 bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.1]"
             variant="ghost"
           >
             <Copy className="h-4 w-4 mr-2" />
@@ -377,7 +377,7 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
           </Button>
           <Button
             onClick={handleDownload}
-            className="flex-1 gradient-primary hover:opacity-90"
+            className="flex-1 bg-violet-600/80 hover:bg-violet-600 text-white"
           >
             <Download className="h-4 w-4 mr-2" />
             Download
@@ -440,7 +440,7 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
             animate={{ x: 0 }}
             exit={{ x: '100%' }}
             transition={{ type: 'spring', damping: 30, stiffness: 300 }}
-            className="fixed inset-0 z-50 bg-[#0A0A0F] md:hidden"
+            className="fixed inset-0 z-50 bg-[#08070d] md:hidden"
           >
             {renderPanelContent()}
           </motion.div>
@@ -451,15 +451,15 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
       {!isMobile && isOpen && (
         <aside
           ref={panelRef}
-          className="hidden md:flex relative h-full min-h-0 flex-shrink-0 flex-col border-l border-white/10 bg-[#07070d] shadow-2xl"
+          className="hidden md:flex relative h-full min-h-0 flex-shrink-0 flex-col border-l border-white/[0.06] bg-[#0a0a10] shadow-2xl"
           style={{ width: `${currentWidth}px` }}
         >
           {/* Resize Handle - Desktop Only - Full Height */}
           <div
             className={cn(
               'absolute left-0 top-0 bottom-0 w-3 cursor-col-resize flex items-center justify-center group',
-              'hover:bg-purple-500/10 transition-colors',
-              isResizing && 'bg-purple-500/20'
+              'hover:bg-violet-500/5 transition-colors',
+              isResizing && 'bg-violet-500/10'
             )}
             style={{
               zIndex: 100,
@@ -469,13 +469,13 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
           >
             {/* Vertical line spanning full height */}
             <div className={cn(
-              'absolute left-1 w-px h-full bg-purple-500/40 transition-colors',
-              'group-hover:bg-purple-400/60',
-              isResizing && 'bg-purple-400'
+              'absolute left-1 w-px h-full bg-white/10 transition-colors',
+              'group-hover:bg-violet-400/40',
+              isResizing && 'bg-violet-400/60'
             )} />
             {/* Centered grip indicator */}
             <div className={cn(
-              'absolute top-1/2 left-0.5 -translate-y-1/2 w-1.5 h-16 rounded-full bg-purple-400/60 transition-opacity',
+              'absolute top-1/2 left-0.5 -translate-y-1/2 w-1.5 h-16 rounded-full bg-violet-400/40 transition-opacity',
               'opacity-0 group-hover:opacity-100',
               isResizing && 'opacity-100'
             )} />

@@ -124,7 +124,7 @@ export function AdminUserTable() {
                   <span
                     className={`text-xs px-2 py-1 rounded-full ${
                       user.role === 'admin'
-                        ? 'bg-purple-500/20 text-purple-300'
+                        ? 'bg-violet-500/15 text-violet-300'
                         : 'bg-blue-500/20 text-blue-300'
                     }`}
                   >
@@ -173,7 +173,7 @@ export function AdminUserTable() {
       </div>
 
       <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
-        <DialogContent className="glass-strong border-white/10">
+        <DialogContent className="bg-[#111018] border-white/[0.08]">
           <DialogHeader>
             <DialogTitle>Edit User Settings</DialogTitle>
             <DialogDescription className="text-gray-400">
@@ -190,7 +190,7 @@ export function AdminUserTable() {
                 <SelectTrigger className="glass">
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent className="glass-strong border-white/10">
+                <SelectContent className="bg-[#111018] border-white/[0.08]">
                   <SelectItem value="user">User</SelectItem>
                   <SelectItem value="admin">Admin</SelectItem>
                 </SelectContent>
@@ -236,7 +236,7 @@ export function AdminUserTable() {
               >
                 Cancel
               </Button>
-              <Button onClick={handleUpdateUser} className="flex-1 gradient-primary">
+              <Button onClick={handleUpdateUser} className="flex-1 bg-violet-600/80 hover:bg-violet-600 text-white">
                 Save Changes
               </Button>
             </div>

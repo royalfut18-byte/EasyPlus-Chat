@@ -1025,8 +1025,8 @@ Rules:
 
   if (!userProfile) {
     return (
-      <div className="min-h-screen bg-[#0A0A0F] flex items-center justify-center">
-        <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full" />
+      <div className="min-h-screen bg-[#08070d] flex items-center justify-center">
+        <div className="animate-spin h-8 w-8 border-2 border-violet-500/60 border-t-transparent rounded-full" />
       </div>
     )
   }
@@ -1041,7 +1041,7 @@ Rules:
   const displayedMessages = processMessages(messages, activeConversationId)
 
   return (
-    <div className="h-[100dvh] md:h-screen bg-[#0A0A0F] flex overflow-hidden">
+    <div className="h-[100dvh] md:h-screen bg-[#08070d] flex overflow-hidden">
       <Sidebar
         conversations={conversations}
         currentConversationId={currentConversation?.id}
@@ -1056,7 +1056,7 @@ Rules:
       <div className="flex min-w-0 flex-1 overflow-hidden ml-0 md:ml-80">
         {/* Chat section */}
         <main className="flex min-w-0 flex-1 flex-col overflow-hidden h-full">
-        <div className="border-b border-white/10 bg-[#0A0A0F]/90 backdrop-blur-sm md:backdrop-blur-xl">
+        <div className="border-b border-white/[0.06] bg-[#08070d]/90 backdrop-blur-sm md:backdrop-blur-xl">
           <div className="flex items-center gap-2 overflow-x-auto px-3 py-3 md:px-4">
             <div className="flex-1 min-w-0">
               <ModelSelector
@@ -1073,7 +1073,7 @@ Rules:
                   animate={{ opacity: 1, scale: 1 }}
                   exit={{ opacity: 0, scale: 0.9 }}
                   onClick={() => handleOpenArtifact()}
-                  className="px-2 md:px-3 py-2 h-10 rounded-lg text-xs md:text-sm font-medium transition-all flex items-center gap-1.5 glass hover:bg-white/10 text-gray-300 hover:text-white border border-white/20"
+                  className="px-2.5 md:px-3 py-1.5 md:py-2 rounded-full text-xs md:text-sm font-medium transition-all flex items-center gap-1.5 bg-white/[0.03] border border-white/[0.08] hover:border-white/[0.15] text-gray-300 hover:text-white"
                   title="Reopen latest artifact"
                 >
                   <PanelRightOpen className="h-4 w-4" />
@@ -1086,16 +1086,15 @@ Rules:
                 disabled={isRequestInProgress}
                 title={isRequestInProgress ? 'Wait for the current response to finish' : 'Toggle Web Search'}
                 className={cn(
-                  'px-2 md:px-3 py-2 h-10 rounded-lg text-xs md:text-sm font-medium transition-all flex items-center gap-1.5',
+                  'px-2.5 md:px-3 py-1.5 md:py-2 rounded-full text-xs md:text-sm font-medium transition-all flex items-center gap-1.5',
                   webSearchEnabled
-                    ? 'bg-blue-500/20 text-blue-400 border border-blue-500/50 glow-border'
-                    : 'glass hover:bg-white/10 text-gray-400',
+                    ? 'bg-violet-500/10 text-violet-300 border border-violet-500/30'
+                    : 'bg-white/[0.03] border border-white/[0.08] hover:border-white/[0.15] text-gray-400',
                   isRequestInProgress && 'opacity-50 cursor-not-allowed'
                 )}
               >
-                <Globe className="h-4 w-4" />
+                <Globe className="h-3.5 w-3.5" />
                 <span className="hidden sm:inline">Search</span>
-                {webSearchEnabled && <span className="hidden md:inline">✓</span>}
               </button>
 
               <button
@@ -1103,16 +1102,15 @@ Rules:
                 disabled={isRequestInProgress}
                 title={isRequestInProgress ? 'Wait for the current response to finish' : 'Toggle Artifact Mode'}
                 className={cn(
-                  'px-2 md:px-3 py-2 h-10 rounded-lg text-xs md:text-sm font-medium transition-all flex items-center gap-1.5',
+                  'px-2.5 md:px-3 py-1.5 md:py-2 rounded-full text-xs md:text-sm font-medium transition-all flex items-center gap-1.5',
                   artifactMode
-                    ? 'bg-purple-500/20 text-purple-400 border border-purple-500/50 glow-border'
-                    : 'glass hover:bg-white/10 text-gray-400',
+                    ? 'bg-violet-500/10 text-violet-300 border border-violet-500/30'
+                    : 'bg-white/[0.03] border border-white/[0.08] hover:border-white/[0.15] text-gray-400',
                   isRequestInProgress && 'opacity-50 cursor-not-allowed'
                 )}
               >
-                <Box className="h-4 w-4" />
+                <Box className="h-3.5 w-3.5" />
                 <span className="hidden sm:inline">Artifacts</span>
-                {artifactMode && <span className="hidden md:inline">✓</span>}
               </button>
             </div>
           </div>
@@ -1128,34 +1126,37 @@ Rules:
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -10 }}
                   transition={{ duration: 0.3 }}
-                  className="flex flex-col items-center justify-center h-full min-h-[60vh] text-center space-y-6 px-4"
+                  className="flex flex-col items-center justify-center h-full min-h-[60vh] text-center space-y-8 px-4"
                 >
-                  <Logo size="lg" className="mb-2" />
+                  <div className="relative">
+                    <div className="absolute inset-0 bg-violet-500/10 blur-3xl rounded-full" />
+                    <Logo size="lg" className="mb-2 relative" />
+                  </div>
                   <div className="space-y-3">
-                    <h2 className="text-3xl md:text-4xl font-bold gradient-text">Ready to explore?</h2>
-                    <p className="text-gray-400 text-base md:text-lg max-w-md mx-auto">
+                    <h2 className="text-2xl md:text-3xl font-semibold text-white/90">Ready to explore?</h2>
+                    <p className="text-gray-500 text-sm md:text-base max-w-md mx-auto">
                       Ask me anything. I can help with research, coding, analysis, and more.
                     </p>
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3 w-full max-w-2xl">
                     {[
-                      { text: 'Explain quantum computing', Icon: BrainCircuit, color: 'text-purple-400' },
-                      { text: 'Write a Python function', Icon: Code2, color: 'text-blue-400' },
-                      { text: 'Plan a trip to Japan', Icon: MapPin, color: 'text-cyan-400' },
-                      { text: 'Debug this code', Icon: Bug, color: 'text-orange-400' },
+                      { text: 'Explain quantum computing', Icon: BrainCircuit, color: 'text-violet-400' },
+                      { text: 'Write a Python function', Icon: Code2, color: 'text-indigo-400' },
+                      { text: 'Plan a trip to Japan', Icon: MapPin, color: 'text-slate-300' },
+                      { text: 'Debug this code', Icon: Bug, color: 'text-amber-400/80' },
                     ].map((prompt, i) => (
                       <motion.button
                         key={i}
                         onClick={() => handleSendMessage(prompt.text)}
                         disabled={isRequestInProgress}
-                        className="glass-strong p-4 md:p-5 rounded-xl text-left hover:glow-border hover:bg-white/5 transition-all disabled:opacity-50 disabled:cursor-not-allowed group"
-                        whileHover={{ scale: 1.02, y: -2 }}
-                        whileTap={{ scale: 0.98 }}
+                        className="bg-white/[0.02] border border-white/[0.06] p-4 md:p-5 rounded-2xl text-left hover:border-white/[0.12] hover:bg-white/[0.04] transition-all disabled:opacity-50 disabled:cursor-not-allowed group"
+                        whileHover={{ scale: 1.01, y: -1 }}
+                        whileTap={{ scale: 0.99 }}
                       >
-                        <div className={`flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/5 mb-3 ${prompt.color} group-hover:bg-white/10 transition-colors`}>
-                          <prompt.Icon className="h-5 w-5" />
+                        <div className={`flex h-9 w-9 items-center justify-center rounded-xl border border-white/[0.08] bg-white/[0.03] mb-3 ${prompt.color} group-hover:bg-white/[0.06] transition-colors`}>
+                          <prompt.Icon className="h-4 w-4" />
                         </div>
-                        <p className="text-sm md:text-base text-gray-300 group-hover:text-white transition-colors">
+                        <p className="text-sm text-gray-400 group-hover:text-gray-200 transition-colors">
                           {prompt.text}
                         </p>
                       </motion.button>
@@ -1174,10 +1175,10 @@ Rules:
                     <div key={i} className={cn('flex', i % 2 === 0 ? 'justify-start' : 'justify-end')}>
                       <div className={cn(
                         'rounded-2xl p-4 md:p-6 animate-pulse',
-                        i % 2 === 0 ? 'w-full glass' : 'max-w-[70%] gradient-primary'
+                        i % 2 === 0 ? 'w-full bg-white/[0.03] border border-white/[0.06]' : 'max-w-[70%] bg-indigo-600/20'
                       )}>
-                        <div className="h-4 bg-white/20 rounded w-3/4 mb-2" />
-                        <div className="h-4 bg-white/20 rounded w-1/2" />
+                        <div className="h-4 bg-white/10 rounded w-3/4 mb-2" />
+                        <div className="h-4 bg-white/10 rounded w-1/2" />
                       </div>
                     </div>
                   ))}
