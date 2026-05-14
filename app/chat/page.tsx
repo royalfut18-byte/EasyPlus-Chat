@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Sparkles, Box, PanelRightOpen, Globe, BrainCircuit, Code2, MapPin, Bug } from 'lucide-react'
+import { Sparkles, Box, PanelRightOpen, Globe, Paperclip } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { ensureProfile } from '@/lib/supabase/ensure-profile'
 import { ModelSelector } from '@/components/chat/model-selector'
@@ -11,7 +11,6 @@ import { MessageBubble } from '@/components/chat/message-bubble'
 import { ChatInput } from '@/components/chat/chat-input'
 import { Sidebar } from '@/components/chat/sidebar'
 import { ArtifactPanel } from '@/components/chat/artifact-panel'
-import { Logo } from '@/components/brand/logo'
 import { toast } from '@/components/ui/use-toast'
 import { AI_MODELS } from '@/types/models'
 import { cn } from '@/lib/utils'
@@ -1125,43 +1124,78 @@ Rules:
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -10 }}
-                  transition={{ duration: 0.3 }}
-                  className="flex flex-col items-center justify-center h-full min-h-[60vh] text-center space-y-8 px-4"
+                  transition={{ duration: 0.4 }}
+                  className="flex flex-col items-center justify-center h-full min-h-[55vh] text-center px-4 gap-6 max-w-3xl mx-auto"
                 >
-                  <div className="relative">
-                    <div className="absolute inset-0 bg-violet-500/10 blur-3xl rounded-full" />
-                    <Logo size="lg" className="mb-2 relative" />
+                  {/* Subtle background glow */}
+                  <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
+                    <div className="w-[500px] h-[300px] bg-violet-600/[0.04] rounded-full blur-[100px]" />
                   </div>
-                  <div className="space-y-3">
-                    <h2 className="text-2xl md:text-3xl font-semibold text-white/90">Ready to explore?</h2>
-                    <p className="text-gray-500 text-sm md:text-base max-w-md mx-auto">
-                      Ask me anything. I can help with research, coding, analysis, and more.
+
+                  {/* Badge */}
+                  <motion.div
+                    initial={{ opacity: 0, y: 5 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.1 }}
+                    className="relative px-3.5 py-1.5 rounded-full bg-white/[0.03] border border-white/[0.08] text-xs text-gray-400 font-medium"
+                  >
+                    Private AI Workspace
+                  </motion.div>
+
+                  {/* Heading */}
+                  <motion.div
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.15 }}
+                    className="relative space-y-3"
+                  >
+                    <h1 className="text-3xl md:text-4xl lg:text-5xl font-semibold text-white/95 tracking-tight">
+                      Ask anything. Build anything.
+                    </h1>
+                    <p className="text-sm md:text-base text-gray-500 max-w-lg mx-auto leading-relaxed">
+                      Chat with Claude, use web search, upload files, and create interactive artifacts from one focused workspace.
                     </p>
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 w-full max-w-2xl">
+                  </motion.div>
+
+                  {/* Prompt mockup */}
+                  <motion.div
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.25 }}
+                    className="relative w-full max-w-2xl"
+                  >
+                    <div className="absolute -inset-1 bg-violet-500/[0.06] rounded-3xl blur-xl" />
+                    <div className="relative bg-white/[0.03] border border-white/[0.08] rounded-2xl md:rounded-3xl px-4 md:px-5 py-3.5 md:py-4 flex items-center gap-3 cursor-text hover:border-white/[0.14] transition-colors">
+                      <Paperclip className="h-4 w-4 text-gray-600 shrink-0" />
+                      <span className="flex-1 text-sm md:text-base text-gray-600 text-left">What do you want to work on today?</span>
+                      <Sparkles className="h-4 w-4 text-violet-400/60 shrink-0" />
+                    </div>
+                  </motion.div>
+
+                  {/* Suggestion chips */}
+                  <motion.div
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.35 }}
+                    className="relative flex flex-wrap justify-center gap-2"
+                  >
                     {[
-                      { text: 'Explain quantum computing', Icon: BrainCircuit, color: 'text-violet-400' },
-                      { text: 'Write a Python function', Icon: Code2, color: 'text-indigo-400' },
-                      { text: 'Plan a trip to Japan', Icon: MapPin, color: 'text-slate-300' },
-                      { text: 'Debug this code', Icon: Bug, color: 'text-amber-400/80' },
-                    ].map((prompt, i) => (
-                      <motion.button
+                      'Explain a maths question',
+                      'Review my essay',
+                      'Search current news',
+                      'Build an artifact',
+                      'Analyse a document',
+                    ].map((text, i) => (
+                      <button
                         key={i}
-                        onClick={() => handleSendMessage(prompt.text)}
+                        onClick={() => handleSendMessage(text)}
                         disabled={isRequestInProgress}
-                        className="bg-white/[0.02] border border-white/[0.06] p-4 md:p-5 rounded-2xl text-left hover:border-white/[0.12] hover:bg-white/[0.04] transition-all disabled:opacity-50 disabled:cursor-not-allowed group"
-                        whileHover={{ scale: 1.01, y: -1 }}
-                        whileTap={{ scale: 0.99 }}
+                        className="px-3.5 py-2 rounded-full text-xs md:text-sm text-gray-400 bg-white/[0.02] border border-white/[0.07] hover:border-white/[0.15] hover:text-gray-200 hover:bg-white/[0.04] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                       >
-                        <div className={`flex h-9 w-9 items-center justify-center rounded-xl border border-white/[0.08] bg-white/[0.03] mb-3 ${prompt.color} group-hover:bg-white/[0.06] transition-colors`}>
-                          <prompt.Icon className="h-4 w-4" />
-                        </div>
-                        <p className="text-sm text-gray-400 group-hover:text-gray-200 transition-colors">
-                          {prompt.text}
-                        </p>
-                      </motion.button>
+                        {text}
+                      </button>
                     ))}
-                  </div>
+                  </motion.div>
                 </motion.div>
               ) : isLoadingConversation && displayedMessages.length === 0 ? (
                 <motion.div
