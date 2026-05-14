@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Sparkles, Box, PanelRightOpen, Globe, Paperclip } from 'lucide-react'
+import { Sparkles, Box, PanelRightOpen, Globe, Paperclip, Send, Loader2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { ensureProfile } from '@/lib/supabase/ensure-profile'
 import { ModelSelector } from '@/components/chat/model-selector'
@@ -192,6 +192,8 @@ export default function ChatPage() {
   const [artifactMessageId, setArtifactMessageId] = useState<string | null>(null)
   const [artifactPanelWidth, setArtifactPanelWidth] = useState(DEFAULT_PANEL_WIDTH)
   const [pendingResponses, setPendingResponses] = useState<Record<string, PendingResponse>>({})
+  const [heroInput, setHeroInput] = useState('')
+  const heroTextareaRef = useRef<HTMLTextAreaElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const isSendingRef = useRef(false)
   const lastUserPromptRef = useRef<string>('')
@@ -1039,6 +1041,17 @@ Rules:
   const activeConversationId = currentConversation?.id || null
   const displayedMessages = processMessages(messages, activeConversationId)
 
+  const isEmptyDraft = !currentConversation && displayedMessages.length === 0
+
+  const currentModelData = AI_MODELS.find(m => m.id === selectedModel)
+  const modelFamily = (() => {
+    const name = currentModelData?.name || ''
+    if (name.includes('Claude')) return 'Claude'
+    if (name.includes('GPT') || name.includes('Chat GPT')) return 'Chat GPT'
+    if (name.includes('Gemini')) return 'Gemini'
+    return name
+  })()
+
   return (
     <div className="h-[100dvh] md:h-screen bg-[#08070d] flex overflow-hidden">
       <Sidebar
@@ -1125,11 +1138,11 @@ Rules:
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -10 }}
                   transition={{ duration: 0.4 }}
-                  className="flex flex-col items-center justify-center h-full min-h-[55vh] text-center px-4 gap-6 max-w-3xl mx-auto"
+                  className="flex flex-col items-center justify-center h-full min-h-[65vh] text-center px-4 gap-7 md:gap-8 max-w-4xl mx-auto relative"
                 >
                   {/* Subtle background glow */}
                   <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
-                    <div className="w-[500px] h-[300px] bg-violet-600/[0.04] rounded-full blur-[100px]" />
+                    <div className="w-[600px] h-[400px] bg-violet-600/[0.04] rounded-full blur-[120px]" />
                   </div>
 
                   {/* Badge */}
@@ -1137,7 +1150,7 @@ Rules:
                     initial={{ opacity: 0, y: 5 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: 0.1 }}
-                    className="relative px-3.5 py-1.5 rounded-full bg-white/[0.03] border border-white/[0.08] text-xs text-gray-400 font-medium"
+                    className="relative px-4 py-1.5 rounded-full bg-white/[0.03] border border-white/[0.08] text-xs text-gray-400 font-medium"
                   >
                     Private AI Workspace
                   </motion.div>
@@ -1147,28 +1160,67 @@ Rules:
                     initial={{ opacity: 0, y: 8 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: 0.15 }}
-                    className="relative space-y-3"
+                    className="relative space-y-4"
                   >
-                    <h1 className="text-3xl md:text-4xl lg:text-5xl font-semibold text-white/95 tracking-tight">
+                    <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-semibold text-white/95 tracking-tight leading-[1.1]">
                       Ask anything. Build anything.
                     </h1>
-                    <p className="text-sm md:text-base text-gray-500 max-w-lg mx-auto leading-relaxed">
-                      Chat with Claude, use web search, upload files, and create interactive artifacts from one focused workspace.
+                    <p className="text-sm md:text-base lg:text-lg text-gray-500 max-w-xl mx-auto leading-relaxed">
+                      Chat with {modelFamily}, use web search, upload files, and create interactive artifacts from one focused workspace.
                     </p>
                   </motion.div>
 
-                  {/* Prompt mockup */}
+                  {/* Interactive prompt input */}
                   <motion.div
                     initial={{ opacity: 0, y: 8 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: 0.25 }}
-                    className="relative w-full max-w-2xl"
+                    className="relative w-full max-w-3xl"
                   >
-                    <div className="absolute -inset-1 bg-violet-500/[0.06] rounded-3xl blur-xl" />
-                    <div className="relative bg-white/[0.03] border border-white/[0.08] rounded-2xl md:rounded-3xl px-4 md:px-5 py-3.5 md:py-4 flex items-center gap-3 cursor-text hover:border-white/[0.14] transition-colors">
-                      <Paperclip className="h-4 w-4 text-gray-600 shrink-0" />
-                      <span className="flex-1 text-sm md:text-base text-gray-600 text-left">What do you want to work on today?</span>
-                      <Sparkles className="h-4 w-4 text-violet-400/60 shrink-0" />
+                    <div className="absolute -inset-1.5 bg-violet-500/[0.05] rounded-[28px] blur-xl" />
+                    <div className="relative bg-white/[0.03] border border-white/[0.08] rounded-2xl md:rounded-3xl px-4 md:px-5 py-3 md:py-4 flex items-end gap-3 focus-within:border-white/[0.16] transition-colors">
+                      <Paperclip className="h-4.5 w-4.5 md:h-5 md:w-5 text-gray-600 shrink-0 mb-1" />
+                      <textarea
+                        ref={heroTextareaRef}
+                        value={heroInput}
+                        onChange={(e) => {
+                          setHeroInput(e.target.value)
+                          e.target.style.height = 'auto'
+                          e.target.style.height = `${Math.min(e.target.scrollHeight, 160)}px`
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && !e.shiftKey) {
+                            e.preventDefault()
+                            if (heroInput.trim() && !isRequestInProgress) {
+                              handleSendMessage(heroInput.trim())
+                              setHeroInput('')
+                              if (heroTextareaRef.current) heroTextareaRef.current.style.height = 'auto'
+                            }
+                          }
+                        }}
+                        placeholder="What do you want to work on today?"
+                        disabled={isRequestInProgress}
+                        className="flex-1 bg-transparent border-none outline-none resize-none text-white placeholder:text-gray-600 text-sm md:text-base min-h-[28px] max-h-[160px] py-1 scrollbar-thin disabled:opacity-50"
+                        rows={1}
+                        autoFocus
+                      />
+                      <button
+                        onClick={() => {
+                          if (heroInput.trim() && !isRequestInProgress) {
+                            handleSendMessage(heroInput.trim())
+                            setHeroInput('')
+                            if (heroTextareaRef.current) heroTextareaRef.current.style.height = 'auto'
+                          }
+                        }}
+                        disabled={!heroInput.trim() || isRequestInProgress}
+                        className="bg-violet-600 hover:bg-violet-500 h-8 w-8 md:h-9 md:w-9 rounded-xl shrink-0 flex items-center justify-center transition-all disabled:opacity-30 disabled:cursor-not-allowed mb-0.5"
+                      >
+                        {isRequestInProgress ? (
+                          <Loader2 className="h-3.5 w-3.5 md:h-4 md:w-4 text-white animate-spin" />
+                        ) : (
+                          <Send className="h-3.5 w-3.5 md:h-4 md:w-4 text-white" />
+                        )}
+                      </button>
                     </div>
                   </motion.div>
 
@@ -1177,7 +1229,7 @@ Rules:
                     initial={{ opacity: 0, y: 8 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: 0.35 }}
-                    className="relative flex flex-wrap justify-center gap-2"
+                    className="relative flex flex-wrap justify-center gap-2 md:gap-2.5"
                   >
                     {[
                       'Explain a maths question',
@@ -1190,7 +1242,7 @@ Rules:
                         key={i}
                         onClick={() => handleSendMessage(text)}
                         disabled={isRequestInProgress}
-                        className="px-3.5 py-2 rounded-full text-xs md:text-sm text-gray-400 bg-white/[0.02] border border-white/[0.07] hover:border-white/[0.15] hover:text-gray-200 hover:bg-white/[0.04] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="px-4 py-2 md:py-2.5 rounded-full text-xs md:text-sm text-gray-400 bg-white/[0.02] border border-white/[0.07] hover:border-white/[0.15] hover:text-gray-200 hover:bg-white/[0.04] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         {text}
                       </button>
@@ -1238,11 +1290,13 @@ Rules:
           </div>
         </div>
 
-        <ChatInput
-          onSend={handleSendMessage}
-          disabled={isRequestInProgress}
-          isLoading={isLoading || isCreatingConversation}
-        />
+        {!isEmptyDraft && (
+          <ChatInput
+            onSend={handleSendMessage}
+            disabled={isRequestInProgress}
+            isLoading={isLoading || isCreatingConversation}
+          />
+        )}
         </main>
 
         {/* Artifact panel as flex child */}
