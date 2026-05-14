@@ -123,65 +123,83 @@ export async function streamBedrockResponse(
     },
   ]
 
-  const response = await fetch(endpoint, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      messages: bedrockMessages,
-      system: systemPrompt,
-      inferenceConfig: {
-        maxTokens: 16384,
-        temperature,
-      },
-    }),
-  })
-
-  if (!response.ok) {
-    const errorText = await response.text()
-    console.error('[Bedrock] API error:', {
-      status: response.status,
-      modelId: model.id,
-      error: errorText.substring(0, 200),
-    })
-
-    throw new Error(
-      `Bedrock API failed (${response.status}): ${errorText.substring(0, 200)}`
-    )
-  }
-
-  const data = await response.json()
-
-  const text =
-    data?.output?.message?.content
-      ?.map((part: { text?: string }) => part.text || '')
-      .join('') || ''
-
-  if (!text) {
-    console.warn('[Bedrock] Empty response from API')
-  }
-
-  // Return text as a stream, chunked to simulate streaming for the client
   const encoder = new TextEncoder()
-  const CHUNK_SIZE = 80
 
+  // Return a stream that sends keepalive whitespace while Bedrock processes,
+  // then delivers the actual content. This prevents Vercel/browser timeout.
   return new ReadableStream({
-    start(controller) {
-      let offset = 0
-      function pushChunk() {
-        if (offset >= text.length) {
+    async start(controller) {
+      // Start keepalive heartbeat (sends a space every 3s to keep connection alive)
+      let bedrockDone = false
+      const heartbeat = setInterval(() => {
+        if (!bedrockDone) {
+          try {
+            controller.enqueue(encoder.encode(' '))
+          } catch { /* stream may be closed */ }
+        }
+      }, 3000)
+
+      try {
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${apiKey}`,
+          },
+          body: JSON.stringify({
+            messages: bedrockMessages,
+            system: systemPrompt,
+            inferenceConfig: {
+              maxTokens: 16384,
+              temperature,
+            },
+          }),
+        })
+
+        bedrockDone = true
+        clearInterval(heartbeat)
+
+        if (!response.ok) {
+          const errorText = await response.text()
+          console.error('[Bedrock] API error:', {
+            status: response.status,
+            modelId: model.id,
+            error: errorText.substring(0, 200),
+          })
+          controller.enqueue(encoder.encode(`[Error: Bedrock API failed (${response.status})]`))
           controller.close()
           return
         }
-        const end = Math.min(offset + CHUNK_SIZE, text.length)
-        controller.enqueue(encoder.encode(text.slice(offset, end)))
-        offset = end
-        // Use setTimeout to yield control and flush chunks progressively
-        setTimeout(pushChunk, 0)
+
+        const data = await response.json()
+
+        const text =
+          data?.output?.message?.content
+            ?.map((part: { text?: string }) => part.text || '')
+            .join('') || ''
+
+        if (!text) {
+          console.warn('[Bedrock] Empty response from API')
+          controller.close()
+          return
+        }
+
+        // Deliver content in chunks for progressive rendering
+        const CHUNK_SIZE = 100
+        let offset = 0
+        while (offset < text.length) {
+          const end = Math.min(offset + CHUNK_SIZE, text.length)
+          controller.enqueue(encoder.encode(text.slice(offset, end)))
+          offset = end
+        }
+        controller.close()
+      } catch (err: any) {
+        bedrockDone = true
+        clearInterval(heartbeat)
+        console.error('[Bedrock] Request failed:', err.message)
+        controller.enqueue(encoder.encode(`[Error: ${err.message}]`))
+        controller.close()
       }
-      pushChunk()
     },
   })
 }

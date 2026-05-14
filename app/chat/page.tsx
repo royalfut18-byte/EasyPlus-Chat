@@ -847,16 +847,26 @@ Rules:
       const decoder = new TextDecoder()
       let assistantContent = ''
       let streamingStatusSet = false
+      let contentStarted = false
 
       while (reader) {
         const { done, value } = await reader.read()
         if (done) break
 
         const chunk = decoder.decode(value)
-        assistantContent += chunk
 
-        // Update pending status to streaming on first chunk
-        if (!streamingStatusSet) {
+        // Skip keepalive whitespace-only chunks before real content starts
+        if (!contentStarted) {
+          const trimmed = chunk.trimStart()
+          if (trimmed.length === 0) continue // Pure keepalive, skip
+          assistantContent += trimmed
+          contentStarted = true
+        } else {
+          assistantContent += chunk
+        }
+
+        // Update pending status to streaming on first real content
+        if (!streamingStatusSet && contentStarted) {
           streamingStatusSet = true
           const currentPending = pendingResponsesRef.current[sendConversationId]
           if (currentPending) {
@@ -865,7 +875,7 @@ Rules:
         }
 
         // Update by ID only - no new messages, only if still on this conversation
-        if (selectedConversationIdRef.current === sendConversationId) {
+        if (contentStarted && selectedConversationIdRef.current === sendConversationId) {
           setMessages((prev) =>
             processMessages(
               prev.map((m) =>

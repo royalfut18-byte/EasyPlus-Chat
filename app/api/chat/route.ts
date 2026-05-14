@@ -516,27 +516,8 @@ RULES FOR USING THESE RESULTS:
       temperature,
     })
 
-    // Stage: Call AI provider
+    // Stage: Pre-create assistant message for recovery
     stage = 'ai-call'
-    let stream: ReadableStream
-
-    if (selectedModel.provider === 'google') {
-      stream = await streamGeminiResponse(validatedModel, messagesForModel, systemPrompt, temperature)
-    } else if (selectedModel.provider === 'anthropic') {
-      stream = await streamBedrockResponse(validatedModel, messagesForModel, systemPrompt, temperature)
-    } else {
-      return NextResponse.json(
-        { error: `Provider "${selectedModel.provider}" is not supported` },
-        { status: 400 }
-      )
-    }
-
-    // Stage: Stream response
-    stage = 'streaming'
-    const decoder = new TextDecoder()
-    let fullResponse = ''
-
-    // Pre-create assistant message with status='generating' so recovery can find it
     let assistantMessageId: string | null = null
     const assistantOrder = userMessageOrderIndex != null ? userMessageOrderIndex + 1 : 1
 
@@ -560,42 +541,95 @@ RULES FOR USING THESE RESULTS:
       }
     }
 
+    // Create a streaming response that starts immediately (keeps Vercel alive)
+    // and fetches from the AI provider within the stream
+    const encoder = new TextEncoder()
+    let fullResponse = ''
     let lastSaveTime = Date.now()
+    let contentStarted = false
 
-    const transformStream = new TransformStream({
-      async transform(chunk, controller) {
-        const text = decoder.decode(chunk)
-        fullResponse += text
-        controller.enqueue(chunk)
+    const responseStream = new ReadableStream({
+      async start(controller) {
+        try {
+          // Call AI provider
+          let providerStream: ReadableStream
 
-        // Periodically save partial content for recovery (every 2 seconds)
-        if (conversationId && assistantMessageId && Date.now() - lastSaveTime > 2000) {
-          lastSaveTime = Date.now()
-          db.from('messages')
-            .update({ content: fullResponse })
-            .eq('id', assistantMessageId)
-            .then(() => {})
-            .catch((e: any) => console.error('[Chat API] Partial save failed:', e.message))
-        }
-      },
-      async flush() {
-        if (conversationId && assistantMessageId) {
-          try {
+          if (selectedModel.provider === 'google') {
+            providerStream = await streamGeminiResponse(validatedModel, messagesForModel, systemPrompt, temperature)
+          } else if (selectedModel.provider === 'anthropic') {
+            providerStream = await streamBedrockResponse(validatedModel, messagesForModel, systemPrompt, temperature)
+          } else {
+            controller.enqueue(encoder.encode('Error: Unsupported provider'))
+            controller.close()
+            return
+          }
+
+          // Read from provider and forward to client
+          const reader = providerStream.getReader()
+          const providerDecoder = new TextDecoder()
+
+          while (true) {
+            const { done, value } = await reader.read()
+            if (done) break
+
+            const text = providerDecoder.decode(value, { stream: true })
+
+            // Track actual content (skip keepalive whitespace for DB storage)
+            if (!contentStarted) {
+              const trimmed = text.trimStart()
+              if (trimmed.length > 0) {
+                contentStarted = true
+                fullResponse += trimmed
+              }
+            } else {
+              fullResponse += text
+            }
+
+            // Always forward to client (including keepalive spaces)
+            controller.enqueue(value)
+
+            // Periodically save partial content for recovery
+            if (contentStarted && conversationId && assistantMessageId && Date.now() - lastSaveTime > 2000) {
+              lastSaveTime = Date.now()
+              db.from('messages')
+                .update({ content: fullResponse })
+                .eq('id', assistantMessageId)
+                .then(() => {})
+                .catch((e: any) => console.error('[Chat API] Partial save failed:', e.message))
+            }
+          }
+
+          // Save completed response
+          if (conversationId && assistantMessageId) {
             await db.from('messages')
-              .update({
-                content: fullResponse || '[Empty response]',
-                status: 'completed',
-              })
+              .update({ content: fullResponse || '[Empty response]', status: 'completed' })
               .eq('id', assistantMessageId)
 
-            console.log('[Chat API] Assistant message completed, order_index:', assistantOrder)
-
-            await db
-              .from('conversations')
+            await db.from('conversations')
               .update({ updated_at: new Date().toISOString() })
               .eq('id', conversationId)
-          } catch (saveErr: any) {
-            console.error('[Chat API] Assistant message save error:', saveErr.message)
+
+            console.log('[Chat API] Assistant message completed, length:', fullResponse.length)
+          }
+
+          controller.close()
+        } catch (err: any) {
+          console.error('[Chat API] Stream error:', err.message)
+
+          // Save error status so recovery polling knows to stop
+          if (conversationId && assistantMessageId) {
+            const errorContent = fullResponse || `[Error: ${err.message}]`
+            await db.from('messages')
+              .update({ content: errorContent, status: fullResponse ? 'completed' : 'error' })
+              .eq('id', assistantMessageId)
+              .catch(() => {})
+          }
+
+          if (fullResponse) {
+            controller.close()
+          } else {
+            controller.enqueue(encoder.encode(`Error: ${err.message}`))
+            controller.close()
           }
         }
       },
@@ -619,9 +653,9 @@ RULES FOR USING THESE RESULTS:
       responseHeaders['X-Request-Id'] = requestId
     }
 
-    console.log('[Chat API] Success, streaming response. Duration:', Date.now() - startTime, 'ms')
+    console.log('[Chat API] Streaming response started. Duration:', Date.now() - startTime, 'ms')
 
-    return new Response(stream.pipeThrough(transformStream), {
+    return new Response(responseStream, {
       headers: responseHeaders,
     })
   } catch (error: any) {
