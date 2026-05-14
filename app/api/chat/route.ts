@@ -599,17 +599,35 @@ RULES FOR USING THESE RESULTS:
             }
           }
 
-          // Save completed response
+          // Save completed response — must succeed or recovery will see stale generating
           if (conversationId && assistantMessageId) {
-            await db.from('messages')
-              .update({ content: fullResponse || '[Empty response]', status: 'completed' })
-              .eq('id', assistantMessageId)
+            try {
+              const { error: saveErr } = await db.from('messages')
+                .update({ content: fullResponse || '[Empty response]', status: 'completed' })
+                .eq('id', assistantMessageId)
 
-            await db.from('conversations')
-              .update({ updated_at: new Date().toISOString() })
-              .eq('id', conversationId)
+              if (saveErr) {
+                console.error('[Chat API] CRITICAL: Final save failed:', saveErr.message)
+                // Retry once
+                await db.from('messages')
+                  .update({ content: fullResponse || '[Empty response]', status: 'completed' })
+                  .eq('id', assistantMessageId)
+              }
 
-            console.log('[Chat API] Assistant message completed, length:', fullResponse.length)
+              await db.from('conversations')
+                .update({ updated_at: new Date().toISOString() })
+                .eq('id', conversationId)
+
+              console.log('[Chat API] Assistant message completed, length:', fullResponse.length)
+            } catch (saveError: any) {
+              console.error('[Chat API] CRITICAL: Final save exception:', saveError.message)
+              // Last resort retry
+              try {
+                await db.from('messages')
+                  .update({ content: fullResponse || '[Empty response]', status: 'completed' })
+                  .eq('id', assistantMessageId)
+              } catch { /* exhausted retries */ }
+            }
           }
 
           controller.close()

@@ -1,12 +1,37 @@
 import type { Message, Artifact } from '@/types/models'
 import { parseArtifactFromResponse } from '../artifact-parser'
 
-const LOADING_MARKERS = new Set([
+export const LOADING_MARKERS = new Set([
   '__ARTIFACT_LOADING__',
   '__ASSISTANT_LOADING__',
   '__LONG_TASK_LOADING__',
   '__RECOVERY_POLLING__',
 ])
+
+const STALE_GENERATING_THRESHOLD_MS = 60_000
+
+export function isMarkerContent(content: string | null | undefined): boolean {
+  if (!content) return true
+  if (LOADING_MARKERS.has(content)) return true
+  if (content.trim() === '...') return true
+  return false
+}
+
+export function isRealContent(content: string | null | undefined): boolean {
+  if (!content) return false
+  if (content.trim().length <= 20) return false
+  if (LOADING_MARKERS.has(content)) return false
+  if (content.trim() === '...') return false
+  return true
+}
+
+function isStaleGenerating(msg: Message): boolean {
+  if (msg.status !== 'generating') return false
+  if (!msg.created_at) return true
+  const updatedAt = msg.created_at
+  const age = Date.now() - new Date(updatedAt).getTime()
+  return age > STALE_GENERATING_THRESHOLD_MS
+}
 
 /**
  * Sort messages chronologically: oldest first, newest last
@@ -48,12 +73,13 @@ export function sortMessagesChronologically(messages: Message[]): Message[] {
  */
 function messageScore(msg: Message): number {
   if (!msg?.content) return 0
-  if (LOADING_MARKERS.has(msg.content)) return 1
-  if (msg.status === 'generating' && msg.content.length < 10) return 2
-  if (msg.status === 'generating' && msg.content.length >= 10) return 3
+  if (LOADING_MARKERS.has(msg.content) || msg.content.trim() === '...') return 1
+  if (msg.status === 'generating' && !isRealContent(msg.content)) return 2
+  if (msg.status === 'generating' && isRealContent(msg.content)) return 3
   if (msg.status === 'error') return 4
-  // Real completed content
-  return 5 + Math.min(msg.content.length, 10000)
+  if (msg.status === 'completed' && isRealContent(msg.content)) return 5 + Math.min(msg.content.length, 10000)
+  // Non-marker content with unknown status
+  return isRealContent(msg.content) ? 5 + Math.min(msg.content.length, 10000) : 3
 }
 
 /**
@@ -198,28 +224,45 @@ function repairMessageOrder(messages: Message[]): Message[] {
 }
 
 /**
- * Remove stale loading markers: if a user message is followed by both a
- * loading marker and a real assistant response, remove the marker.
+ * Remove stale loading markers and stale generating messages.
+ * A marker is stale if:
+ * - A real assistant response exists for the same request_id
+ * - A real assistant response exists nearby (within 5 minutes)
+ * - The message has status=generating but is older than 60 seconds
  */
 function removeStaleMarkers(messages: Message[]): Message[] {
   if (messages.length < 2) return messages
 
-  // Collect request_ids that have real content
   const requestIdsWithContent = new Set<string>()
+  const hasAnyRealAssistant = messages.some(
+    m => m.role === 'assistant' && isRealContent(m.content)
+  )
+
   for (const msg of messages) {
-    if (msg.role === 'assistant' && msg.request_id && msg.content && !LOADING_MARKERS.has(msg.content) && msg.content.length > 10) {
+    if (msg.role === 'assistant' && msg.request_id && isRealContent(msg.content)) {
       requestIdsWithContent.add(msg.request_id)
     }
   }
 
   return messages.filter(msg => {
-    // Keep all non-assistant messages
     if (msg.role !== 'assistant') return true
-    // Keep messages that aren't loading markers
-    if (!LOADING_MARKERS.has(msg.content || '')) return true
-    // If this loading marker has a request_id with real content, remove it
-    if (msg.request_id && requestIdsWithContent.has(msg.request_id)) return false
-    // Otherwise keep it (it's the only placeholder for an in-progress request)
+
+    const content = msg.content || ''
+
+    // Filter out marker-only messages (includes "...")
+    if (isMarkerContent(content)) {
+      if (msg.request_id && requestIdsWithContent.has(msg.request_id)) return false
+      if (isStaleGenerating(msg)) return false
+      if (hasAnyRealAssistant && msg.status !== 'generating') return false
+      if (msg.status === 'generating' && isStaleGenerating(msg)) return false
+      return true
+    }
+
+    // Filter empty/short assistant messages that are stale
+    if (!isRealContent(content) && isStaleGenerating(msg)) {
+      return false
+    }
+
     return true
   })
 }
@@ -244,7 +287,7 @@ export function processMessages(messages: Message[], conversationId?: string | n
 }
 
 /**
- * Process loaded messages: dedupe, sort, parse artifacts
+ * Process loaded messages: dedupe, sort, remove stale markers, parse artifacts
  */
 export function processLoadedMessages(
   messages: Message[],
@@ -261,12 +304,30 @@ export function processLoadedMessages(
   // Sort chronologically
   const sorted = sortMessagesChronologically(deduped)
 
-  // Parse artifacts from old messages if requested (only in browser)
-  if (typeof window !== 'undefined' && options?.parseArtifacts && options?.conversationId) {
-    return parseArtifactsFromMessages(sorted, options.conversationId)
+  // Remove stale markers and generating ghosts
+  const cleaned = removeStaleMarkers(sorted)
+
+  if (process.env.NODE_ENV !== 'production') {
+    const markerCount = sorted.filter(m => m.role === 'assistant' && isMarkerContent(m.content)).length
+    const staleCount = sorted.filter(m => m.role === 'assistant' && m.status === 'generating' && isStaleGenerating(m)).length
+    const realCount = sorted.filter(m => m.role === 'assistant' && isRealContent(m.content)).length
+    if (markerCount > 0 || staleCount > 0) {
+      console.log('[Chat] processLoadedMessages cleanup:', {
+        total: sorted.length,
+        markers: markerCount,
+        staleGenerating: staleCount,
+        realAssistant: realCount,
+        afterCleanup: cleaned.length,
+      })
+    }
   }
 
-  return sorted
+  // Parse artifacts from old messages if requested (only in browser)
+  if (typeof window !== 'undefined' && options?.parseArtifacts && options?.conversationId) {
+    return parseArtifactsFromMessages(cleaned, options.conversationId)
+  }
+
+  return cleaned
 }
 
 /**

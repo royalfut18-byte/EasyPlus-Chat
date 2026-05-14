@@ -350,61 +350,104 @@ export default function ChatPage() {
         // Filter by conversation ID as final safety
         const final = processMessages(processed, conversationId)
 
-        // Check for generating messages and show recovery UI + auto-poll
+        // Check for generating messages — but only poll if RECENTLY generating (not stale)
         const generatingMsg = final.find(m => m.role === 'assistant' && m.status === 'generating')
+        const STALE_THRESHOLD = 60_000 // 60 seconds
+
         if (generatingMsg) {
-          // Show partial content or recovery marker — ensure only ONE assistant bubble exists for this
-          const updatedFinal = final
-            .filter(m => {
-              // Remove any loading marker duplicates for the same request
-              const isMarker = m.content === ARTIFACT_LOADING_MARKER || m.content === ASSISTANT_LOADING_MARKER || m.content === LONG_TASK_LOADING_MARKER || m.content === '__RECOVERY_POLLING__'
-              if (m.role === 'assistant' && m.id !== generatingMsg.id && isMarker &&
-                  m.request_id === generatingMsg.request_id) return false
-              return true
-            })
-            .map(m =>
-              m.id === generatingMsg.id && (!m.content || m.content.length < 10)
-                ? { ...m, content: '__RECOVERY_POLLING__', statusLabel: 'Reconnecting and recovering response...' }
+          const msgAge = Date.now() - new Date(generatingMsg.created_at || 0).getTime()
+          const isStale = msgAge > STALE_THRESHOLD
+          const hasRealContent = generatingMsg.content && generatingMsg.content.length > 20 &&
+            generatingMsg.content !== '__RECOVERY_POLLING__' &&
+            generatingMsg.content !== ARTIFACT_LOADING_MARKER &&
+            generatingMsg.content !== ASSISTANT_LOADING_MARKER &&
+            generatingMsg.content !== LONG_TASK_LOADING_MARKER
+
+          if (hasRealContent) {
+            // The response exists but status wasn't updated — show the content directly
+            setMessages(final.map(m =>
+              m.id === generatingMsg.id ? { ...m, status: 'completed' as const, statusLabel: null } : m
+            ))
+          } else if (isStale) {
+            // Stale generating with no real content — show interrupted state
+            setMessages(final.map(m =>
+              m.id === generatingMsg.id
+                ? { ...m, content: 'Response interrupted. You can retry this message.', status: 'error' as const, statusLabel: null }
                 : m
-            )
-          setMessages(updatedFinal)
+            ).filter(m => {
+              // Also remove any marker duplicates
+              if (m.role === 'assistant' && m.id !== generatingMsg.id &&
+                (m.content === ARTIFACT_LOADING_MARKER || m.content === ASSISTANT_LOADING_MARKER ||
+                 m.content === LONG_TASK_LOADING_MARKER || m.content === '__RECOVERY_POLLING__')) {
+                return false
+              }
+              return true
+            }))
+          } else {
+            // Actively generating (< 60s old) — show recovery UI and poll
+            const updatedFinal = final
+              .filter(m => {
+                const isMarker = m.content === ARTIFACT_LOADING_MARKER || m.content === ASSISTANT_LOADING_MARKER || m.content === LONG_TASK_LOADING_MARKER || m.content === '__RECOVERY_POLLING__'
+                if (m.role === 'assistant' && m.id !== generatingMsg.id && isMarker &&
+                    m.request_id === generatingMsg.request_id) return false
+                return true
+              })
+              .map(m =>
+                m.id === generatingMsg.id && (!m.content || m.content.length < 10)
+                  ? { ...m, content: '__RECOVERY_POLLING__', statusLabel: 'Reconnecting and recovering response...' }
+                  : m
+              )
+            setMessages(updatedFinal)
 
-          // Start polling for this generating message
-          const pollForCompletion = async () => {
-            const pollRequestId = generatingMsg.request_id
-            for (let i = 0; i < 150; i++) {
-              await new Promise(resolve => setTimeout(resolve, 2000))
-              if (selectedConversationIdRef.current !== conversationId) return
+            // Poll — but with a hard 2-minute cap (not 5 minutes)
+            const pollForCompletion = async () => {
+              const pollRequestId = generatingMsg.request_id
+              const maxAttempts = 60 // 2 minutes at 2s intervals
+              for (let i = 0; i < maxAttempts; i++) {
+                await new Promise(resolve => setTimeout(resolve, 2000))
+                if (selectedConversationIdRef.current !== conversationId) return
 
-              try {
-                const url = pollRequestId
-                  ? `/api/chat/status?requestId=${pollRequestId}&conversationId=${conversationId}`
-                  : `/api/chat/status?conversationId=${conversationId}`
-                const res = await fetch(url, { cache: 'no-store' })
-                if (!res.ok) continue
-                const data = await res.json()
-                if (data.found && data.content && data.content.length > 10 && data.status === 'completed') {
-                  if (selectedConversationIdRef.current === conversationId) {
-                    setMessages(prev => processMessages(
-                      prev.map(m => m.id === generatingMsg.id ? { ...m, content: data.content, status: 'completed', statusLabel: null } : m),
-                      conversationId
-                    ))
+                try {
+                  const url = pollRequestId
+                    ? `/api/chat/status?requestId=${pollRequestId}&conversationId=${conversationId}`
+                    : `/api/chat/status?conversationId=${conversationId}`
+                  const res = await fetch(url, { cache: 'no-store' })
+                  if (!res.ok) continue
+                  const data = await res.json()
+                  if (data.found && data.content && data.content.length > 10 && !['__RECOVERY_POLLING__', '__ASSISTANT_LOADING__', '__LONG_TASK_LOADING__', '__ARTIFACT_LOADING__'].includes(data.content)) {
+                    if (selectedConversationIdRef.current === conversationId) {
+                      setMessages(prev => processMessages(
+                        prev.map(m => m.id === generatingMsg.id ? { ...m, content: data.content, status: 'completed' as const, statusLabel: null } : m),
+                        conversationId
+                      ))
+                    }
+                    return
                   }
-                  return
-                }
-                if (data.found && data.content && data.content.length > 10) {
-                  if (selectedConversationIdRef.current === conversationId) {
-                    setMessages(prev => processMessages(
-                      prev.map(m => m.id === generatingMsg.id ? { ...m, content: data.content, statusLabel: 'Writing response...' } : m),
-                      conversationId
-                    ))
+                  if (data.status === 'error') {
+                    if (selectedConversationIdRef.current === conversationId) {
+                      setMessages(prev => processMessages(
+                        prev.map(m => m.id === generatingMsg.id
+                          ? { ...m, content: 'Response interrupted. You can retry this message.', status: 'error' as const, statusLabel: null }
+                          : m),
+                        conversationId
+                      ))
+                    }
+                    return
                   }
-                }
-                if (data.status === 'error') return
-              } catch { /* keep polling */ }
+                } catch { /* keep polling */ }
+              }
+              // Polling exhausted — show retry state
+              if (selectedConversationIdRef.current === conversationId) {
+                setMessages(prev => processMessages(
+                  prev.map(m => m.id === generatingMsg.id
+                    ? { ...m, content: 'Response interrupted. You can retry this message.', status: 'error' as const, statusLabel: null }
+                    : m),
+                  conversationId
+                ))
+              }
             }
+            pollForCompletion()
           }
-          pollForCompletion()
         } else {
           setMessages(final)
         }
@@ -1068,13 +1111,15 @@ Rules:
           )
         }
 
-        // Poll for recovery
+        // Poll for recovery — reject marker/empty content
+        const RECOVERY_MARKERS = ['__RECOVERY_POLLING__', '__ASSISTANT_LOADING__', '__LONG_TASK_LOADING__', '__ARTIFACT_LOADING__', '...']
+        const isRecoveredReal = (c: string | null) => c && c.trim().length > 20 && !RECOVERY_MARKERS.includes(c)
+
         let recovered = false
         const maxAttempts = 150 // 5 minutes at 2s intervals
         for (let attempt = 0; attempt < maxAttempts && !recovered; attempt++) {
           await new Promise(resolve => setTimeout(resolve, 2000))
 
-          // Stop if user navigated away
           if (selectedConversationIdRef.current !== sendConversationId) {
             console.log('[Chat] User navigated away during recovery, stopping poll')
             break
@@ -1089,14 +1134,14 @@ Rules:
 
             const statusData = await statusRes.json()
 
-            if (statusData.found && statusData.content && statusData.content.length > 10) {
+            if (statusData.found && isRecoveredReal(statusData.content)) {
               console.log('[Chat] Recovery successful, content length:', statusData.content.length)
               if (selectedConversationIdRef.current === sendConversationId) {
                 setMessages((prev) =>
                   processMessages(
                     prev.map((m) =>
                       m.id === clientAssistantMessageId
-                        ? { ...m, content: statusData.content, statusLabel: null }
+                        ? { ...m, content: statusData.content, status: 'completed' as const, statusLabel: null }
                         : m
                     ),
                     sendConversationId
@@ -1107,7 +1152,6 @@ Rules:
             } else if (statusData.status === 'error') {
               break
             }
-            // If status is 'generating' or 'pending', keep polling
           } catch {
             // Network still down, keep trying
           }
@@ -1121,7 +1165,7 @@ Rules:
               const reloadedMessages = await reloadRes.json()
               if (Array.isArray(reloadedMessages)) {
                 const assistantMsg = reloadedMessages.find(
-                  (m: any) => m.role === 'assistant' && m.request_id === requestId && m.content && m.content.length > 10
+                  (m: any) => m.role === 'assistant' && m.request_id === requestId && isRecoveredReal(m.content)
                 )
                 if (assistantMsg) {
                   const processed = processLoadedMessages(reloadedMessages, { conversationId: sendConversationId, parseArtifacts: true })
@@ -1138,7 +1182,7 @@ Rules:
             processMessages(
               prev.map((m) =>
                 m.id === clientAssistantMessageId
-                  ? { ...m, content: 'The AI is still generating a response. It will appear when you return to this chat.' }
+                  ? { ...m, content: 'Response interrupted. You can retry this message.', status: 'error' as const, statusLabel: null }
                   : m
               ),
               sendConversationId

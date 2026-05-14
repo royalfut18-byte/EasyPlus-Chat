@@ -1,6 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 
+const MARKER_CONTENTS = new Set([
+  '__ARTIFACT_LOADING__',
+  '__ASSISTANT_LOADING__',
+  '__LONG_TASK_LOADING__',
+  '__RECOVERY_POLLING__',
+])
+
+function isRealContent(content: string | null): boolean {
+  if (!content) return false
+  if (content.length <= 10) return false
+  if (MARKER_CONTENTS.has(content)) return false
+  return true
+}
+
 export async function GET(request: NextRequest) {
   try {
     const requestId = request.nextUrl.searchParams.get('requestId')
@@ -20,7 +34,6 @@ export async function GET(request: NextRequest) {
     const db = supabase as any
 
     if (requestId) {
-      // Find assistant message by request_id
       const { data: messages } = await db
         .from('messages')
         .select('id, content, status, role, created_at')
@@ -30,18 +43,28 @@ export async function GET(request: NextRequest) {
         .single()
 
       if (messages) {
-        return NextResponse.json({
-          found: true,
-          status: messages.status || 'completed',
-          content: messages.content,
-          messageId: messages.id,
-        })
+        const content = messages.content
+        // Never return marker content as a real found response
+        if (isRealContent(content)) {
+          return NextResponse.json({
+            found: true,
+            status: messages.status || 'completed',
+            content: content,
+            messageId: messages.id,
+          })
+        }
+        // Message exists but content is a marker or empty — check staleness
+        const age = Date.now() - new Date(messages.created_at || 0).getTime()
+        if (age > 60_000 && messages.status === 'generating') {
+          return NextResponse.json({ found: true, status: 'error', content: null, messageId: messages.id })
+        }
+        // Still actively generating (< 60s)
+        return NextResponse.json({ found: true, status: messages.status || 'generating', content: null, messageId: messages.id })
       }
 
       return NextResponse.json({ found: false, status: 'pending' })
     }
 
-    // Fallback: find latest assistant message for conversation
     if (conversationId) {
       const { data: messages } = await db
         .from('messages')
@@ -52,7 +75,7 @@ export async function GET(request: NextRequest) {
         .limit(1)
         .single()
 
-      if (messages && messages.content && messages.content.length > 10) {
+      if (messages && isRealContent(messages.content)) {
         return NextResponse.json({
           found: true,
           status: messages.status || 'completed',

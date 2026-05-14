@@ -59,10 +59,22 @@ export function MessageBubble({ role, content, model, onRegenerate, attachments,
   const isUser = role === 'user'
   const modelData = model ? AI_MODELS.find((m) => m.id === model) : null
   const rawContent = content || ''
+
+  // If content is a stale marker/empty from DB (no statusLabel), don't render this bubble at all
+  const isStaleMarker = !isUser && !statusLabel && (
+    rawContent === ARTIFACT_LOADING_MARKER ||
+    rawContent === ASSISTANT_LOADING_MARKER ||
+    rawContent === LONG_TASK_LOADING_MARKER ||
+    rawContent === RECOVERY_POLLING_MARKER ||
+    rawContent.trim() === '...' ||
+    rawContent.trim() === ''
+  )
+  if (isStaleMarker) return null
+
   const safeContent = !isUser ? cleanAssistantText(rawContent) : rawContent
 
-  // Determine active status: explicit statusLabel takes priority, then check content markers
-  const activeStatus = (!isUser && statusLabel) ? statusLabel : getStatusFromMarker(safeContent)
+  // Only show status UI if there's an explicit statusLabel (set by live local request).
+  const activeStatus = (!isUser && statusLabel) ? statusLabel : null
   const isShowingStatus = !!activeStatus && !isUser
 
   const hasArtifactCard = !isUser && (hasArtifact || (artifact && artifact.title && artifact.code))
