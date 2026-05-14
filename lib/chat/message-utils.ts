@@ -28,8 +28,8 @@ export function isRealContent(content: string | null | undefined): boolean {
 function isStaleGenerating(msg: Message): boolean {
   if (msg.status !== 'generating') return false
   if (!msg.created_at) return true
-  const updatedAt = msg.created_at
-  const age = Date.now() - new Date(updatedAt).getTime()
+  const timestamp = msg.updated_at || msg.created_at
+  const age = Date.now() - new Date(timestamp).getTime()
   return age > STALE_GENERATING_THRESHOLD_MS
 }
 

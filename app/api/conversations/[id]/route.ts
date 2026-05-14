@@ -56,13 +56,11 @@ export async function GET(
       return String(a.id || '').localeCompare(String(b.id || ''))
     })
 
-    // Server-side cleanup: remove stale marker-only and empty assistant messages
+    // Server-side cleanup: only remove stale empty/marker assistant messages
+    // NEVER remove assistant messages that have real content (>20 chars, not a marker)
     const isServerMarker = (c: string) => MARKER_CONTENTS.has(c) || c.trim() === '...' || c.trim() === ''
     const isServerReal = (c: string) => c.trim().length > 20 && !MARKER_CONTENTS.has(c) && c.trim() !== '...'
 
-    const hasRealAssistant = filtered.some(
-      m => m.role === 'assistant' && m.content && isServerReal(m.content)
-    )
     const requestIdsWithContent = new Set<string>()
     for (const m of filtered) {
       if (m.role === 'assistant' && m.request_id && m.content && isServerReal(m.content)) {
@@ -75,15 +73,29 @@ export async function GET(
       if (m.role !== 'assistant') return true
       const content = m.content || ''
 
-      if (!isServerMarker(content)) {
-        // Has some content but short + stale generating — mark as interrupted
-        if (m.status === 'generating' && !isServerReal(content)) {
-          const age = now - new Date(m.created_at || 0).getTime()
+      // ALWAYS keep assistant messages with real content regardless of status/request_id/parent_message_id
+      if (isServerReal(content)) {
+        // If status is stale 'generating' but has real content, fix status in-place
+        if (m.status === 'generating') {
+          const age = now - new Date(m.updated_at || m.created_at || 0).getTime()
           if (age > STALE_THRESHOLD_MS) {
-            m.status = 'error' as any
-            m.content = 'Response interrupted. You can retry this message.'
+            m.status = 'completed' as any
           }
         }
+        return true
+      }
+
+      // Below this: content is empty, short, or a marker
+
+      // Stale generating with no real content — mark as interrupted
+      if (m.status === 'generating' && !isServerReal(content)) {
+        const age = now - new Date(m.updated_at || m.created_at || 0).getTime()
+        if (age > STALE_THRESHOLD_MS) {
+          m.status = 'error' as any
+          m.content = 'Response interrupted. You can retry this message.'
+          return true
+        }
+        // Still actively generating (<60s) — keep it
         return true
       }
 
@@ -94,24 +106,23 @@ export async function GET(
       const age = now - new Date(m.created_at || 0).getTime()
       if (age > STALE_THRESHOLD_MS) return false
 
-      // Remove if conversation already has real content and this isn't actively generating
-      if (hasRealAssistant && m.status !== 'generating') return false
-
       return true
     })
 
     if (process.env.NODE_ENV !== 'production') {
-      const markerCount = filtered.filter(m => m.role === 'assistant' && isServerMarker(m.content || '')).length
-      const staleCount = filtered.filter(m => m.role === 'assistant' && m.status === 'generating' && (now - new Date(m.created_at || 0).getTime()) > STALE_THRESHOLD_MS).length
-      if (markerCount > 0 || staleCount > 0) {
-        console.log('[Conversations API] Cleanup:', {
-          total: filtered.length,
-          markers: markerCount,
-          staleGenerating: staleCount,
-          realAssistant: filtered.filter(m => m.role === 'assistant' && m.content && isServerReal(m.content)).length,
-          returned: cleaned.length,
-        })
-      }
+      const allAssistant = filtered.filter(m => m.role === 'assistant')
+      const realAssistant = allAssistant.filter(m => m.content && isServerReal(m.content))
+      const emptyAssistant = allAssistant.filter(m => !m.content || isServerMarker(m.content))
+      const markerCount = allAssistant.filter(m => isServerMarker(m.content || '')).length
+      console.log('[Conversations API] Load:', {
+        conversationId: id,
+        totalMessages: filtered.length,
+        rawAssistantCount: allAssistant.length,
+        realAssistantCount: realAssistant.length,
+        emptyAssistantCount: emptyAssistant.length,
+        markersRemoved: markerCount,
+        returned: cleaned.length,
+      })
     }
 
     return NextResponse.json(cleaned)

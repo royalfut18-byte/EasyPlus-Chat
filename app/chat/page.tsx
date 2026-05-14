@@ -1018,7 +1018,7 @@ Rules:
               processMessages(
                 prev.map((m) =>
                   m.id === clientAssistantMessageId
-                    ? { ...m, content: finalContent, artifact }
+                    ? { ...m, content: finalContent, artifact, status: 'completed' as const, statusLabel: null }
                     : m
                 ),
                 sendConversationId
@@ -1044,7 +1044,7 @@ Rules:
               processMessages(
                 prev.map((m) =>
                   m.id === clientAssistantMessageId
-                    ? { ...m, content: assistantContent || 'I could not create an artifact from this response.' }
+                    ? { ...m, content: assistantContent || 'I could not create an artifact from this response.', status: 'completed' as const, statusLabel: null }
                     : m
                 ),
                 sendConversationId
@@ -1060,7 +1060,7 @@ Rules:
             processMessages(
               prev.map((m) =>
                 m.id === clientAssistantMessageId
-                  ? { ...m, content: assistantContent || 'I received an empty response.' }
+                  ? { ...m, content: assistantContent || 'I received an empty response.', status: 'completed' as const, statusLabel: null }
                   : m
               ),
               sendConversationId

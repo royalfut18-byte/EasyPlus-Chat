@@ -70,6 +70,7 @@ export interface Message {
   content: string
   model: string
   created_at: string
+  updated_at?: string | null
   order_index?: number | null
   attachments?: ChatAttachment[]
   client_message_id?: string | null

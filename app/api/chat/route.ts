@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { streamBedrockResponse, getModelCost } from '@/lib/ai/bedrock'
 import { streamGeminiResponse } from '@/lib/ai/gemini'
 import { searchWeb, buildWebSearchQuery } from '@/lib/ai/web-search'
@@ -48,7 +48,7 @@ export async function POST(request: NextRequest) {
     // Stage: Auth
     stage = 'auth'
     const supabase = await createClient()
-    const db = supabase as any
+    const db = await createServiceClient() as any
 
     const {
       data: { user },
@@ -592,41 +592,55 @@ RULES FOR USING THESE RESULTS:
             if (contentStarted && conversationId && assistantMessageId && Date.now() - lastSaveTime > 2000) {
               lastSaveTime = Date.now()
               db.from('messages')
-                .update({ content: fullResponse })
+                .update({ content: fullResponse, updated_at: new Date().toISOString() })
                 .eq('id', assistantMessageId)
-                .then(() => {})
-                .catch((e: any) => console.error('[Chat API] Partial save failed:', e.message))
+                .then(({ error: partialErr }: any) => {
+                  if (partialErr) console.error('[Chat API] Partial save failed:', partialErr.message)
+                })
+                .catch((e: any) => console.error('[Chat API] Partial save exception:', e.message))
             }
           }
 
           // Save completed response — must succeed or recovery will see stale generating
           if (conversationId && assistantMessageId) {
+            const finalContent = fullResponse || '[Empty response]'
+            const finalPayload = { content: finalContent, status: 'completed', updated_at: new Date().toISOString() }
+
             try {
-              const { error: saveErr } = await db.from('messages')
-                .update({ content: fullResponse || '[Empty response]', status: 'completed' })
+              const { error: saveErr, data: saveData } = await db.from('messages')
+                .update(finalPayload)
                 .eq('id', assistantMessageId)
+                .select('id, content, status')
 
               if (saveErr) {
-                console.error('[Chat API] CRITICAL: Final save failed:', saveErr.message)
+                console.error('[Chat API] CRITICAL: Final save failed:', saveErr.message, { assistantMessageId, requestId, contentLength: finalContent.length })
                 // Retry once
-                await db.from('messages')
-                  .update({ content: fullResponse || '[Empty response]', status: 'completed' })
+                const { error: retryErr } = await db.from('messages')
+                  .update(finalPayload)
                   .eq('id', assistantMessageId)
+                if (retryErr) {
+                  console.error('[Chat API] CRITICAL: Final save retry also failed:', retryErr.message)
+                } else {
+                  console.log('[Chat API] Final save retry succeeded')
+                }
+              } else {
+                const savedLen = saveData?.[0]?.content?.length || 0
+                console.log('[Chat API] Assistant message saved:', { assistantMessageId, requestId, contentLength: finalContent.length, savedContentLength: savedLen, status: saveData?.[0]?.status })
               }
 
               await db.from('conversations')
                 .update({ updated_at: new Date().toISOString() })
                 .eq('id', conversationId)
-
-              console.log('[Chat API] Assistant message completed, length:', fullResponse.length)
             } catch (saveError: any) {
-              console.error('[Chat API] CRITICAL: Final save exception:', saveError.message)
+              console.error('[Chat API] CRITICAL: Final save exception:', saveError.message, { assistantMessageId, requestId, contentLength: finalContent.length })
               // Last resort retry
               try {
                 await db.from('messages')
-                  .update({ content: fullResponse || '[Empty response]', status: 'completed' })
+                  .update(finalPayload)
                   .eq('id', assistantMessageId)
-              } catch { /* exhausted retries */ }
+              } catch (e: any) {
+                console.error('[Chat API] CRITICAL: All save attempts exhausted:', e.message)
+              }
             }
           }
 
