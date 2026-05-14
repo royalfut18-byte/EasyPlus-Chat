@@ -36,50 +36,44 @@ export function sortMessagesChronologically(messages: Message[]): Message[] {
 }
 
 /**
- * Deduplicate messages by id and likely duplicates
+ * Deduplicate messages by id, client_message_id, and content similarity
  */
 export function dedupeMessages(messages: Message[]): Message[] {
   if (!Array.isArray(messages)) return []
 
   const seenIds = new Set<string>()
+  const seenClientIds = new Set<string>()
   const result: Message[] = []
 
   for (const msg of messages) {
     if (!msg || !msg.id) continue
 
     // Skip if we've seen this exact ID
-    if (seenIds.has(msg.id)) {
-      if (process.env.NODE_ENV !== 'production') {
-        console.log('[Chat] Removing duplicate message by ID:', msg.id)
-      }
-      continue
-    }
+    if (seenIds.has(msg.id)) continue
 
-    // Check for likely duplicates: same conversation, role, content within 60 seconds
-    // Wider window needed because server-saved messages may have different timestamps
-    // than client-side optimistic messages (especially for long API calls)
+    // Skip if we've already seen this client_message_id (server version supersedes client version)
+    if (msg.client_message_id && seenClientIds.has(msg.client_message_id)) continue
+
+    // Check for likely duplicates: same conversation, role, content within 5 minutes
     const isDuplicate = result.some(existing => {
       if (
         existing?.conversation_id === msg?.conversation_id &&
         existing?.role === msg?.role &&
-        existing?.content === msg?.content
+        existing?.content === msg?.content &&
+        existing?.content?.length > 0
       ) {
         const timeDiff = Math.abs(
           new Date(existing?.created_at || 0).getTime() - new Date(msg?.created_at || 0).getTime()
         )
-        return timeDiff < 60000 // Within 60 seconds
+        return timeDiff < 300000 // Within 5 minutes
       }
       return false
     })
 
-    if (isDuplicate) {
-      if (process.env.NODE_ENV !== 'production') {
-        console.log('[Chat] Removing likely duplicate message:', msg.id)
-      }
-      continue
-    }
+    if (isDuplicate) continue
 
     seenIds.add(msg.id)
+    if (msg.client_message_id) seenClientIds.add(msg.client_message_id)
     result.push(msg)
   }
 

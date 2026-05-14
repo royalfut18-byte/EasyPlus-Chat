@@ -72,6 +72,10 @@ export interface Message {
   created_at: string
   order_index?: number | null
   attachments?: ChatAttachment[]
+  client_message_id?: string | null
+  request_id?: string | null
+  status?: string | null
+  parent_message_id?: string | null
   // Local-only metadata for artifact support (not in Supabase)
   artifact?: Artifact | null
   displayContent?: string

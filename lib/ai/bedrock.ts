@@ -2,10 +2,8 @@ import { AI_MODELS, type ChatMessage } from '@/types/models'
 
 /**
  * Convert data URL to Bedrock Converse image format
- * Bedrock expects: { format, bytes } not Anthropic's { type, source }
  */
 function dataUrlToBedrockImage(dataUrl: string, mimeType?: string): { format: string; bytes: string } {
-  // Validate data URL format
   if (!dataUrl.startsWith('data:image/')) {
     throw new Error('Invalid image data URL: must start with data:image/')
   }
@@ -14,7 +12,6 @@ function dataUrlToBedrockImage(dataUrl: string, mimeType?: string): { format: st
     throw new Error('Invalid image data URL: must contain base64 data')
   }
 
-  // Extract mime type and base64 data
   const base64Match = dataUrl.match(/^data:([^;]+);base64,(.+)$/)
   if (!base64Match) {
     throw new Error('Invalid image data URL format')
@@ -27,7 +24,6 @@ function dataUrlToBedrockImage(dataUrl: string, mimeType?: string): { format: st
     throw new Error('Invalid image data URL: no base64 data found')
   }
 
-  // Map mime type to Bedrock format
   const finalMimeType = mimeType || extractedMimeType
   let format: string
 
@@ -78,14 +74,11 @@ export async function streamBedrockResponse(
     .map((message) => {
       const content: any[] = []
 
-      // Add images if present (Bedrock Converse format)
       if (message.attachments && message.attachments.length > 0) {
         for (const attachment of message.attachments) {
           if (attachment.type === 'image' && attachment.dataUrl) {
             try {
               const { format, bytes } = dataUrlToBedrockImage(attachment.dataUrl, attachment.mimeType)
-
-              // Bedrock Converse format: { image: { format, source: { bytes } } }
               content.push({
                 image: {
                   format,
@@ -94,14 +87,6 @@ export async function streamBedrockResponse(
                   },
                 },
               })
-
-              if (process.env.NODE_ENV !== 'production') {
-                console.log('[Bedrock] Added image:', {
-                  hasImage: true,
-                  format,
-                  bytesLength: bytes.substring(0, 50) + '...',
-                })
-              }
             } catch (error: any) {
               console.error('[Bedrock] Failed to process image:', error.message)
               throw new Error(`Image processing failed: ${error.message}`)
@@ -110,17 +95,14 @@ export async function streamBedrockResponse(
         }
       }
 
-      // Add text content
       if (message.content && message.content.trim()) {
         content.push({ text: message.content })
       }
 
-      // If we have images but no text, add a default prompt
       if (content.length > 0 && content.some(c => c.image) && !message.content) {
         content.push({ text: 'Please analyze this image.' })
       }
 
-      // Ensure we always have at least one content item
       if (content.length === 0) {
         content.push({ text: message.content || '' })
       }
@@ -131,8 +113,7 @@ export async function streamBedrockResponse(
       }
     })
 
-  const streamEndpoint = `https://bedrock-runtime.${region}.amazonaws.com/model/${model.bedrockModelId}/converse-stream`
-  const nonStreamEndpoint = `https://bedrock-runtime.${region}.amazonaws.com/model/${model.bedrockModelId}/converse`
+  const endpoint = `https://bedrock-runtime.${region}.amazonaws.com/model/${model.bedrockModelId}/converse`
 
   const finalSystemPrompt = systemPromptText || `You are ${model.name}, a helpful assistant.`
 
@@ -142,86 +123,20 @@ export async function streamBedrockResponse(
     },
   ]
 
-  const requestBody = JSON.stringify({
-    messages: bedrockMessages,
-    system: systemPrompt,
-    inferenceConfig: {
-      maxTokens: 16384,
-      temperature,
-    },
-  })
-
-  // Try streaming endpoint first for real-time output
-  const streamResponse = await fetch(streamEndpoint, {
+  const response = await fetch(endpoint, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${apiKey}`,
     },
-    body: requestBody,
-  })
-
-  if (streamResponse.ok && streamResponse.body) {
-    console.log('[Bedrock] Using streaming endpoint')
-    const reader = streamResponse.body.getReader()
-    const decoder = new TextDecoder()
-
-    return new ReadableStream({
-      async pull(controller) {
-        try {
-          const { done, value } = await reader.read()
-          if (done) {
-            controller.close()
-            return
-          }
-
-          const chunk = decoder.decode(value, { stream: true })
-          // Bedrock converse-stream sends JSON events with contentBlockDelta
-          const lines = chunk.split('\n').filter(l => l.trim())
-          for (const line of lines) {
-            try {
-              // Bedrock stream format uses event framing - extract JSON payloads
-              if (line.startsWith('{')) {
-                const event = JSON.parse(line)
-                if (event.contentBlockDelta?.delta?.text) {
-                  controller.enqueue(new TextEncoder().encode(event.contentBlockDelta.delta.text))
-                }
-              }
-            } catch {
-              // Some chunks may be partial JSON or binary framing - try to extract text
-              const textMatch = chunk.match(/"text"\s*:\s*"((?:[^"\\]|\\.)*)"/g)
-              if (textMatch) {
-                for (const match of textMatch) {
-                  try {
-                    const parsed = JSON.parse(`{${match}}`)
-                    if (parsed.text) {
-                      controller.enqueue(new TextEncoder().encode(parsed.text))
-                    }
-                  } catch { /* skip unparseable */ }
-                }
-              }
-            }
-          }
-        } catch (err) {
-          controller.error(err)
-        }
+    body: JSON.stringify({
+      messages: bedrockMessages,
+      system: systemPrompt,
+      inferenceConfig: {
+        maxTokens: 16384,
+        temperature,
       },
-      cancel() {
-        reader.cancel()
-      },
-    })
-  }
-
-  // Fallback to non-streaming if stream endpoint fails
-  console.log('[Bedrock] Stream endpoint unavailable, falling back to non-stream')
-
-  const response = await fetch(nonStreamEndpoint, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: requestBody,
+    }),
   })
 
   if (!response.ok) {
@@ -248,10 +163,25 @@ export async function streamBedrockResponse(
     console.warn('[Bedrock] Empty response from API')
   }
 
+  // Return text as a stream, chunked to simulate streaming for the client
+  const encoder = new TextEncoder()
+  const CHUNK_SIZE = 80
+
   return new ReadableStream({
     start(controller) {
-      controller.enqueue(new TextEncoder().encode(text))
-      controller.close()
+      let offset = 0
+      function pushChunk() {
+        if (offset >= text.length) {
+          controller.close()
+          return
+        }
+        const end = Math.min(offset + CHUNK_SIZE, text.length)
+        controller.enqueue(encoder.encode(text.slice(offset, end)))
+        offset = end
+        // Use setTimeout to yield control and flush chunks progressively
+        setTimeout(pushChunk, 0)
+      }
+      pushChunk()
     },
   })
 }

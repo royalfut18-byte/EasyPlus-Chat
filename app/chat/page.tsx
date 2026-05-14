@@ -349,7 +349,57 @@ export default function ChatPage() {
         // Filter by conversation ID as final safety
         const final = processMessages(processed, conversationId)
 
-        setMessages(final)
+        // Check for generating messages and show recovery UI + auto-poll
+        const generatingMsg = final.find(m => m.role === 'assistant' && m.status === 'generating')
+        if (generatingMsg) {
+          // Show partial content or recovery polling marker
+          const updatedFinal = final.map(m =>
+            m.id === generatingMsg.id && (!m.content || m.content.length < 10)
+              ? { ...m, content: '__RECOVERY_POLLING__' }
+              : m
+          )
+          setMessages(updatedFinal)
+
+          // Start polling for this generating message
+          const pollForCompletion = async () => {
+            const pollRequestId = generatingMsg.request_id
+            for (let i = 0; i < 150; i++) {
+              await new Promise(resolve => setTimeout(resolve, 2000))
+              if (selectedConversationIdRef.current !== conversationId) return
+
+              try {
+                const url = pollRequestId
+                  ? `/api/chat/status?requestId=${pollRequestId}&conversationId=${conversationId}`
+                  : `/api/chat/status?conversationId=${conversationId}`
+                const res = await fetch(url, { cache: 'no-store' })
+                if (!res.ok) continue
+                const data = await res.json()
+                if (data.found && data.content && data.content.length > 10 && data.status === 'completed') {
+                  if (selectedConversationIdRef.current === conversationId) {
+                    setMessages(prev => processMessages(
+                      prev.map(m => m.id === generatingMsg.id ? { ...m, content: data.content, status: 'completed' } : m),
+                      conversationId
+                    ))
+                  }
+                  return
+                }
+                if (data.found && data.content && data.content.length > 10) {
+                  // Show partial content
+                  if (selectedConversationIdRef.current === conversationId) {
+                    setMessages(prev => processMessages(
+                      prev.map(m => m.id === generatingMsg.id ? { ...m, content: data.content } : m),
+                      conversationId
+                    ))
+                  }
+                }
+                if (data.status === 'error') return
+              } catch { /* keep polling */ }
+            }
+          }
+          pollForCompletion()
+        } else {
+          setMessages(final)
+        }
 
         // Restore artifact from messages if exists
         const messageWithArtifact = final.find(m => m.artifact)
@@ -543,6 +593,7 @@ export default function ChatPage() {
     // 3. Create stable IDs and timestamps - user MUST be before assistant
     const clientUserMessageId = crypto.randomUUID()
     const clientAssistantMessageId = crypto.randomUUID()
+    const requestId = crypto.randomUUID()
     const requestArtifactMode = artifactMode
     const requestWebSearchEnabled = webSearchEnabled
 
@@ -565,6 +616,8 @@ export default function ChatPage() {
       model: modelToUse,
       created_at: userCreatedAt,
       attachments,
+      client_message_id: clientUserMessageId,
+      request_id: requestId,
     }
 
     // 4. Add optimistic user message exactly once with processing
@@ -672,7 +725,7 @@ export default function ChatPage() {
     try {
       // 7. Prepare messages for API (exclude artifact metadata and loading markers)
       const isLoadingMarker = (content: string) => {
-        return content === ARTIFACT_LOADING_MARKER || content === ASSISTANT_LOADING_MARKER || content === LONG_TASK_LOADING_MARKER
+        return content === ARTIFACT_LOADING_MARKER || content === ASSISTANT_LOADING_MARKER || content === LONG_TASK_LOADING_MARKER || content === '__RECOVERY_POLLING__'
       }
 
       // Get recent conversation context (last 16 messages)
@@ -725,6 +778,8 @@ Rules:
           conversationId: conversation.id,
           artifactMode: requestArtifactMode,
           webSearchEnabled: requestWebSearchEnabled,
+          requestId,
+          clientMessageId: clientUserMessageId,
         }),
       })
 
@@ -938,70 +993,111 @@ Rules:
     } catch (error: any) {
       console.error('[Chat] Send message error:', error.message)
 
-      const isTimeoutError =
-        error.message?.includes('took too long') ||
-        error.message?.includes('FUNCTION_INVOCATION_TIMEOUT') ||
-        (error.message?.includes('timeout') && !error.message?.includes('aborted')) ||
-        error.message?.includes('TIMEOUT')
-
       const isNetworkError =
         error.message?.includes('Failed to fetch') ||
         error.message?.includes('network') ||
-        error.name === 'TypeError'
+        error.name === 'TypeError' ||
+        error.message?.includes('FUNCTION_INVOCATION_TIMEOUT') ||
+        error.message?.includes('took too long') ||
+        error.message?.includes('timeout') ||
+        error.message?.includes('TIMEOUT')
 
-      // For network errors on long tasks, the server may have completed successfully
-      // Reload the conversation to check for the response
-      if (isNetworkError && sendConversationId) {
-        console.log('[Chat] Network error - reloading conversation to check for response')
+      // Auto-recovery: poll for the response instead of showing an error
+      if (isNetworkError && sendConversationId && requestId) {
+        console.log('[Chat] Connection issue — starting auto-recovery polling for requestId:', requestId)
         if (selectedConversationIdRef.current === sendConversationId) {
           setMessages((prev) =>
             processMessages(
               prev.map((m) =>
                 m.id === clientAssistantMessageId
-                  ? { ...m, content: 'Connection interrupted. Checking for response...' }
+                  ? { ...m, content: '__RECOVERY_POLLING__' }
                   : m
               ),
               sendConversationId
             )
           )
         }
-        // Wait briefly then reload messages from server
-        setTimeout(async () => {
+
+        // Poll for recovery
+        let recovered = false
+        const maxAttempts = 150 // 5 minutes at 2s intervals
+        for (let attempt = 0; attempt < maxAttempts && !recovered; attempt++) {
+          await new Promise(resolve => setTimeout(resolve, 2000))
+
+          // Stop if user navigated away
+          if (selectedConversationIdRef.current !== sendConversationId) {
+            console.log('[Chat] User navigated away during recovery, stopping poll')
+            break
+          }
+
+          try {
+            const statusRes = await fetch(
+              `/api/chat/status?requestId=${requestId}&conversationId=${sendConversationId}`,
+              { cache: 'no-store' }
+            )
+            if (!statusRes.ok) continue
+
+            const statusData = await statusRes.json()
+
+            if (statusData.found && statusData.content && statusData.content.length > 10) {
+              console.log('[Chat] Recovery successful, content length:', statusData.content.length)
+              if (selectedConversationIdRef.current === sendConversationId) {
+                setMessages((prev) =>
+                  processMessages(
+                    prev.map((m) =>
+                      m.id === clientAssistantMessageId
+                        ? { ...m, content: statusData.content }
+                        : m
+                    ),
+                    sendConversationId
+                  )
+                )
+              }
+              recovered = true
+            } else if (statusData.status === 'error') {
+              break
+            }
+            // If status is 'generating' or 'pending', keep polling
+          } catch {
+            // Network still down, keep trying
+          }
+        }
+
+        if (!recovered && selectedConversationIdRef.current === sendConversationId) {
+          // Final attempt: reload full conversation
           try {
             const reloadRes = await fetch(`/api/conversations/${sendConversationId}`, { cache: 'no-store' })
             if (reloadRes.ok) {
               const reloadedMessages = await reloadRes.json()
-              if (Array.isArray(reloadedMessages) && reloadedMessages.length > 0) {
-                const hasAssistantResponse = reloadedMessages.some(
-                  (m: any) => m.role === 'assistant' && m.content && m.content.length > 50
+              if (Array.isArray(reloadedMessages)) {
+                const assistantMsg = reloadedMessages.find(
+                  (m: any) => m.role === 'assistant' && m.request_id === requestId && m.content && m.content.length > 10
                 )
-                if (hasAssistantResponse && selectedConversationIdRef.current === sendConversationId) {
+                if (assistantMsg) {
                   const processed = processLoadedMessages(reloadedMessages, { conversationId: sendConversationId, parseArtifacts: true })
                   setMessages(processMessages(processed, sendConversationId))
-                  toast({ title: 'Response recovered', description: 'The AI did respond — loaded it for you.' })
-                  return
+                  recovered = true
                 }
               }
             }
-          } catch { /* ignore reload failure */ }
-          // If reload didn't find a response, show the error
-          if (selectedConversationIdRef.current === sendConversationId) {
-            setMessages((prev) =>
-              processMessages(
-                prev.map((m) =>
-                  m.id === clientAssistantMessageId
-                    ? { ...m, content: 'Connection was interrupted. The response may still be processing — try refreshing or say "continue".' }
-                    : m
-                ),
-                sendConversationId
-              )
+          } catch { /* ignore */ }
+        }
+
+        if (!recovered && selectedConversationIdRef.current === sendConversationId) {
+          setMessages((prev) =>
+            processMessages(
+              prev.map((m) =>
+                m.id === clientAssistantMessageId
+                  ? { ...m, content: 'The AI is still generating a response. It will appear when you return to this chat.' }
+                  : m
+              ),
+              sendConversationId
             )
-          }
-        }, 3000)
+          )
+        }
       } else {
-        const displayMessage = isTimeoutError
-          ? 'The response timed out. Try saying "continue" or asking for the next part.'
-          : `Sorry, something went wrong: ${error.message}`
+        // Non-recoverable error (auth, credits, etc.)
+        const displayMessage = `Sorry, something went wrong: ${error.message}`
 
         if (selectedConversationIdRef.current === sendConversationId) {
           setMessages((prev) =>
@@ -1016,10 +1112,8 @@ Rules:
           )
         }
         toast({
-          title: isTimeoutError ? 'Response timed out' : 'Error',
-          description: isTimeoutError
-            ? 'Say "continue" to get the rest of the response'
-            : (error.message || 'Failed to send message'),
+          title: 'Error',
+          description: error.message || 'Failed to send message',
           variant: 'destructive',
         })
       }

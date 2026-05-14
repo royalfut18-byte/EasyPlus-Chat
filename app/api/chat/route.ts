@@ -73,7 +73,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const { model, messages, conversationId, artifactMode, webSearchEnabled } = body
+    const { model, messages, conversationId, artifactMode, webSearchEnabled, requestId, clientMessageId } = body
 
     if (!model || !messages || !Array.isArray(messages) || messages.length === 0) {
       console.error('[Chat API] Invalid request params:', { model: !!model, messages: Array.isArray(messages), len: messages?.length })
@@ -86,6 +86,7 @@ export async function POST(request: NextRequest) {
       conversationId: conversationId || 'new',
       artifactMode: !!artifactMode,
       webSearchEnabled: !!webSearchEnabled,
+      requestId: requestId || 'none',
       userId: user.id.substring(0, 8) + '...',
     })
 
@@ -208,7 +209,7 @@ export async function POST(request: NextRequest) {
     }
 
     const isLoadingMarker = (content: string) => {
-      return content === '__ARTIFACT_LOADING__' || content === '__ASSISTANT_LOADING__' || content === '__LONG_TASK_LOADING__'
+      return content === '__ARTIFACT_LOADING__' || content === '__ASSISTANT_LOADING__' || content === '__LONG_TASK_LOADING__' || content === '__RECOVERY_POLLING__'
     }
 
     let cleanedMessages = messages
@@ -412,42 +413,91 @@ RULES FOR USING THESE RESULTS:
       }
     }) as ChatMessage[]
 
-    // Stage: Save user message BEFORE AI call
+    // Stage: Save user message BEFORE AI call (idempotent via client_message_id)
     stage = 'save-user-message'
     let userMessageOrderIndex: number | null = null
+    let savedUserMessageId: string | null = null
 
     if (conversationId) {
       try {
-        const { data: maxOrderData } = await db
-          .from('messages')
-          .select('order_index')
-          .eq('conversation_id', conversationId)
-          .order('order_index', { ascending: false })
-          .limit(1)
-          .single()
+        // Check if this message was already saved (retry/recovery scenario)
+        if (clientMessageId) {
+          const { data: existing } = await db
+            .from('messages')
+            .select('id, order_index')
+            .eq('conversation_id', conversationId)
+            .eq('client_message_id', clientMessageId)
+            .limit(1)
+            .single()
 
-        const maxOrder = maxOrderData?.order_index || 0
-        userMessageOrderIndex = (typeof maxOrder === 'number' ? maxOrder : 0) + 1
+          if (existing) {
+            console.log('[Chat API] User message already exists (idempotent), reusing:', existing.id)
+            savedUserMessageId = existing.id
+            userMessageOrderIndex = existing.order_index
 
-        const safeAttachments = sanitizeAttachmentsForStorage(userMessage.attachments, extractedDocTexts)
-        const { error: userInsertError } = await db.from('messages').insert({
-          conversation_id: conversationId,
-          role: 'user',
-          content: userMessage.content,
-          model: validatedModel,
-          order_index: userMessageOrderIndex,
-          ...(safeAttachments ? { attachments: safeAttachments } : {}),
-        })
+            // Check if assistant already responded (full recovery)
+            if (requestId) {
+              const { data: existingAssistant } = await db
+                .from('messages')
+                .select('id, content, status')
+                .eq('request_id', requestId)
+                .eq('role', 'assistant')
+                .limit(1)
+                .single()
 
-        if (userInsertError) {
-          console.error('[Chat API] User message insert failed:', userInsertError.message)
-          return NextResponse.json(
-            { error: `Failed to save user message: ${userInsertError.message}` },
-            { status: 500 }
-          )
+              if (existingAssistant && existingAssistant.content && existingAssistant.status === 'completed') {
+                console.log('[Chat API] Response already exists, returning cached')
+                const encoder = new TextEncoder()
+                const cachedStream = new ReadableStream({
+                  start(controller) {
+                    controller.enqueue(encoder.encode(existingAssistant.content))
+                    controller.close()
+                  },
+                })
+                return new Response(cachedStream, {
+                  headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', 'X-Recovered': 'true' },
+                })
+              }
+            }
+          }
         }
 
-        console.log('[Chat API] User message saved, order_index:', userMessageOrderIndex)
+        if (!savedUserMessageId) {
+          const { data: maxOrderData } = await db
+            .from('messages')
+            .select('order_index')
+            .eq('conversation_id', conversationId)
+            .order('order_index', { ascending: false })
+            .limit(1)
+            .single()
+
+          const maxOrder = maxOrderData?.order_index || 0
+          userMessageOrderIndex = (typeof maxOrder === 'number' ? maxOrder : 0) + 1
+
+          const safeAttachments = sanitizeAttachmentsForStorage(userMessage.attachments, extractedDocTexts)
+          const { data: insertedMsg, error: userInsertError } = await db.from('messages').insert({
+            conversation_id: conversationId,
+            role: 'user',
+            content: userMessage.content,
+            model: validatedModel,
+            order_index: userMessageOrderIndex,
+            client_message_id: clientMessageId || null,
+            request_id: requestId || null,
+            status: 'completed',
+            ...(safeAttachments ? { attachments: safeAttachments } : {}),
+          }).select('id').single()
+
+          if (userInsertError) {
+            console.error('[Chat API] User message insert failed:', userInsertError.message)
+            return NextResponse.json(
+              { error: `Failed to save user message: ${userInsertError.message}` },
+              { status: 500 }
+            )
+          }
+
+          savedUserMessageId = insertedMsg?.id || null
+          console.log('[Chat API] User message saved, order_index:', userMessageOrderIndex)
+        }
       } catch (saveErr: any) {
         console.error('[Chat API] User message save exception:', saveErr.message)
         return NextResponse.json(
@@ -486,29 +536,59 @@ RULES FOR USING THESE RESULTS:
     const decoder = new TextDecoder()
     let fullResponse = ''
 
+    // Pre-create assistant message with status='generating' so recovery can find it
+    let assistantMessageId: string | null = null
+    const assistantOrder = userMessageOrderIndex != null ? userMessageOrderIndex + 1 : 1
+
+    if (conversationId) {
+      try {
+        const { data: assistantMsg } = await db.from('messages').insert({
+          conversation_id: conversationId,
+          role: 'assistant',
+          content: '',
+          model: validatedModel,
+          order_index: assistantOrder,
+          request_id: requestId || null,
+          parent_message_id: savedUserMessageId || null,
+          status: 'generating',
+        }).select('id').single()
+
+        assistantMessageId = assistantMsg?.id || null
+        console.log('[Chat API] Assistant placeholder created:', assistantMessageId)
+      } catch (err: any) {
+        console.error('[Chat API] Failed to create assistant placeholder:', err.message)
+      }
+    }
+
+    let lastSaveTime = Date.now()
+
     const transformStream = new TransformStream({
       async transform(chunk, controller) {
         const text = decoder.decode(chunk)
         fullResponse += text
         controller.enqueue(chunk)
+
+        // Periodically save partial content for recovery (every 2 seconds)
+        if (conversationId && assistantMessageId && Date.now() - lastSaveTime > 2000) {
+          lastSaveTime = Date.now()
+          db.from('messages')
+            .update({ content: fullResponse })
+            .eq('id', assistantMessageId)
+            .then(() => {})
+            .catch((e: any) => console.error('[Chat API] Partial save failed:', e.message))
+        }
       },
       async flush() {
-        if (conversationId && fullResponse) {
+        if (conversationId && assistantMessageId) {
           try {
-            const assistantOrder = userMessageOrderIndex != null ? userMessageOrderIndex + 1 : 1
-            const { error: assistantInsertError } = await db.from('messages').insert({
-              conversation_id: conversationId,
-              role: 'assistant',
-              content: fullResponse,
-              model: validatedModel,
-              order_index: assistantOrder,
-            })
+            await db.from('messages')
+              .update({
+                content: fullResponse || '[Empty response]',
+                status: 'completed',
+              })
+              .eq('id', assistantMessageId)
 
-            if (assistantInsertError) {
-              console.error('[Chat API] Assistant message insert failed:', assistantInsertError.message)
-            } else {
-              console.log('[Chat API] Assistant message saved, order_index:', assistantOrder)
-            }
+            console.log('[Chat API] Assistant message completed, order_index:', assistantOrder)
 
             await db
               .from('conversations')
@@ -533,6 +613,10 @@ RULES FOR USING THESE RESULTS:
 
     if (longTask) {
       responseHeaders['X-Long-Task'] = 'true'
+    }
+
+    if (requestId) {
+      responseHeaders['X-Request-Id'] = requestId
     }
 
     console.log('[Chat API] Success, streaming response. Duration:', Date.now() - startTime, 'ms')
