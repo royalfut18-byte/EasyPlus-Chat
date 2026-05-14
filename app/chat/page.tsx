@@ -685,7 +685,11 @@ export default function ChatPage() {
       const messagesToSend = [...contextMessages, userMessage].map((m, idx, arr) => ({
         role: m.role,
         content: m.content,
-        attachments: idx === arr.length - 1 ? m.attachments : undefined,
+        attachments: idx === arr.length - 1
+          ? m.attachments
+          : (m.attachments && m.attachments.length > 0
+            ? m.attachments.map(a => ({ type: a.type, name: a.name, mimeType: a.mimeType, textContent: a.textContent }))
+            : undefined),
       }))
 
       if (requestArtifactMode) {

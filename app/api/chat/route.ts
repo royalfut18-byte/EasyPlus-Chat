@@ -4,7 +4,7 @@ import { streamBedrockResponse, getModelCost } from '@/lib/ai/bedrock'
 import { streamGeminiResponse } from '@/lib/ai/gemini'
 import { searchWeb, buildWebSearchQuery } from '@/lib/ai/web-search'
 import { buildSystemPrompt, isTimeSensitiveQuery, detectQueryType } from '@/lib/ai/system-prompt'
-import { buildDocumentContext } from '@/lib/ai/document-extract'
+import { buildDocumentContext, extractTextFromAttachment } from '@/lib/ai/document-extract'
 import { sanitizeAttachmentsForStorage } from '@/lib/ai/sanitize-attachments'
 import {
   getUserMemories,
@@ -275,6 +275,8 @@ RULES FOR USING THESE RESULTS:
     // Stage: Document extraction
     stage = 'document-extraction'
     let documentContext = ''
+    const extractedDocTexts = new Map<string, string>()
+
     if (userMessage.attachments && userMessage.attachments.length > 0) {
       const docAttachments = userMessage.attachments.filter((a: any) => a.type === 'document')
       if (docAttachments.length > 0) {
@@ -283,6 +285,17 @@ RULES FOR USING THESE RESULTS:
           documentContext = result.context
           if (result.error) {
             console.warn('[Chat API] Document extraction warning:', result.error)
+          }
+          // Save extracted text per document for DB persistence
+          for (const att of docAttachments) {
+            if (att.textContent) {
+              extractedDocTexts.set(att.name, att.textContent)
+            } else if (att.dataUrl) {
+              const text = await extractTextFromAttachment(att)
+              if (text && !text.startsWith('__')) {
+                extractedDocTexts.set(att.name, text.substring(0, 8000))
+              }
+            }
           }
           console.log('[Chat API] Document context extracted, length:', documentContext.length)
         } catch (docErr: any) {
@@ -295,12 +308,33 @@ RULES FOR USING THESE RESULTS:
       }
     }
 
+    // Reconstruct context from historical messages that had attachments
+    let historicalAttachmentContext = ''
+    const priorMessages = messagesToSend.slice(0, -1)
+    for (const msg of priorMessages) {
+      if (msg.role === 'user' && msg.attachments && msg.attachments.length > 0) {
+        for (const att of msg.attachments) {
+          if (att.type === 'document' && att.textContent) {
+            historicalAttachmentContext += `[Previously attached document: ${att.name}]\n${att.textContent.substring(0, 4000)}\n[/Previously attached document]\n\n`
+          } else if (att.type === 'image') {
+            historicalAttachmentContext += `[Previously attached image: ${att.name}] (image was shared earlier in this conversation)\n\n`
+          }
+        }
+      }
+    }
+
     if (documentContext) {
       const docInstruction: ChatMessage = {
         role: 'user',
         content: `[ATTACHED DOCUMENTS - USE THESE FOR YOUR ANSWER]\n\n${documentContext}\n\n---\nThe above documents are attached by the user. Read and use this content to answer their question. If the document does not contain enough information to answer, say so. Do not invent details not in the document.`,
       }
       messagesToSend = [...messagesToSend.slice(0, -1), docInstruction, latestUserMessage] as ChatMessage[]
+    } else if (historicalAttachmentContext) {
+      const historyInstruction: ChatMessage = {
+        role: 'user',
+        content: `[CONTEXT FROM EARLIER IN THIS CONVERSATION]\n\n${historicalAttachmentContext}---\nThe above documents/images were shared earlier in this conversation. Use this context to inform your answer. The user may be asking follow-up questions about this content.`,
+      }
+      messagesToSend = [...messagesToSend.slice(0, -1), historyInstruction, latestUserMessage] as ChatMessage[]
     }
 
     // Stage: Memory (fetch only - save/delete deferred to not block AI call)
@@ -395,7 +429,7 @@ RULES FOR USING THESE RESULTS:
         const maxOrder = maxOrderData?.order_index || 0
         userMessageOrderIndex = (typeof maxOrder === 'number' ? maxOrder : 0) + 1
 
-        const safeAttachments = sanitizeAttachmentsForStorage(userMessage.attachments)
+        const safeAttachments = sanitizeAttachmentsForStorage(userMessage.attachments, extractedDocTexts)
         const { error: userInsertError } = await db.from('messages').insert({
           conversation_id: conversationId,
           role: 'user',
