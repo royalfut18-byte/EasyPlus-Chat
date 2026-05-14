@@ -759,12 +759,12 @@ Rules:
           const text = await response.text()
           if (response.status === 413 || text.includes('PAYLOAD_TOO_LARGE') || text.includes('FUNCTION_PAYLOAD_TOO_LARGE') || text.includes('Request Entity Too Large')) {
             errorMessage = 'File too large for upload. Try a smaller file under 5MB.'
-          } else if (response.status === 504 || text.includes('FUNCTION_INVOCATION_TIMEOUT') || text.includes('took too long')) {
+          } else if (response.status === 504 || text.includes('FUNCTION_INVOCATION_TIMEOUT')) {
             try {
               const errorData = JSON.parse(text)
-              errorMessage = errorData.error || 'This task took too long. Try asking for one part at a time, or ask me to continue in parts.'
+              errorMessage = errorData.error || 'The response timed out. Try saying "continue" or asking for the next part.'
             } catch {
-              errorMessage = 'This task took too long. Try asking for one part at a time, or ask me to continue in parts.'
+              errorMessage = 'The response timed out. Try saying "continue" or asking for the next part.'
             }
           } else {
             try {
@@ -936,14 +936,12 @@ Rules:
 
       const isTimeoutError =
         error.message?.includes('took too long') ||
-        error.message?.includes('timeout') ||
-        error.message?.includes('TIMEOUT') ||
-        error.message?.includes('network') ||
-        error.message?.includes('aborted') ||
-        error.name === 'TypeError'
+        error.message?.includes('FUNCTION_INVOCATION_TIMEOUT') ||
+        (error.message?.includes('timeout') && !error.message?.includes('aborted')) ||
+        error.message?.includes('TIMEOUT')
 
       const displayMessage = isTimeoutError
-        ? 'This task took too long. Try asking for one part at a time, or ask me to continue in parts.'
+        ? 'The response timed out. Try saying "continue" or asking for the next part.'
         : `Sorry, something went wrong: ${error.message}`
 
       if (selectedConversationIdRef.current === sendConversationId) {
@@ -959,9 +957,9 @@ Rules:
         )
       }
       toast({
-        title: isTimeoutError ? 'Task too long' : 'Error',
+        title: isTimeoutError ? 'Response timed out' : 'Error',
         description: isTimeoutError
-          ? 'Try splitting the task into smaller parts'
+          ? 'Say "continue" to get the rest of the response'
           : (error.message || 'Failed to send message'),
         variant: 'destructive',
       })

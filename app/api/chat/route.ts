@@ -523,7 +523,7 @@ RULES FOR USING THESE RESULTS:
 
     if (isTimeout) {
       return NextResponse.json(
-        { error: 'This task took too long. Try asking for one part at a time, or ask me to continue in parts.' },
+        { error: 'The response timed out. Try saying "continue" or asking for the next part.' },
         { status: 504 }
       )
     }

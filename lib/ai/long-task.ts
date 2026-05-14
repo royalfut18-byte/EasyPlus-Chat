@@ -43,4 +43,14 @@ export function isLongTaskRequest(message: string, attachments?: ChatAttachment[
   return false
 }
 
-export const LONG_TASK_SYSTEM_ADDENDUM = `This is a long task. Provide a complete but efficient response. Prioritize the most useful answer first. Avoid unnecessary repetition. If the answer would be extremely long, give the best complete version within the response limit and offer to continue.`
+export const LONG_TASK_SYSTEM_ADDENDUM = `This is a large task. You MUST answer it — do NOT refuse or say it is too long. Answer in a structured way. Start with the most useful complete section first.
+
+Strategy for large requests:
+- If the user asks for multiple things (e.g. structure + skeleton + full essay), deliver them in logical parts within your response.
+- Start with: thesis, essay structure, introduction, body paragraph plan, and adaptable skeleton.
+- Then write the full essay content.
+- If you genuinely cannot fit everything in one response, end with: "Say **continue** for the next part."
+- NEVER say "This task took too long" or refuse to attempt the task.
+- NEVER tell the user to ask for one part at a time — just answer as much as you can and offer to continue.
+
+You have plenty of space. Use it. Prioritise completeness and quality.`
