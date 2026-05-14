@@ -169,6 +169,7 @@ type PendingResponse = {
   conversationId: string
   assistantMessageId: string
   userMessageId: string
+  requestId: string
   startedAt: string
   model: string
   mode: 'normal' | 'artifact' | 'agent'
@@ -352,12 +353,20 @@ export default function ChatPage() {
         // Check for generating messages and show recovery UI + auto-poll
         const generatingMsg = final.find(m => m.role === 'assistant' && m.status === 'generating')
         if (generatingMsg) {
-          // Show partial content or recovery polling marker
-          const updatedFinal = final.map(m =>
-            m.id === generatingMsg.id && (!m.content || m.content.length < 10)
-              ? { ...m, content: '__RECOVERY_POLLING__' }
-              : m
-          )
+          // Show partial content or recovery marker — ensure only ONE assistant bubble exists for this
+          const updatedFinal = final
+            .filter(m => {
+              // Remove any loading marker duplicates for the same request
+              const isMarker = m.content === ARTIFACT_LOADING_MARKER || m.content === ASSISTANT_LOADING_MARKER || m.content === LONG_TASK_LOADING_MARKER || m.content === '__RECOVERY_POLLING__'
+              if (m.role === 'assistant' && m.id !== generatingMsg.id && isMarker &&
+                  m.request_id === generatingMsg.request_id) return false
+              return true
+            })
+            .map(m =>
+              m.id === generatingMsg.id && (!m.content || m.content.length < 10)
+                ? { ...m, content: '__RECOVERY_POLLING__' }
+                : m
+            )
           setMessages(updatedFinal)
 
           // Start polling for this generating message
@@ -384,7 +393,6 @@ export default function ChatPage() {
                   return
                 }
                 if (data.found && data.content && data.content.length > 10) {
-                  // Show partial content
                   if (selectedConversationIdRef.current === conversationId) {
                     setMessages(prev => processMessages(
                       prev.map(m => m.id === generatingMsg.id ? { ...m, content: data.content } : m),
@@ -499,12 +507,19 @@ export default function ChatPage() {
     // Fetch messages (with sequence check)
     await loadConversationMessages(id, requestSeq)
 
-    // After loading, restore pending placeholder if this conversation has an active response
+    // After loading, restore pending placeholder ONLY if no assistant message exists from server
     const pending = pendingResponsesRef.current[id]
     if (pending && selectedConversationIdRef.current === id) {
       setMessages(prev => {
-        const hasPlaceholder = prev.some(m => m.id === pending.assistantMessageId)
-        if (hasPlaceholder) return prev
+        // Don't add placeholder if we already have it by ID
+        if (prev.some(m => m.id === pending.assistantMessageId)) return prev
+        // Don't add placeholder if server already has an assistant message for this request
+        // (the server-created message with same request_id supersedes the client placeholder)
+        const serverHasAssistant = prev.some(m =>
+          m.role === 'assistant' &&
+          m.request_id === pending.requestId
+        )
+        if (serverHasAssistant) return prev
         const placeholder: Message = {
           id: pending.assistantMessageId,
           conversation_id: id,
@@ -512,6 +527,7 @@ export default function ChatPage() {
           content: pending.loadingMarker,
           model: pending.model,
           created_at: pending.startedAt,
+          request_id: pending.requestId,
         }
         return processMessages([...prev, placeholder], id)
       })
@@ -705,7 +721,9 @@ export default function ChatPage() {
       role: 'assistant',
       content: loadingMarker,
       model: modelToUse,
-      created_at: assistantCreatedAt, // Use the +1ms timestamp
+      created_at: assistantCreatedAt,
+      request_id: requestId,
+      client_message_id: clientAssistantMessageId,
     }
 
     setMessages((prev) => processMessages([...prev, assistantPlaceholder], sendConversationId))
@@ -715,6 +733,7 @@ export default function ChatPage() {
       conversationId: sendConversationId,
       assistantMessageId: clientAssistantMessageId,
       userMessageId: clientUserMessageId,
+      requestId,
       startedAt: assistantCreatedAt,
       model: modelToUse,
       mode: requestArtifactMode ? 'artifact' : 'normal',

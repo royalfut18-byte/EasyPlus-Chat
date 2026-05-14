@@ -1,6 +1,13 @@
 import type { Message, Artifact } from '@/types/models'
 import { parseArtifactFromResponse } from '../artifact-parser'
 
+const LOADING_MARKERS = new Set([
+  '__ARTIFACT_LOADING__',
+  '__ASSISTANT_LOADING__',
+  '__LONG_TASK_LOADING__',
+  '__RECOVERY_POLLING__',
+])
+
 /**
  * Sort messages chronologically: oldest first, newest last
  * Respects order_index as primary sort key
@@ -36,14 +43,42 @@ export function sortMessagesChronologically(messages: Message[]): Message[] {
 }
 
 /**
- * Deduplicate messages by id, client_message_id, and content similarity
+ * Score a message for priority (higher = keep this one).
+ * Used to pick the best message when multiple share the same request_id.
+ */
+function messageScore(msg: Message): number {
+  if (!msg?.content) return 0
+  if (LOADING_MARKERS.has(msg.content)) return 1
+  if (msg.status === 'generating' && msg.content.length < 10) return 2
+  if (msg.status === 'generating' && msg.content.length >= 10) return 3
+  if (msg.status === 'error') return 4
+  // Real completed content
+  return 5 + Math.min(msg.content.length, 10000)
+}
+
+/**
+ * Deduplicate messages by id, client_message_id, request_id, and content similarity.
+ * For assistant messages sharing the same request_id, keep only the best one.
  */
 export function dedupeMessages(messages: Message[]): Message[] {
   if (!Array.isArray(messages)) return []
 
   const seenIds = new Set<string>()
   const seenClientIds = new Set<string>()
+  // Group assistant messages by request_id to collapse duplicates
+  const bestByRequestId = new Map<string, Message>()
   const result: Message[] = []
+
+  // First pass: find the best assistant message per request_id
+  for (const msg of messages) {
+    if (!msg || !msg.id) continue
+    if (msg.role === 'assistant' && msg.request_id) {
+      const existing = bestByRequestId.get(msg.request_id)
+      if (!existing || messageScore(msg) > messageScore(existing)) {
+        bestByRequestId.set(msg.request_id, msg)
+      }
+    }
+  }
 
   for (const msg of messages) {
     if (!msg || !msg.id) continue
@@ -51,8 +86,27 @@ export function dedupeMessages(messages: Message[]): Message[] {
     // Skip if we've seen this exact ID
     if (seenIds.has(msg.id)) continue
 
-    // Skip if we've already seen this client_message_id (server version supersedes client version)
+    // Skip if we've already seen this client_message_id
     if (msg.client_message_id && seenClientIds.has(msg.client_message_id)) continue
+
+    // For assistant messages with request_id: only keep the best one
+    if (msg.role === 'assistant' && msg.request_id) {
+      const best = bestByRequestId.get(msg.request_id)
+      if (best && best.id !== msg.id) continue // Skip non-best
+    }
+
+    // Remove loading markers if a real completed message exists for same request
+    if (msg.role === 'assistant' && LOADING_MARKERS.has(msg.content || '')) {
+      // Check if there's already a real response in result for same request or conversation
+      const hasRealResponse = result.some(existing =>
+        existing.role === 'assistant' &&
+        existing.conversation_id === msg.conversation_id &&
+        !LOADING_MARKERS.has(existing.content || '') &&
+        existing.content && existing.content.length > 10 &&
+        Math.abs(new Date(existing.created_at || 0).getTime() - new Date(msg.created_at || 0).getTime()) < 300000
+      )
+      if (hasRealResponse) continue
+    }
 
     // Check for likely duplicates: same conversation, role, content within 5 minutes
     const isDuplicate = result.some(existing => {
@@ -60,12 +114,13 @@ export function dedupeMessages(messages: Message[]): Message[] {
         existing?.conversation_id === msg?.conversation_id &&
         existing?.role === msg?.role &&
         existing?.content === msg?.content &&
-        existing?.content?.length > 0
+        existing?.content?.length > 0 &&
+        !LOADING_MARKERS.has(existing.content || '')
       ) {
         const timeDiff = Math.abs(
           new Date(existing?.created_at || 0).getTime() - new Date(msg?.created_at || 0).getTime()
         )
-        return timeDiff < 300000 // Within 5 minutes
+        return timeDiff < 300000
       }
       return false
     })
@@ -143,6 +198,33 @@ function repairMessageOrder(messages: Message[]): Message[] {
 }
 
 /**
+ * Remove stale loading markers: if a user message is followed by both a
+ * loading marker and a real assistant response, remove the marker.
+ */
+function removeStaleMarkers(messages: Message[]): Message[] {
+  if (messages.length < 2) return messages
+
+  // Collect request_ids that have real content
+  const requestIdsWithContent = new Set<string>()
+  for (const msg of messages) {
+    if (msg.role === 'assistant' && msg.request_id && msg.content && !LOADING_MARKERS.has(msg.content) && msg.content.length > 10) {
+      requestIdsWithContent.add(msg.request_id)
+    }
+  }
+
+  return messages.filter(msg => {
+    // Keep all non-assistant messages
+    if (msg.role !== 'assistant') return true
+    // Keep messages that aren't loading markers
+    if (!LOADING_MARKERS.has(msg.content || '')) return true
+    // If this loading marker has a request_id with real content, remove it
+    if (msg.request_id && requestIdsWithContent.has(msg.request_id)) return false
+    // Otherwise keep it (it's the only placeholder for an in-progress request)
+    return true
+  })
+}
+
+/**
  * Process messages: filter by conversation, dedupe, then sort
  * Use this everywhere to ensure consistency
  */
@@ -154,20 +236,11 @@ export function processMessages(messages: Message[], conversationId?: string | n
     ? filterMessagesForConversation(messages, conversationId)
     : messages
 
-  // Warn in dev if we filtered out messages from wrong conversation
-  if (process.env.NODE_ENV !== 'production' && conversationId && filtered.length !== messages.length) {
-    const wrongCount = messages.length - filtered.length
-    console.warn('[Chat] Filtered out messages from wrong conversation', {
-      conversationId,
-      wrongCount,
-      totalMessages: messages.length,
-      filteredMessages: filtered.length
-    })
-  }
-
-  // Dedupe, sort, then repair any remaining order issues
-  const sorted = sortMessagesChronologically(dedupeMessages(filtered))
-  return repairMessageOrder(sorted)
+  // Dedupe, sort, remove stale markers, then repair order
+  const deduped = dedupeMessages(filtered)
+  const sorted = sortMessagesChronologically(deduped)
+  const cleaned = removeStaleMarkers(sorted)
+  return repairMessageOrder(cleaned)
 }
 
 /**
