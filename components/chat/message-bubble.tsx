@@ -28,6 +28,7 @@ interface MessageBubbleProps {
   hasArtifact?: boolean
   artifact?: Artifact | null
   onOpenArtifact?: (artifact?: Artifact) => void
+  statusLabel?: string | null
 }
 
 const ARTIFACT_LOADING_MARKER = '__ARTIFACT_LOADING__'
@@ -35,20 +36,34 @@ const ASSISTANT_LOADING_MARKER = '__ASSISTANT_LOADING__'
 const LONG_TASK_LOADING_MARKER = '__LONG_TASK_LOADING__'
 const RECOVERY_POLLING_MARKER = '__RECOVERY_POLLING__'
 
-export function MessageBubble({ role, content, model, onRegenerate, attachments, hasArtifact, artifact, onOpenArtifact }: MessageBubbleProps) {
+// Status config: label → { dotColor, glowColor, iconColor, subtitle }
+const STATUS_CONFIG: Record<string, { dotColor: string; glowColor: string; iconColor: string; subtitle: string }> = {
+  'Thinking...': { dotColor: 'bg-blue-400', glowColor: 'bg-blue-500/20', iconColor: 'text-blue-400', subtitle: '' },
+  'Reading attached files...': { dotColor: 'bg-violet-400', glowColor: 'bg-violet-500/20', iconColor: 'text-violet-400', subtitle: 'Analyzing your files' },
+  'Searching the web...': { dotColor: 'bg-emerald-400', glowColor: 'bg-emerald-500/20', iconColor: 'text-emerald-400', subtitle: 'Finding relevant information' },
+  'Working through a larger task...': { dotColor: 'bg-amber-400', glowColor: 'bg-amber-500/20', iconColor: 'text-amber-400', subtitle: 'This may take longer than usual' },
+  'Reconnecting and recovering response...': { dotColor: 'bg-cyan-400', glowColor: 'bg-cyan-500/20', iconColor: 'text-cyan-400', subtitle: 'The AI is still generating — recovering automatically' },
+  'Writing response...': { dotColor: 'bg-blue-400', glowColor: 'bg-blue-500/20', iconColor: 'text-blue-400', subtitle: 'Streaming answer' },
+  'Creating artifact...': { dotColor: 'bg-purple-400', glowColor: 'bg-purple-500/20', iconColor: 'text-purple-400', subtitle: 'Preparing preview panel' },
+}
+
+function getStatusFromMarker(content: string): string | null {
+  if (content === ARTIFACT_LOADING_MARKER) return 'Creating artifact...'
+  if (content === ASSISTANT_LOADING_MARKER) return 'Thinking...'
+  if (content === LONG_TASK_LOADING_MARKER) return 'Working through a larger task...'
+  if (content === RECOVERY_POLLING_MARKER) return 'Reconnecting and recovering response...'
+  return null
+}
+
+export function MessageBubble({ role, content, model, onRegenerate, attachments, hasArtifact, artifact, onOpenArtifact, statusLabel }: MessageBubbleProps) {
   const isUser = role === 'user'
   const modelData = model ? AI_MODELS.find((m) => m.id === model) : null
   const rawContent = content || ''
   const safeContent = !isUser ? cleanAssistantText(rawContent) : rawContent
 
-  // Check for loading markers
-  const isArtifactLoading = !isUser && safeContent === ARTIFACT_LOADING_MARKER
-  const isAssistantLoading = !isUser && safeContent === ASSISTANT_LOADING_MARKER
-  const isLongTaskLoading = !isUser && safeContent === LONG_TASK_LOADING_MARKER
-  const isRecoveryPolling = !isUser && safeContent === RECOVERY_POLLING_MARKER
-
-  // Check if this is a stuck/old loading marker (shouldn't persist in database)
-  const isStuckLoadingMarker = !isUser && (safeContent === ARTIFACT_LOADING_MARKER || safeContent === ASSISTANT_LOADING_MARKER || safeContent === LONG_TASK_LOADING_MARKER || safeContent === RECOVERY_POLLING_MARKER)
+  // Determine active status: explicit statusLabel takes priority, then check content markers
+  const activeStatus = (!isUser && statusLabel) ? statusLabel : getStatusFromMarker(safeContent)
+  const isShowingStatus = !!activeStatus && !isUser
 
   const hasArtifactCard = !isUser && (hasArtifact || (artifact && artifact.title && artifact.code))
 
@@ -191,75 +206,31 @@ export function MessageBubble({ role, content, model, onRegenerate, attachments,
         )}>
           {isUser ? (
             safeContent ? <p className="mb-0 whitespace-pre-wrap break-words text-sm md:text-base leading-6">{safeContent}</p> : null
-          ) : isArtifactLoading ? (
-            <div className="flex items-center gap-3 py-2">
-              <div className="relative">
-                <FileCode className="h-6 w-6 text-purple-400 animate-pulse" />
-                <div className="absolute inset-0 bg-purple-500/20 blur-lg animate-pulse" />
-              </div>
-              <div className="flex flex-col gap-1">
-                <div className="flex items-center gap-2">
-                  <span className="text-white font-medium">Creating artifact</span>
-                  <div className="flex gap-1">
-                    <div className="w-1.5 h-1.5 bg-purple-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                    <div className="w-1.5 h-1.5 bg-purple-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                    <div className="w-1.5 h-1.5 bg-purple-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+          ) : isShowingStatus ? (
+            (() => {
+              const config = STATUS_CONFIG[activeStatus!] || STATUS_CONFIG['Thinking...']
+              return (
+                <div className="flex items-center gap-3 py-2">
+                  <div className="relative">
+                    <Sparkles className={cn('h-5 w-5 animate-pulse', config.iconColor)} />
+                    <div className={cn('absolute inset-0 blur-lg animate-pulse', config.glowColor)} />
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-white font-medium">{activeStatus!.replace(/\.\.\.$/, '')}</span>
+                      <div className="flex gap-1">
+                        <div className={cn('w-1.5 h-1.5 rounded-full animate-bounce', config.dotColor)} style={{ animationDelay: '0ms' }} />
+                        <div className={cn('w-1.5 h-1.5 rounded-full animate-bounce', config.dotColor)} style={{ animationDelay: '150ms' }} />
+                        <div className={cn('w-1.5 h-1.5 rounded-full animate-bounce', config.dotColor)} style={{ animationDelay: '300ms' }} />
+                      </div>
+                    </div>
+                    {config.subtitle && (
+                      <span className="text-xs text-gray-400">{config.subtitle}</span>
+                    )}
                   </div>
                 </div>
-                <span className="text-xs text-gray-400">Preparing preview panel...</span>
-              </div>
-            </div>
-          ) : isAssistantLoading ? (
-            <div className="flex items-center gap-3 py-2">
-              <div className="relative">
-                <Sparkles className="h-5 w-5 text-blue-400 animate-pulse" />
-                <div className="absolute inset-0 bg-blue-500/20 blur-lg animate-pulse" />
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-white font-medium">Thinking</span>
-                <div className="flex gap-1">
-                  <div className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                  <div className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                  <div className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-                </div>
-              </div>
-            </div>
-          ) : isLongTaskLoading ? (
-            <div className="flex items-center gap-3 py-2">
-              <div className="relative">
-                <Sparkles className="h-5 w-5 text-amber-400 animate-pulse" />
-                <div className="absolute inset-0 bg-amber-500/20 blur-lg animate-pulse" />
-              </div>
-              <div className="flex flex-col gap-1">
-                <div className="flex items-center gap-2">
-                  <span className="text-white font-medium">Working through a larger task</span>
-                  <div className="flex gap-1">
-                    <div className="w-1.5 h-1.5 bg-amber-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                    <div className="w-1.5 h-1.5 bg-amber-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                    <div className="w-1.5 h-1.5 bg-amber-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-                  </div>
-                </div>
-                <span className="text-xs text-gray-400">This may take longer than usual</span>
-              </div>
-            </div>
-          ) : isRecoveryPolling ? (
-            <div className="flex items-center gap-3 py-2">
-              <div className="relative">
-                <Sparkles className="h-5 w-5 text-cyan-400 animate-pulse" />
-                <div className="absolute inset-0 bg-cyan-500/20 blur-lg animate-pulse" />
-              </div>
-              <div className="flex flex-col gap-1">
-                <div className="flex items-center gap-2">
-                  <span className="text-white font-medium">Reconnecting and recovering response</span>
-                  <div className="flex gap-1">
-                    <div className="w-1.5 h-1.5 bg-cyan-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                    <div className="w-1.5 h-1.5 bg-cyan-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                    <div className="w-1.5 h-1.5 bg-cyan-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-                  </div>
-                </div>
-                <span className="text-xs text-gray-400">The AI is still generating — recovering automatically</span>
-              </div>
-            </div>
+              )
+            })()
           ) : hasArtifactCard && onOpenArtifact ? (
             <div>
               <ReactMarkdown

@@ -364,7 +364,7 @@ export default function ChatPage() {
             })
             .map(m =>
               m.id === generatingMsg.id && (!m.content || m.content.length < 10)
-                ? { ...m, content: '__RECOVERY_POLLING__' }
+                ? { ...m, content: '__RECOVERY_POLLING__', statusLabel: 'Reconnecting and recovering response...' }
                 : m
             )
           setMessages(updatedFinal)
@@ -386,7 +386,7 @@ export default function ChatPage() {
                 if (data.found && data.content && data.content.length > 10 && data.status === 'completed') {
                   if (selectedConversationIdRef.current === conversationId) {
                     setMessages(prev => processMessages(
-                      prev.map(m => m.id === generatingMsg.id ? { ...m, content: data.content, status: 'completed' } : m),
+                      prev.map(m => m.id === generatingMsg.id ? { ...m, content: data.content, status: 'completed', statusLabel: null } : m),
                       conversationId
                     ))
                   }
@@ -395,7 +395,7 @@ export default function ChatPage() {
                 if (data.found && data.content && data.content.length > 10) {
                   if (selectedConversationIdRef.current === conversationId) {
                     setMessages(prev => processMessages(
-                      prev.map(m => m.id === generatingMsg.id ? { ...m, content: data.content } : m),
+                      prev.map(m => m.id === generatingMsg.id ? { ...m, content: data.content, statusLabel: 'Writing response...' } : m),
                       conversationId
                     ))
                   }
@@ -520,6 +520,13 @@ export default function ChatPage() {
           m.request_id === pending.requestId
         )
         if (serverHasAssistant) return prev
+        const statusFromMarker = pending.loadingMarker === ARTIFACT_LOADING_MARKER
+          ? 'Creating artifact...'
+          : pending.loadingMarker === LONG_TASK_LOADING_MARKER
+            ? 'Working through a larger task...'
+            : pending.status === 'streaming'
+              ? 'Writing response...'
+              : 'Thinking...'
         const placeholder: Message = {
           id: pending.assistantMessageId,
           conversation_id: id,
@@ -528,6 +535,7 @@ export default function ChatPage() {
           model: pending.model,
           created_at: pending.startedAt,
           request_id: pending.requestId,
+          statusLabel: statusFromMarker,
         }
         return processMessages([...prev, placeholder], id)
       })
@@ -709,11 +717,23 @@ export default function ChatPage() {
 
     // 6. Add assistant placeholder exactly once with correct timestamp
     const isLongTask = isLongTaskClient(trimmedContent, attachments)
+    const hasAttachments = attachments && attachments.length > 0
     const loadingMarker = requestArtifactMode
       ? ARTIFACT_LOADING_MARKER
       : isLongTask
         ? LONG_TASK_LOADING_MARKER
         : ASSISTANT_LOADING_MARKER
+
+    // Determine initial status label
+    const initialStatusLabel = requestArtifactMode
+      ? 'Creating artifact...'
+      : hasAttachments
+        ? 'Reading attached files...'
+        : requestWebSearchEnabled
+          ? 'Searching the web...'
+          : isLongTask
+            ? 'Working through a larger task...'
+            : 'Thinking...'
 
     const assistantPlaceholder: Message = {
       id: clientAssistantMessageId,
@@ -724,6 +744,7 @@ export default function ChatPage() {
       created_at: assistantCreatedAt,
       request_id: requestId,
       client_message_id: clientAssistantMessageId,
+      statusLabel: initialStatusLabel,
     }
 
     setMessages((prev) => processMessages([...prev, assistantPlaceholder], sendConversationId))
@@ -884,7 +905,7 @@ Rules:
           assistantContent += chunk
         }
 
-        // Update pending status to streaming on first real content
+        // Update pending status to streaming on first real content — clear statusLabel
         if (!streamingStatusSet && contentStarted) {
           streamingStatusSet = true
           const currentPending = pendingResponsesRef.current[sendConversationId]
@@ -893,12 +914,12 @@ Rules:
           }
         }
 
-        // Update by ID only - no new messages, only if still on this conversation
+        // Update by ID only - clear statusLabel so real content shows
         if (contentStarted && selectedConversationIdRef.current === sendConversationId) {
           setMessages((prev) =>
             processMessages(
               prev.map((m) =>
-                m.id === clientAssistantMessageId ? { ...m, content: assistantContent } : m
+                m.id === clientAssistantMessageId ? { ...m, content: assistantContent, statusLabel: null } : m
               ),
               sendConversationId
             )
@@ -1039,7 +1060,7 @@ Rules:
             processMessages(
               prev.map((m) =>
                 m.id === clientAssistantMessageId
-                  ? { ...m, content: '__RECOVERY_POLLING__' }
+                  ? { ...m, content: '__RECOVERY_POLLING__', statusLabel: 'Reconnecting and recovering response...' }
                   : m
               ),
               sendConversationId
@@ -1075,7 +1096,7 @@ Rules:
                   processMessages(
                     prev.map((m) =>
                       m.id === clientAssistantMessageId
-                        ? { ...m, content: statusData.content }
+                        ? { ...m, content: statusData.content, statusLabel: null }
                         : m
                     ),
                     sendConversationId
@@ -1462,6 +1483,7 @@ Rules:
                       hasArtifact={artifactMessageId === message.id && !!activeArtifact}
                       artifact={message.artifact}
                       onOpenArtifact={message.artifact ? handleOpenArtifact : (artifactMessageId === message.id && activeArtifact ? handleOpenArtifact : undefined)}
+                      statusLabel={message.statusLabel}
                     />
                   ))}
                 </>

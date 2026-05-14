@@ -79,6 +79,8 @@ export interface Message {
   // Local-only metadata for artifact support (not in Supabase)
   artifact?: Artifact | null
   displayContent?: string
+  // UI-only status label (never saved to DB, never sent to model)
+  statusLabel?: string | null
 }
 
 export interface Artifact {
