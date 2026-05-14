@@ -55,7 +55,9 @@ export function dedupeMessages(messages: Message[]): Message[] {
       continue
     }
 
-    // Check for likely duplicates: same conversation, role, content within 3 seconds
+    // Check for likely duplicates: same conversation, role, content within 60 seconds
+    // Wider window needed because server-saved messages may have different timestamps
+    // than client-side optimistic messages (especially for long API calls)
     const isDuplicate = result.some(existing => {
       if (
         existing?.conversation_id === msg?.conversation_id &&
@@ -65,7 +67,7 @@ export function dedupeMessages(messages: Message[]): Message[] {
         const timeDiff = Math.abs(
           new Date(existing?.created_at || 0).getTime() - new Date(msg?.created_at || 0).getTime()
         )
-        return timeDiff < 3000 // Within 3 seconds
+        return timeDiff < 60000 // Within 60 seconds
       }
       return false
     })

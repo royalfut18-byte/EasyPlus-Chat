@@ -944,29 +944,85 @@ Rules:
         (error.message?.includes('timeout') && !error.message?.includes('aborted')) ||
         error.message?.includes('TIMEOUT')
 
-      const displayMessage = isTimeoutError
-        ? 'The response timed out. Try saying "continue" or asking for the next part.'
-        : `Sorry, something went wrong: ${error.message}`
+      const isNetworkError =
+        error.message?.includes('Failed to fetch') ||
+        error.message?.includes('network') ||
+        error.name === 'TypeError'
 
-      if (selectedConversationIdRef.current === sendConversationId) {
-        setMessages((prev) =>
-          processMessages(
-            prev.map((m) =>
-              m.id === clientAssistantMessageId
-                ? { ...m, content: displayMessage }
-                : m
-            ),
-            sendConversationId
+      // For network errors on long tasks, the server may have completed successfully
+      // Reload the conversation to check for the response
+      if (isNetworkError && sendConversationId) {
+        console.log('[Chat] Network error - reloading conversation to check for response')
+        if (selectedConversationIdRef.current === sendConversationId) {
+          setMessages((prev) =>
+            processMessages(
+              prev.map((m) =>
+                m.id === clientAssistantMessageId
+                  ? { ...m, content: 'Connection interrupted. Checking for response...' }
+                  : m
+              ),
+              sendConversationId
+            )
           )
-        )
+        }
+        // Wait briefly then reload messages from server
+        setTimeout(async () => {
+          try {
+            const reloadRes = await fetch(`/api/conversations/${sendConversationId}`, { cache: 'no-store' })
+            if (reloadRes.ok) {
+              const reloadedMessages = await reloadRes.json()
+              if (Array.isArray(reloadedMessages) && reloadedMessages.length > 0) {
+                const hasAssistantResponse = reloadedMessages.some(
+                  (m: any) => m.role === 'assistant' && m.content && m.content.length > 50
+                )
+                if (hasAssistantResponse && selectedConversationIdRef.current === sendConversationId) {
+                  const processed = processLoadedMessages(reloadedMessages, { conversationId: sendConversationId, parseArtifacts: true })
+                  setMessages(processMessages(processed, sendConversationId))
+                  toast({ title: 'Response recovered', description: 'The AI did respond — loaded it for you.' })
+                  return
+                }
+              }
+            }
+          } catch { /* ignore reload failure */ }
+          // If reload didn't find a response, show the error
+          if (selectedConversationIdRef.current === sendConversationId) {
+            setMessages((prev) =>
+              processMessages(
+                prev.map((m) =>
+                  m.id === clientAssistantMessageId
+                    ? { ...m, content: 'Connection was interrupted. The response may still be processing — try refreshing or say "continue".' }
+                    : m
+                ),
+                sendConversationId
+              )
+            )
+          }
+        }, 3000)
+      } else {
+        const displayMessage = isTimeoutError
+          ? 'The response timed out. Try saying "continue" or asking for the next part.'
+          : `Sorry, something went wrong: ${error.message}`
+
+        if (selectedConversationIdRef.current === sendConversationId) {
+          setMessages((prev) =>
+            processMessages(
+              prev.map((m) =>
+                m.id === clientAssistantMessageId
+                  ? { ...m, content: displayMessage }
+                  : m
+              ),
+              sendConversationId
+            )
+          )
+        }
+        toast({
+          title: isTimeoutError ? 'Response timed out' : 'Error',
+          description: isTimeoutError
+            ? 'Say "continue" to get the rest of the response'
+            : (error.message || 'Failed to send message'),
+          variant: 'destructive',
+        })
       }
-      toast({
-        title: isTimeoutError ? 'Response timed out' : 'Error',
-        description: isTimeoutError
-          ? 'Say "continue" to get the rest of the response'
-          : (error.message || 'Failed to send message'),
-        variant: 'destructive',
-      })
     } finally {
       setIsLoading(false)
       setIsCreatingConversation(false)

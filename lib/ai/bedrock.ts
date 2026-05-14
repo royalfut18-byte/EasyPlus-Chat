@@ -131,7 +131,8 @@ export async function streamBedrockResponse(
       }
     })
 
-  const endpoint = `https://bedrock-runtime.${region}.amazonaws.com/model/${model.bedrockModelId}/converse`
+  const streamEndpoint = `https://bedrock-runtime.${region}.amazonaws.com/model/${model.bedrockModelId}/converse-stream`
+  const nonStreamEndpoint = `https://bedrock-runtime.${region}.amazonaws.com/model/${model.bedrockModelId}/converse`
 
   const finalSystemPrompt = systemPromptText || `You are ${model.name}, a helpful assistant.`
 
@@ -141,20 +142,86 @@ export async function streamBedrockResponse(
     },
   ]
 
-  const response = await fetch(endpoint, {
+  const requestBody = JSON.stringify({
+    messages: bedrockMessages,
+    system: systemPrompt,
+    inferenceConfig: {
+      maxTokens: 16384,
+      temperature,
+    },
+  })
+
+  // Try streaming endpoint first for real-time output
+  const streamResponse = await fetch(streamEndpoint, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${apiKey}`,
     },
-    body: JSON.stringify({
-      messages: bedrockMessages,
-      system: systemPrompt,
-      inferenceConfig: {
-        maxTokens: 16384,
-        temperature,
+    body: requestBody,
+  })
+
+  if (streamResponse.ok && streamResponse.body) {
+    console.log('[Bedrock] Using streaming endpoint')
+    const reader = streamResponse.body.getReader()
+    const decoder = new TextDecoder()
+
+    return new ReadableStream({
+      async pull(controller) {
+        try {
+          const { done, value } = await reader.read()
+          if (done) {
+            controller.close()
+            return
+          }
+
+          const chunk = decoder.decode(value, { stream: true })
+          // Bedrock converse-stream sends JSON events with contentBlockDelta
+          const lines = chunk.split('\n').filter(l => l.trim())
+          for (const line of lines) {
+            try {
+              // Bedrock stream format uses event framing - extract JSON payloads
+              if (line.startsWith('{')) {
+                const event = JSON.parse(line)
+                if (event.contentBlockDelta?.delta?.text) {
+                  controller.enqueue(new TextEncoder().encode(event.contentBlockDelta.delta.text))
+                }
+              }
+            } catch {
+              // Some chunks may be partial JSON or binary framing - try to extract text
+              const textMatch = chunk.match(/"text"\s*:\s*"((?:[^"\\]|\\.)*)"/g)
+              if (textMatch) {
+                for (const match of textMatch) {
+                  try {
+                    const parsed = JSON.parse(`{${match}}`)
+                    if (parsed.text) {
+                      controller.enqueue(new TextEncoder().encode(parsed.text))
+                    }
+                  } catch { /* skip unparseable */ }
+                }
+              }
+            }
+          }
+        } catch (err) {
+          controller.error(err)
+        }
       },
-    }),
+      cancel() {
+        reader.cancel()
+      },
+    })
+  }
+
+  // Fallback to non-streaming if stream endpoint fails
+  console.log('[Bedrock] Stream endpoint unavailable, falling back to non-stream')
+
+  const response = await fetch(nonStreamEndpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: requestBody,
   })
 
   if (!response.ok) {
