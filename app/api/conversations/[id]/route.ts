@@ -56,8 +56,9 @@ export async function GET(
       return String(a.id || '').localeCompare(String(b.id || ''))
     })
 
-    // Server-side cleanup: only remove stale empty/marker assistant messages
+    // Server-side cleanup: REQUEST-SCOPED marker removal
     // NEVER remove assistant messages that have real content (>20 chars, not a marker)
+    // Only remove markers when same request_id already has real content, or marker is stale
     const isServerMarker = (c: string) => MARKER_CONTENTS.has(c) || c.trim() === '...' || c.trim() === ''
     const isServerReal = (c: string) => c.trim().length > 20 && !MARKER_CONTENTS.has(c) && c.trim() !== '...'
 
@@ -99,12 +100,14 @@ export async function GET(
         return true
       }
 
-      // It's a marker/empty — remove if real content exists for same request
+      // It's a marker/empty — only remove if same request_id already has real content
       if (m.request_id && requestIdsWithContent.has(m.request_id)) return false
 
-      // Remove stale markers (>60s old)
-      const age = now - new Date(m.created_at || 0).getTime()
-      if (age > STALE_THRESHOLD_MS) return false
+      // Remove stale orphan markers (>60s old, no request_id match)
+      if (isServerMarker(content)) {
+        const age = now - new Date(m.created_at || 0).getTime()
+        if (age > STALE_THRESHOLD_MS) return false
+      }
 
       return true
     })

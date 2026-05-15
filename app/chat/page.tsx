@@ -351,6 +351,7 @@ export default function ChatPage() {
         const final = processMessages(processed, conversationId)
 
         // Check for generating messages — but only poll if RECENTLY generating (not stale)
+        // IMPORTANT: Only touch the ONE generating message, never modify/remove other messages
         const generatingMsg = final.find(m => m.role === 'assistant' && m.status === 'generating')
         const STALE_THRESHOLD = 60_000 // 60 seconds
 
@@ -369,34 +370,19 @@ export default function ChatPage() {
               m.id === generatingMsg.id ? { ...m, status: 'completed' as const, statusLabel: null } : m
             ))
           } else if (isStale) {
-            // Stale generating with no real content — show interrupted state
+            // Stale generating with no real content — show interrupted state for THIS message only
             setMessages(final.map(m =>
               m.id === generatingMsg.id
                 ? { ...m, content: 'Response interrupted. You can retry this message.', status: 'error' as const, statusLabel: null }
                 : m
-            ).filter(m => {
-              // Also remove any marker duplicates
-              if (m.role === 'assistant' && m.id !== generatingMsg.id &&
-                (m.content === ARTIFACT_LOADING_MARKER || m.content === ASSISTANT_LOADING_MARKER ||
-                 m.content === LONG_TASK_LOADING_MARKER || m.content === '__RECOVERY_POLLING__')) {
-                return false
-              }
-              return true
-            }))
+            ))
           } else {
-            // Actively generating (< 60s old) — show recovery UI and poll
-            const updatedFinal = final
-              .filter(m => {
-                const isMarker = m.content === ARTIFACT_LOADING_MARKER || m.content === ASSISTANT_LOADING_MARKER || m.content === LONG_TASK_LOADING_MARKER || m.content === '__RECOVERY_POLLING__'
-                if (m.role === 'assistant' && m.id !== generatingMsg.id && isMarker &&
-                    m.request_id === generatingMsg.request_id) return false
-                return true
-              })
-              .map(m =>
-                m.id === generatingMsg.id && (!m.content || m.content.length < 10)
-                  ? { ...m, content: '__RECOVERY_POLLING__', statusLabel: 'Reconnecting and recovering response...' }
-                  : m
-              )
+            // Actively generating (< 60s old) — show recovery UI for THIS message only and poll
+            const updatedFinal = final.map(m =>
+              m.id === generatingMsg.id && (!m.content || m.content.length < 10)
+                ? { ...m, content: '__RECOVERY_POLLING__', statusLabel: 'Reconnecting and recovering response...' }
+                : m
+            )
             setMessages(updatedFinal)
 
             // Poll — but with a hard 2-minute cap (not 5 minutes)
@@ -416,20 +402,18 @@ export default function ChatPage() {
                   const data = await res.json()
                   if (data.found && data.content && data.content.length > 10 && !['__RECOVERY_POLLING__', '__ASSISTANT_LOADING__', '__LONG_TASK_LOADING__', '__ARTIFACT_LOADING__'].includes(data.content)) {
                     if (selectedConversationIdRef.current === conversationId) {
-                      setMessages(prev => processMessages(
-                        prev.map(m => m.id === generatingMsg.id ? { ...m, content: data.content, status: 'completed' as const, statusLabel: null } : m),
-                        conversationId
+                      setMessages(prev => prev.map(m =>
+                        m.id === generatingMsg.id ? { ...m, content: data.content, status: 'completed' as const, statusLabel: null } : m
                       ))
                     }
                     return
                   }
                   if (data.status === 'error') {
                     if (selectedConversationIdRef.current === conversationId) {
-                      setMessages(prev => processMessages(
-                        prev.map(m => m.id === generatingMsg.id
+                      setMessages(prev => prev.map(m =>
+                        m.id === generatingMsg.id
                           ? { ...m, content: 'Response interrupted. You can retry this message.', status: 'error' as const, statusLabel: null }
-                          : m),
-                        conversationId
+                          : m
                       ))
                     }
                     return
@@ -438,11 +422,10 @@ export default function ChatPage() {
               }
               // Polling exhausted — show retry state
               if (selectedConversationIdRef.current === conversationId) {
-                setMessages(prev => processMessages(
-                  prev.map(m => m.id === generatingMsg.id
+                setMessages(prev => prev.map(m =>
+                  m.id === generatingMsg.id
                     ? { ...m, content: 'Response interrupted. You can retry this message.', status: 'error' as const, statusLabel: null }
-                    : m),
-                  conversationId
+                    : m
                 ))
               }
             }

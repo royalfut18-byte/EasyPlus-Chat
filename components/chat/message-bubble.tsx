@@ -60,8 +60,9 @@ export function MessageBubble({ role, content, model, onRegenerate, attachments,
   const modelData = model ? AI_MODELS.find((m) => m.id === model) : null
   const rawContent = content || ''
 
-  // If content is a stale marker/empty from DB (no statusLabel), don't render this bubble at all
-  const isStaleMarker = !isUser && !statusLabel && (
+  // If content is ONLY a marker/empty from DB (no statusLabel and no real text), don't render
+  // NEVER hide a message that has real content (>20 chars non-marker)
+  const isOnlyMarker = !isUser && !statusLabel && (
     rawContent === ARTIFACT_LOADING_MARKER ||
     rawContent === ASSISTANT_LOADING_MARKER ||
     rawContent === LONG_TASK_LOADING_MARKER ||
@@ -69,7 +70,7 @@ export function MessageBubble({ role, content, model, onRegenerate, attachments,
     rawContent.trim() === '...' ||
     rawContent.trim() === ''
   )
-  if (isStaleMarker) return null
+  if (isOnlyMarker) return null
 
   const safeContent = !isUser ? cleanAssistantText(rawContent) : rawContent
 

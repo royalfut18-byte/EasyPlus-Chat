@@ -121,18 +121,18 @@ export function dedupeMessages(messages: Message[]): Message[] {
       if (best && best.id !== msg.id) continue // Skip non-best
     }
 
-    // Remove loading markers if a real completed message exists for same request
+    // Remove loading markers if a real completed message exists for the SAME request_id
     // But never remove active generating placeholders — those are live thinking bubbles
     if (msg.role === 'assistant' && LOADING_MARKERS.has(msg.content || '') && msg.status !== 'generating') {
-      // Check if there's already a real response in result for same request or conversation
-      const hasRealResponse = result.some(existing =>
-        existing.role === 'assistant' &&
-        existing.conversation_id === msg.conversation_id &&
-        !LOADING_MARKERS.has(existing.content || '') &&
-        existing.content && existing.content.length > 10 &&
-        Math.abs(new Date(existing.created_at || 0).getTime() - new Date(msg.created_at || 0).getTime()) < 300000
-      )
-      if (hasRealResponse) continue
+      if (msg.request_id) {
+        const hasRealForSameRequest = result.some(existing =>
+          existing.role === 'assistant' &&
+          existing.request_id === msg.request_id &&
+          !LOADING_MARKERS.has(existing.content || '') &&
+          existing.content && existing.content.length > 10
+        )
+        if (hasRealForSameRequest) continue
+      }
     }
 
     // Check for likely duplicates: same conversation, role, content within 5 minutes
@@ -226,18 +226,13 @@ function repairMessageOrder(messages: Message[]): Message[] {
 
 /**
  * Remove stale loading markers and stale generating messages.
- * A marker is stale if:
- * - A real assistant response exists for the same request_id
- * - A real assistant response exists nearby (within 5 minutes)
- * - The message has status=generating but is older than 60 seconds
+ * REQUEST-SCOPED: only removes a marker if a real response exists for the SAME request_id.
+ * Never removes markers just because another assistant message elsewhere has content.
  */
 function removeStaleMarkers(messages: Message[]): Message[] {
   if (messages.length < 2) return messages
 
   const requestIdsWithContent = new Set<string>()
-  const hasAnyRealAssistant = messages.some(
-    m => m.role === 'assistant' && isRealContent(m.content)
-  )
 
   for (const msg of messages) {
     if (msg.role === 'assistant' && msg.request_id && isRealContent(msg.content)) {
@@ -245,27 +240,55 @@ function removeStaleMarkers(messages: Message[]): Message[] {
     }
   }
 
-  return messages.filter(msg => {
+  const removed: Array<{ id: string; reason: string }> = []
+
+  const result = messages.filter(msg => {
     if (msg.role !== 'assistant') return true
 
     const content = msg.content || ''
 
+    // NEVER remove assistant messages with real content
+    if (isRealContent(content)) return true
+
     // Filter out marker-only messages (includes "...")
     if (isMarkerContent(content)) {
-      if (msg.request_id && requestIdsWithContent.has(msg.request_id)) return false
-      if (isStaleGenerating(msg)) return false
-      if (hasAnyRealAssistant && msg.status !== 'generating') return false
-      if (msg.status === 'generating' && isStaleGenerating(msg)) return false
+      // Same request already has real content — this is a leftover placeholder
+      if (msg.request_id && requestIdsWithContent.has(msg.request_id)) {
+        removed.push({ id: msg.id, reason: 'request_id has real content' })
+        return false
+      }
+      // Stale generating (>60s) with no real content
+      if (isStaleGenerating(msg)) {
+        removed.push({ id: msg.id, reason: 'stale generating marker' })
+        return false
+      }
+      // Active generating placeholder — keep it
+      if (msg.status === 'generating') return true
+      // Non-generating marker with no request_id and old (>60s) — likely orphan
+      if (!msg.request_id && !msg.status) {
+        const age = Date.now() - new Date(msg.updated_at || msg.created_at || 0).getTime()
+        if (age > STALE_GENERATING_THRESHOLD_MS) {
+          removed.push({ id: msg.id, reason: 'orphan marker >60s' })
+          return false
+        }
+      }
       return true
     }
 
-    // Filter empty/short assistant messages that are stale
+    // Short/empty assistant messages that are stale generating — remove
     if (!isRealContent(content) && isStaleGenerating(msg)) {
+      removed.push({ id: msg.id, reason: 'stale generating short content' })
       return false
     }
 
     return true
   })
+
+  if (process.env.NODE_ENV !== 'production' && removed.length > 0) {
+    console.log('[Chat] removeStaleMarkers removed:', removed)
+  }
+
+  return result
 }
 
 /**
@@ -309,16 +332,31 @@ export function processLoadedMessages(
   const cleaned = removeStaleMarkers(sorted)
 
   if (process.env.NODE_ENV !== 'production') {
-    const markerCount = sorted.filter(m => m.role === 'assistant' && isMarkerContent(m.content)).length
-    const staleCount = sorted.filter(m => m.role === 'assistant' && m.status === 'generating' && isStaleGenerating(m)).length
-    const realCount = sorted.filter(m => m.role === 'assistant' && isRealContent(m.content)).length
-    if (markerCount > 0 || staleCount > 0) {
-      console.log('[Chat] processLoadedMessages cleanup:', {
-        total: sorted.length,
-        markers: markerCount,
-        staleGenerating: staleCount,
-        realAssistant: realCount,
-        afterCleanup: cleaned.length,
+    const conversationId = options?.conversationId || 'unknown'
+    const realAssistantMessages = cleaned.filter(m => m.role === 'assistant' && isRealContent(m.content))
+    const generatingMessages = cleaned.filter(m => m.role === 'assistant' && m.status === 'generating')
+    const removedMessages = sorted.filter(m => !cleaned.includes(m))
+
+    console.log('[Chat] processLoadedMessages:', {
+      conversationId,
+      totalRaw: messages.length,
+      totalCleaned: cleaned.length,
+      realAssistantKept: realAssistantMessages.length,
+      generatingKept: generatingMessages.length,
+    })
+
+    for (const removed of removedMessages) {
+      const isReal = isRealContent(removed.content)
+      const logFn = isReal ? console.error : console.log
+      logFn('[Chat] Message removed:', {
+        id: removed.id,
+        role: removed.role,
+        request_id: removed.request_id || null,
+        parent_message_id: (removed as any).parent_message_id || null,
+        contentPreview: (removed.content || '').slice(0, 40),
+        isRealContent: isReal,
+        status: removed.status,
+        reason: isReal ? 'ERROR: Real assistant message removed!' : 'marker/stale',
       })
     }
   }
