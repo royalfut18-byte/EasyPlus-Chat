@@ -787,6 +787,7 @@ export default function ChatPage() {
       created_at: assistantCreatedAt,
       request_id: requestId,
       client_message_id: clientAssistantMessageId,
+      status: 'generating',
       statusLabel: initialStatusLabel,
     }
 
