@@ -15,6 +15,8 @@ import {
   saveMemory,
   deleteMemoryByContent,
 } from '@/lib/ai/memory'
+import { buildContext, formatContextForPrompt } from '@/lib/ai/context-builder'
+import { shouldUpdateSummary, updateConversationSummary, chunkLongMessage, saveAttachmentMemory } from '@/lib/ai/conversation-summary'
 import { isLongTaskRequest, LONG_TASK_SYSTEM_ADDENDUM } from '@/lib/ai/long-task'
 import { AI_MODELS } from '@/types/models'
 import type { ChatMessage } from '@/types/models'
@@ -215,7 +217,7 @@ export async function POST(request: NextRequest) {
     let cleanedMessages = messages
       .filter((m: ChatMessage) => m.role === 'user' || m.role === 'assistant')
       .filter((m: ChatMessage) => m.content && !isLoadingMarker(m.content))
-      .slice(-16)
+      .slice(-20)
 
     if (cleanedMessages.length === 0) {
       return NextResponse.json({ error: 'No valid messages to process' }, { status: 400 })
@@ -338,14 +340,33 @@ RULES FOR USING THESE RESULTS:
       messagesToSend = [...messagesToSend.slice(0, -1), historyInstruction, latestUserMessage] as ChatMessage[]
     }
 
-    // Stage: Memory (fetch only - save/delete deferred to not block AI call)
+    // Stage: Memory & Context Building
     stage = 'memory'
     let memoryContext = ''
+    let fullContextPrompt = ''
     let memorySaveResult: { saved: boolean; memoryText?: string } | null = null
 
     try {
-      const memories = await getUserMemories(db, user.id, latestUserMessage.content)
-      memoryContext = formatMemoriesForPrompt(memories)
+      // Build comprehensive context from conversation history, memories, and attachments
+      if (conversationId) {
+        const modelData = AI_MODELS.find(m => m.id === validatedModel)
+        const builtContext = await buildContext(db, {
+          userId: user.id,
+          conversationId,
+          latestUserMessage: latestUserMessage.content,
+          modelProvider: modelData?.provider || 'anthropic',
+          maxTokenBudget: 24000,
+          currentMessages: cleanedMessages,
+          includeUserMemories: true,
+        })
+        fullContextPrompt = formatContextForPrompt(builtContext)
+
+        console.log('[Chat API] Context built:', builtContext.debugInfo)
+      } else {
+        // No conversation yet — just load user memories
+        const memories = await getUserMemories(db, user.id, latestUserMessage.content)
+        memoryContext = formatMemoriesForPrompt(memories)
+      }
 
       // Defer memory save/delete - fire-and-forget after getting context
       if (shouldExtractMemory(latestUserMessage.content)) {
@@ -365,7 +386,7 @@ RULES FOR USING THESE RESULTS:
         })
       }
     } catch (memErr: any) {
-      console.warn('[Chat API] Memory non-fatal error:', memErr.message)
+      console.warn('[Chat API] Memory/context non-fatal error:', memErr.message)
     }
 
     // Stage: Route to provider
@@ -393,7 +414,7 @@ RULES FOR USING THESE RESULTS:
       webSearchFailed,
       artifactMode: artifactMode || false,
       hasSearchResults,
-      memoryContext,
+      memoryContext: fullContextPrompt || memoryContext,
     })
 
     if (longTask) {
@@ -631,6 +652,37 @@ RULES FOR USING THESE RESULTS:
               await db.from('conversations')
                 .update({ updated_at: new Date().toISOString() })
                 .eq('id', conversationId)
+
+              // Background: update conversation summary and save attachment memories
+              // Fire-and-forget to not block response delivery
+              ;(async () => {
+                try {
+                  // Update rolling summary if enough messages have accumulated
+                  const needsSummary = await shouldUpdateSummary(db, conversationId!, user.id)
+                  if (needsSummary) {
+                    await updateConversationSummary(db, conversationId!, user.id, finalContent)
+                  }
+
+                  // Chunk long user messages for future retrieval
+                  if (latestUserMessage.content.length > 1500 && savedUserMessageId) {
+                    await chunkLongMessage(db, user.id, conversationId!, savedUserMessageId, latestUserMessage.content, 'message')
+                  }
+
+                  // Save attachment context for future retrieval
+                  if (userMessage.attachments && userMessage.attachments.length > 0 && savedUserMessageId) {
+                    for (const att of userMessage.attachments) {
+                      await saveAttachmentMemory(db, user.id, conversationId!, savedUserMessageId, {
+                        name: att.name || 'unknown',
+                        type: att.type || 'document',
+                        mimeType: att.mimeType,
+                        textContent: att.textContent || extractedDocTexts.get(att.name) || undefined,
+                      })
+                    }
+                  }
+                } catch (bgErr: any) {
+                  console.error('[Chat API] Background memory update failed:', bgErr.message)
+                }
+              })()
             } catch (saveError: any) {
               console.error('[Chat API] CRITICAL: Final save exception:', saveError.message, { assistantMessageId, requestId, contentLength: finalContent.length })
               // Last resort retry
@@ -675,6 +727,10 @@ RULES FOR USING THESE RESULTS:
 
     if (memorySaveResult?.saved) {
       responseHeaders['X-Memory-Saved'] = 'true'
+    }
+
+    if (fullContextPrompt) {
+      responseHeaders['X-Context-Loaded'] = 'true'
     }
 
     if (longTask) {

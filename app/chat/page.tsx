@@ -801,7 +801,7 @@ export default function ChatPage() {
         .filter(m => m.conversation_id === sendConversationId) // Only same conversation
         .filter(m => m.role === 'user' || m.role === 'assistant')
         .filter(m => m.content && !isLoadingMarker(m.content)) // Exclude empty and loading markers
-        .slice(-16) // Last 16 messages for context
+        .slice(-20) // Last 20 messages for context
 
       const messagesToSend = [...contextMessages, userMessage].map((m, idx, arr) => ({
         role: m.role,

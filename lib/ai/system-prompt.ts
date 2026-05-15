@@ -87,7 +87,9 @@ Use clean markdown. Do not output broken formatting.`
   if (memoryContext) {
     prompt += `
 
-${memoryContext}`
+${memoryContext}
+
+When conversation context, memories, or file summaries are provided above, use them to maintain continuity. If the user references something from earlier (a file, image, instruction, or topic), answer using the provided context. Never claim you cannot remember what happened earlier in the conversation if context is available.`
   }
 
   if (artifactMode) {
