@@ -89,7 +89,14 @@ Use clean markdown. Do not output broken formatting.`
 
 ${memoryContext}
 
-When conversation context, memories, or file summaries are provided above, use them to maintain continuity. If the user references something from earlier (a file, image, instruction, or topic), answer using the provided context. Never claim you cannot remember what happened earlier in the conversation if context is available.`
+MEMORY AND CONTEXT INSTRUCTIONS:
+- The context sections above contain real information from this user's conversations and saved memories.
+- When the user asks "what do you know about..." or "what do you remember about..." — answer using ALL context provided above.
+- NEVER say "I don't have access to previous conversations" or "I don't have any stored information" if ANY context sections above contain relevant information.
+- If the user references something from earlier (a file, image, instruction, or topic), answer using the provided context.
+- Summarize what you know from the context naturally. Be specific about what information is available.
+- If context is partial or incomplete, say what you do know and note what may be missing.
+- Only say you lack information if NONE of the context sections above contain anything relevant to the user's question.`
   }
 
   if (artifactMode) {

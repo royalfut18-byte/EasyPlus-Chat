@@ -76,6 +76,7 @@ function extractKeyPoints(messages: MessageRow[]): {
   tasks: string[]
   decisions: string[]
   uploads: string[]
+  topics: string[]
 } {
   const userMessages = messages.filter(m => m.role === 'user')
   const assistantMessages = messages.filter(m => m.role === 'assistant')
@@ -130,7 +131,46 @@ function extractKeyPoints(messages: MessageRow[]): {
     }
   }
 
-  return { purpose, summary, tasks: tasks.slice(0, 5), decisions: decisions.slice(0, 5), uploads: uploads.slice(0, 10) }
+  // Extract topics/subjects from the conversation
+  const topics: string[] = []
+  const allContent = messages.map(m => m.content).join(' ').toLowerCase()
+
+  // Detect school/study subjects
+  const subjectPatterns = [
+    { pattern: /\b(hsc|higher school certificate)\b/i, topic: 'HSC' },
+    { pattern: /\b(english\s*advanced|advanced\s*english)\b/i, topic: 'HSC English Advanced' },
+    { pattern: /\b(module\s*[a-d]|mod\s*[a-d])\b/i, topic: null },
+    { pattern: /\b(king\s*richard\s*(iii|3|III)?|richard\s*(iii|3|III))\b/i, topic: 'King Richard III (Shakespeare)' },
+    { pattern: /\b(looking\s*for\s*richard)\b/i, topic: 'Looking for Richard (Pacino)' },
+    { pattern: /\b(band\s*[56])\b/i, topic: null },
+    { pattern: /\b(essay|thesis|body paragraph|introduction|conclusion)\b/i, topic: null },
+    { pattern: /\b(comparative|comparison|intertextual)\b/i, topic: null },
+    { pattern: /\b(textual\s*conversation|appropriation)\b/i, topic: 'Textual Conversations (Module A)' },
+    { pattern: /\b(mathematics|maths?\s*(advanced|extension|standard))\b/i, topic: null },
+    { pattern: /\b(physics|chemistry|biology)\b/i, topic: null },
+  ]
+
+  for (const { pattern, topic } of subjectPatterns) {
+    const match = allContent.match(pattern)
+    if (match) {
+      if (topic) {
+        topics.push(topic)
+      } else {
+        topics.push(match[0].trim())
+      }
+    }
+  }
+
+  // Detect specific study-related themes from user messages
+  const userContent = userMessages.map(m => m.content).join(' ')
+  if (userContent.length > 50) {
+    const topicSummary = summarizeText(userContent, 200)
+    if (topicSummary && !tasks.length && !decisions.length) {
+      topics.push(topicSummary)
+    }
+  }
+
+  return { purpose, summary, tasks: tasks.slice(0, 5), decisions: decisions.slice(0, 5), uploads: uploads.slice(0, 10), topics: [...new Set(topics)].slice(0, 5) }
 }
 
 async function processConversation(
@@ -143,9 +183,19 @@ async function processConversation(
 
   // Skip if already processed (unless force)
   if (!options.force && conversation.last_context_refresh_at && conversation.rolling_summary) {
-    progress.skipped++
-    log(progress, `Skipped ${conversationId} (already processed)`)
-    return
+    // Check if memories actually exist - if not, re-process
+    const { count: memCount } = await db
+      .from('conversation_memories')
+      .select('*', { count: 'exact', head: true })
+      .eq('conversation_id', conversationId)
+      .eq('user_id', userId)
+
+    if ((memCount || 0) > 0) {
+      progress.skipped++
+      log(progress, `Skipped ${conversationId} (already has ${memCount} memories)`)
+      return
+    }
+    log(progress, `Re-processing ${conversationId} (had summary but 0 memories)`)
   }
 
   // Load all messages
@@ -186,7 +236,11 @@ async function processConversation(
   const keyPoints = extractKeyPoints(validMessages)
 
   if (options.dryRun) {
-    log(progress, `[DRY RUN] Would process ${conversationId}: ${validMessages.length} msgs, purpose="${keyPoints.purpose.substring(0, 60)}"`)
+    const longMsgs = validMessages.filter(m => m.content.length >= CHUNK_SIZE).length
+    log(progress, `[DRY RUN] Would process ${conversationId}: ${validMessages.length} msgs, ${keyPoints.tasks.length} tasks, ${keyPoints.decisions.length} decisions, ${keyPoints.topics.length} topics, ${longMsgs} chunkable msgs, purpose="${keyPoints.purpose.substring(0, 60)}"`)
+    progress.memoriesCreated += keyPoints.tasks.length + keyPoints.decisions.length + keyPoints.topics.length + keyPoints.uploads.length
+    progress.chunksCreated += longMsgs
+    progress.summariesGenerated++
     progress.processed++
     return
   }
@@ -290,6 +344,34 @@ async function processConversation(
     })
   }
 
+  // Topic/subject memories (conversation-scoped for cross-conversation search)
+  for (const topic of keyPoints.topics) {
+    if (existingContents.has(topic.substring(0, 50))) continue
+    if (memoriesToInsert.length >= MAX_MEMORIES_PER_CONVERSATION) break
+    memoriesToInsert.push({
+      user_id: userId,
+      conversation_id: conversationId,
+      scope: 'conversation',
+      title: 'Topic discussed',
+      content: topic,
+      importance: 4,
+      metadata: { backfill_version: BACKFILL_VERSION },
+    })
+  }
+
+  // If no specific memories were extracted but we have valid content, create a general one
+  if (memoriesToInsert.length === 0 && keyPoints.purpose) {
+    memoriesToInsert.push({
+      user_id: userId,
+      conversation_id: conversationId,
+      scope: 'conversation',
+      title: 'Conversation topic',
+      content: keyPoints.purpose.substring(0, 250),
+      importance: 3,
+      metadata: { backfill_version: BACKFILL_VERSION },
+    })
+  }
+
   if (memoriesToInsert.length > 0) {
     const { error: memInsertErr } = await db
       .from('conversation_memories')
@@ -299,6 +381,40 @@ async function processConversation(
       log(progress, `Memory insert error for ${conversationId}: ${memInsertErr.message}`)
     } else {
       progress.memoriesCreated += memoriesToInsert.length
+    }
+  }
+
+  // Also create user_memories for important topics (cross-conversation retrieval)
+  if (keyPoints.purpose && keyPoints.topics.length > 0) {
+    try {
+      const topicSummary = keyPoints.topics.join(', ') + ': ' + keyPoints.purpose.substring(0, 200)
+
+      // Check if a similar user_memory already exists
+      const { data: existingUserMems } = await db
+        .from('user_memories')
+        .select('id, memory_text')
+        .eq('user_id', userId)
+        .limit(50)
+
+      const existingTexts = (existingUserMems || []).map((m: any) => m.memory_text.toLowerCase())
+      const alreadyExists = existingTexts.some((t: string) =>
+        keyPoints.topics.some(topic => t.includes(topic.toLowerCase().substring(0, 20)))
+      )
+
+      if (!alreadyExists && topicSummary.length >= 10) {
+        await db.from('user_memories').insert({
+          user_id: userId,
+          memory_text: topicSummary.substring(0, 500),
+          category: 'project',
+          importance: 4,
+          source_conversation_id: conversationId,
+        })
+      }
+    } catch (e: any) {
+      // Non-fatal: user_memories table might not exist
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('[Backfill] user_memories insert skipped:', e.message)
+      }
     }
   }
 

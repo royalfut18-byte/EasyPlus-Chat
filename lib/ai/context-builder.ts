@@ -18,11 +18,13 @@ export interface BuiltContext {
   userMemories: string[]
   conversationMemories: string[]
   relevantChunks: string[]
+  crossConversationContext: string[]
   debugInfo: {
     recentMessagesCount: number
     memoriesCount: number
     chunksCount: number
     attachmentSummariesCount: number
+    crossConversationCount: number
     estimatedTokens: number
     provider: string
   }
@@ -33,6 +35,32 @@ const DEFAULT_TOKEN_BUDGET = 24000
 
 function estimateTokens(text: string): number {
   return Math.ceil(text.length / APPROX_CHARS_PER_TOKEN)
+}
+
+function extractSearchKeywords(message: string): string[] {
+  const lower = message.toLowerCase()
+  const words = lower.split(/\s+/).filter(w => w.length > 2)
+
+  const stopWords = new Set([
+    'the', 'and', 'for', 'are', 'but', 'not', 'you', 'all', 'can', 'her',
+    'was', 'one', 'our', 'out', 'has', 'had', 'his', 'how', 'its', 'may',
+    'who', 'did', 'get', 'has', 'him', 'let', 'say', 'she', 'too', 'use',
+    'what', 'know', 'about', 'that', 'this', 'with', 'have', 'from', 'they',
+    'been', 'will', 'more', 'when', 'some', 'them', 'than', 'very', 'your',
+    'tell', 'remember', 'anything', 'something', 'could', 'would', 'should',
+    'does', 'there',
+  ])
+
+  const filtered = words.filter(w => !stopWords.has(w) && w.length > 2)
+
+  const bigrams: string[] = []
+  for (let i = 0; i < words.length - 1; i++) {
+    if (!stopWords.has(words[i]) || !stopWords.has(words[i + 1])) {
+      bigrams.push(`${words[i]} ${words[i + 1]}`)
+    }
+  }
+
+  return [...filtered, ...bigrams].slice(0, 10)
 }
 
 export async function buildContext(
@@ -56,11 +84,13 @@ export async function buildContext(
     userMemories: [],
     conversationMemories: [],
     relevantChunks: [],
+    crossConversationContext: [],
     debugInfo: {
       recentMessagesCount: 0,
       memoriesCount: 0,
       chunksCount: 0,
       attachmentSummariesCount: 0,
+      crossConversationCount: 0,
       estimatedTokens: 0,
       provider: modelProvider,
     },
@@ -189,15 +219,13 @@ export async function buildContext(
   }
 
   // 5. Load relevant memory chunks (keyword-match against latest message)
-  try {
-    const keywords = latestUserMessage
-      .toLowerCase()
-      .split(/\s+/)
-      .filter(w => w.length > 3)
-      .slice(0, 5)
+  // Search BOTH same-conversation and cross-conversation chunks
+  const keywords = extractSearchKeywords(latestUserMessage)
 
+  try {
     if (keywords.length > 0) {
-      const { data: chunks } = await db
+      // First: same-conversation chunks
+      const { data: sameConvChunks } = await db
         .from('memory_chunks')
         .select('content, summary, source_type')
         .eq('conversation_id', conversationId)
@@ -205,16 +233,30 @@ export async function buildContext(
         .order('created_at', { ascending: false })
         .limit(20)
 
-      if (chunks && chunks.length > 0) {
-        const scored = chunks
+      // Second: cross-conversation chunks (different conversations, same user)
+      const { data: crossConvChunks } = await db
+        .from('memory_chunks')
+        .select('content, summary, source_type, conversation_id')
+        .eq('user_id', userId)
+        .neq('conversation_id', conversationId)
+        .order('created_at', { ascending: false })
+        .limit(40)
+
+      const allChunks = [...(sameConvChunks || []), ...(crossConvChunks || [])]
+
+      if (allChunks.length > 0) {
+        const scored = allChunks
           .map(chunk => {
             const text = (chunk.summary || chunk.content).toLowerCase()
-            const matchCount = keywords.filter(kw => text.includes(kw)).length
+            let matchCount = 0
+            for (const kw of keywords) {
+              if (text.includes(kw)) matchCount++
+            }
             return { chunk, score: matchCount }
           })
           .filter(s => s.score > 0)
           .sort((a, b) => b.score - a.score)
-          .slice(0, 5)
+          .slice(0, 8)
 
         for (const { chunk } of scored) {
           if (remainingBudget < 300) break
@@ -234,7 +276,95 @@ export async function buildContext(
     }
   }
 
-  // 6. Load user-level memories (cross-conversation)
+  // 6. Cross-conversation memory search
+  // Search conversation_memories and conversation summaries from OTHER conversations
+  try {
+    if (keywords.length > 0 && remainingBudget > 1000) {
+      // Search conversation_memories across ALL user conversations (not just current)
+      const { data: crossMemories } = await db
+        .from('conversation_memories')
+        .select('title, content, scope, importance, conversation_id')
+        .eq('user_id', userId)
+        .neq('conversation_id', conversationId)
+        .order('importance', { ascending: false })
+        .order('created_at', { ascending: false })
+        .limit(50)
+
+      if (crossMemories && crossMemories.length > 0) {
+        const scored = crossMemories
+          .map(mem => {
+            const text = `${mem.title || ''} ${mem.content}`.toLowerCase()
+            let matchCount = 0
+            for (const kw of keywords) {
+              if (text.includes(kw)) matchCount++
+            }
+            return { mem, score: matchCount + (mem.importance || 0) * 0.5 }
+          })
+          .filter(s => s.score > 1)
+          .sort((a, b) => b.score - a.score)
+          .slice(0, 8)
+
+        for (const { mem } of scored) {
+          if (remainingBudget < 200) break
+          const entry = mem.title ? `${mem.title}: ${mem.content}` : mem.content
+          const tokens = estimateTokens(entry)
+          if (tokens < remainingBudget) {
+            result.crossConversationContext.push(entry)
+            remainingBudget -= tokens
+          }
+        }
+      }
+
+      // Also search conversation purpose_summary and rolling_summary from other conversations
+      if (remainingBudget > 500) {
+        const { data: otherConvs } = await db
+          .from('conversations')
+          .select('id, title, purpose_summary, rolling_summary')
+          .eq('user_id', userId)
+          .neq('id', conversationId)
+          .not('purpose_summary', 'is', null)
+          .order('updated_at', { ascending: false })
+          .limit(30)
+
+        if (otherConvs && otherConvs.length > 0) {
+          const scoredConvs = otherConvs
+            .map(conv => {
+              const text = `${conv.title || ''} ${conv.purpose_summary || ''} ${conv.rolling_summary || ''}`.toLowerCase()
+              let matchCount = 0
+              for (const kw of keywords) {
+                if (text.includes(kw)) matchCount++
+              }
+              return { conv, score: matchCount }
+            })
+            .filter(s => s.score > 1)
+            .sort((a, b) => b.score - a.score)
+            .slice(0, 5)
+
+          for (const { conv } of scoredConvs) {
+            if (remainingBudget < 300) break
+            const parts: string[] = []
+            if (conv.title) parts.push(`Topic: ${conv.title}`)
+            if (conv.purpose_summary) parts.push(conv.purpose_summary)
+            if (conv.rolling_summary) parts.push(conv.rolling_summary.substring(0, 400))
+            const entry = parts.join(' — ')
+            const tokens = estimateTokens(entry)
+            if (tokens < remainingBudget) {
+              result.crossConversationContext.push(entry)
+              remainingBudget -= tokens
+            }
+          }
+        }
+      }
+
+      result.debugInfo.crossConversationCount = result.crossConversationContext.length
+    }
+  } catch (e: any) {
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('[ContextBuilder] Cross-conversation search skipped:', e.message)
+    }
+  }
+
+  // 7. Load user-level memories (cross-conversation)
   if (includeUserMemories) {
     try {
       const { data: userMems } = await db
@@ -302,9 +432,150 @@ export function formatContextForPrompt(context: BuiltContext): string {
     sections.push(`RELEVANT EARLIER CONTENT:\n${context.relevantChunks.join('\n---\n')}`)
   }
 
+  if (context.crossConversationContext.length > 0) {
+    sections.push(`RELEVANT CONTEXT FROM USER'S PREVIOUS CONVERSATIONS:\nThe following information was found in the user's earlier conversations and is relevant to their current question. Use it to provide continuity.\n${context.crossConversationContext.map(m => `- ${m}`).join('\n')}`)
+  }
+
   if (context.userMemories.length > 0) {
     sections.push(`LONG-TERM MEMORY (about this user):\nThe following are facts previously saved about this user. Use them to personalize your responses when relevant. Do not mention that you have a memory system unless the user asks.\n${context.userMemories.map(m => `- ${m}`).join('\n')}`)
   }
 
   return sections.join('\n\n')
+}
+
+export async function searchCrossConversationContext(
+  db: SupabaseClient,
+  userId: string,
+  latestMessage: string
+): Promise<string | null> {
+  try {
+    const keywords = extractSearchKeywords(latestMessage)
+    if (keywords.length === 0) return null
+
+    const sections: string[] = []
+    let tokenBudget = 4000
+
+    // Search conversation_memories across all user conversations
+    const { data: crossMemories } = await db
+      .from('conversation_memories')
+      .select('title, content, scope, importance')
+      .eq('user_id', userId)
+      .order('importance', { ascending: false })
+      .order('created_at', { ascending: false })
+      .limit(50)
+
+    if (crossMemories && crossMemories.length > 0) {
+      const scored = crossMemories
+        .map(mem => {
+          const text = `${mem.title || ''} ${mem.content}`.toLowerCase()
+          let matchCount = 0
+          for (const kw of keywords) {
+            if (text.includes(kw)) matchCount++
+          }
+          return { mem, score: matchCount + (mem.importance || 0) * 0.5 }
+        })
+        .filter(s => s.score > 1)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 8)
+
+      const memEntries: string[] = []
+      for (const { mem } of scored) {
+        const entry = mem.title ? `${mem.title}: ${mem.content}` : mem.content
+        const tokens = estimateTokens(entry)
+        if (tokens > tokenBudget) break
+        memEntries.push(`- ${entry}`)
+        tokenBudget -= tokens
+      }
+      if (memEntries.length > 0) {
+        sections.push(`RELEVANT CONTEXT FROM PREVIOUS CONVERSATIONS:\n${memEntries.join('\n')}`)
+      }
+    }
+
+    // Search conversation summaries
+    if (tokenBudget > 500) {
+      const { data: convs } = await db
+        .from('conversations')
+        .select('title, purpose_summary, rolling_summary')
+        .eq('user_id', userId)
+        .not('purpose_summary', 'is', null)
+        .order('updated_at', { ascending: false })
+        .limit(30)
+
+      if (convs && convs.length > 0) {
+        const scoredConvs = convs
+          .map(conv => {
+            const text = `${conv.title || ''} ${conv.purpose_summary || ''} ${conv.rolling_summary || ''}`.toLowerCase()
+            let matchCount = 0
+            for (const kw of keywords) {
+              if (text.includes(kw)) matchCount++
+            }
+            return { conv, score: matchCount }
+          })
+          .filter(s => s.score > 1)
+          .sort((a, b) => b.score - a.score)
+          .slice(0, 5)
+
+        const convEntries: string[] = []
+        for (const { conv } of scoredConvs) {
+          const parts: string[] = []
+          if (conv.title) parts.push(`Topic: ${conv.title}`)
+          if (conv.purpose_summary) parts.push(conv.purpose_summary)
+          if (conv.rolling_summary) parts.push(conv.rolling_summary.substring(0, 400))
+          const entry = parts.join(' — ')
+          const tokens = estimateTokens(entry)
+          if (tokens > tokenBudget) break
+          convEntries.push(`- ${entry}`)
+          tokenBudget -= tokens
+        }
+        if (convEntries.length > 0) {
+          sections.push(`RELATED EARLIER CONVERSATIONS:\n${convEntries.join('\n')}`)
+        }
+      }
+    }
+
+    // Search memory chunks
+    if (tokenBudget > 500) {
+      const { data: chunks } = await db
+        .from('memory_chunks')
+        .select('content, summary, source_type')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false })
+        .limit(40)
+
+      if (chunks && chunks.length > 0) {
+        const scored = chunks
+          .map(chunk => {
+            const text = (chunk.summary || chunk.content).toLowerCase()
+            let matchCount = 0
+            for (const kw of keywords) {
+              if (text.includes(kw)) matchCount++
+            }
+            return { chunk, score: matchCount }
+          })
+          .filter(s => s.score > 0)
+          .sort((a, b) => b.score - a.score)
+          .slice(0, 5)
+
+        const chunkEntries: string[] = []
+        for (const { chunk } of scored) {
+          const text = chunk.summary || chunk.content.substring(0, 600)
+          const tokens = estimateTokens(text)
+          if (tokens > tokenBudget) break
+          chunkEntries.push(text)
+          tokenBudget -= tokens
+        }
+        if (chunkEntries.length > 0) {
+          sections.push(`RELEVANT EARLIER CONTENT:\n${chunkEntries.join('\n---\n')}`)
+        }
+      }
+    }
+
+    if (sections.length === 0) return null
+    return sections.join('\n\n')
+  } catch (e: any) {
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('[ContextBuilder] Cross-conversation search error:', e.message)
+    }
+    return null
+  }
 }

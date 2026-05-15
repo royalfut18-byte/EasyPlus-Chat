@@ -15,7 +15,7 @@ import {
   saveMemory,
   deleteMemoryByContent,
 } from '@/lib/ai/memory'
-import { buildContext, formatContextForPrompt } from '@/lib/ai/context-builder'
+import { buildContext, formatContextForPrompt, searchCrossConversationContext } from '@/lib/ai/context-builder'
 import { shouldUpdateSummary, updateConversationSummary, chunkLongMessage, saveAttachmentMemory } from '@/lib/ai/conversation-summary'
 import { isLongTaskRequest, LONG_TASK_SYSTEM_ADDENDUM } from '@/lib/ai/long-task'
 import { AI_MODELS } from '@/types/models'
@@ -361,11 +361,34 @@ RULES FOR USING THESE RESULTS:
         })
         fullContextPrompt = formatContextForPrompt(builtContext)
 
-        console.log('[Chat API] Context built:', builtContext.debugInfo)
+        console.log('[Chat API] Context built:', {
+          ...builtContext.debugInfo,
+          userId: user.id.substring(0, 8),
+          conversationId: conversationId?.substring(0, 8),
+          latestMessage: latestUserMessage.content.substring(0, 80),
+          hasSummary: !!builtContext.conversationSummary,
+          summaryLength: builtContext.conversationSummary?.length || 0,
+        })
       } else {
-        // No conversation yet — just load user memories
+        // No conversation yet — load user memories AND search across conversations
         const memories = await getUserMemories(db, user.id, latestUserMessage.content)
         memoryContext = formatMemoriesForPrompt(memories)
+
+        // Cross-conversation search for relevant context
+        const crossContext = await searchCrossConversationContext(db, user.id, latestUserMessage.content)
+        if (crossContext) {
+          memoryContext = memoryContext
+            ? `${memoryContext}\n\n${crossContext}`
+            : crossContext
+        }
+
+        console.log('[Chat API] New chat context:', {
+          userId: user.id.substring(0, 8),
+          latestMessage: latestUserMessage.content.substring(0, 80),
+          userMemoriesLoaded: memories.length,
+          crossContextLength: crossContext?.length || 0,
+          totalContextLength: memoryContext.length,
+        })
       }
 
       // Defer memory save/delete - fire-and-forget after getting context
@@ -729,8 +752,9 @@ RULES FOR USING THESE RESULTS:
       responseHeaders['X-Memory-Saved'] = 'true'
     }
 
-    if (fullContextPrompt) {
+    if (fullContextPrompt || memoryContext) {
       responseHeaders['X-Context-Loaded'] = 'true'
+      responseHeaders['X-Context-Length'] = String((fullContextPrompt || memoryContext).length)
     }
 
     if (longTask) {
