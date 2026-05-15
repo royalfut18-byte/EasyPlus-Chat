@@ -122,7 +122,8 @@ export function dedupeMessages(messages: Message[]): Message[] {
     }
 
     // Remove loading markers if a real completed message exists for same request
-    if (msg.role === 'assistant' && LOADING_MARKERS.has(msg.content || '')) {
+    // But never remove active generating placeholders — those are live thinking bubbles
+    if (msg.role === 'assistant' && LOADING_MARKERS.has(msg.content || '') && msg.status !== 'generating') {
       // Check if there's already a real response in result for same request or conversation
       const hasRealResponse = result.some(existing =>
         existing.role === 'assistant' &&

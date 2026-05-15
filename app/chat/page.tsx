@@ -574,10 +574,11 @@ export default function ChatPage() {
           id: pending.assistantMessageId,
           conversation_id: id,
           role: 'assistant',
-          content: pending.loadingMarker,
+          content: '',
           model: pending.model,
           created_at: pending.startedAt,
           request_id: pending.requestId,
+          status: 'generating',
           statusLabel: statusFromMarker,
         }
         return processMessages([...prev, placeholder], id)
@@ -782,7 +783,7 @@ export default function ChatPage() {
       id: clientAssistantMessageId,
       conversation_id: sendConversationId,
       role: 'assistant',
-      content: loadingMarker,
+      content: '',
       model: modelToUse,
       created_at: assistantCreatedAt,
       request_id: requestId,
