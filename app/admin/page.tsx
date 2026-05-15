@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { AdminUserTable } from '@/components/admin/admin-user-table'
+import { BackfillPanel } from '@/components/admin/backfill-panel'
 import { Users, CreditCard, TrendingUp } from 'lucide-react'
 
 export default async function AdminPage() {
@@ -85,6 +86,8 @@ export default async function AdminPage() {
             </CardContent>
           </Card>
         </div>
+
+        <BackfillPanel />
 
         <Card className="bg-white/[0.02] border-white/[0.06]">
           <CardHeader>
