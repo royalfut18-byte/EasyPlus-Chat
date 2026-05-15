@@ -246,7 +246,7 @@ export function MessageBubble({ role, content, model, onRegenerate, attachments,
           ) : hasArtifactCard && onOpenArtifact ? (
             <div>
               <ReactMarkdown
-                remarkPlugins={[remarkGfm, remarkMath]}
+                remarkPlugins={[remarkGfm, [remarkMath, { singleDollarTextMath: false }]]}
                 rehypePlugins={[rehypeKatex]}
                 components={{
                   h1: ({ children }) => <h1 className="text-xl md:text-2xl font-bold mt-4 md:mt-6 mb-3 md:mb-4 text-white">{children}</h1>,
@@ -254,6 +254,26 @@ export function MessageBubble({ role, content, model, onRegenerate, attachments,
                   h3: ({ children }) => <h3 className="text-base md:text-lg font-semibold mt-3 md:mt-4 mb-2 text-white">{children}</h3>,
                   p: ({ children }) => <p className="mb-3 md:mb-4 leading-6 md:leading-7 text-gray-100 last:mb-0">{children}</p>,
                   strong: ({ children }) => <strong className="font-semibold text-white">{children}</strong>,
+                  table: ({ children }) => (
+                    <div className="my-4 overflow-x-auto">
+                      <table className="w-full border-collapse border border-white/20 rounded-lg overflow-hidden">
+                        {children}
+                      </table>
+                    </div>
+                  ),
+                  thead: ({ children }) => <thead className="bg-white/10">{children}</thead>,
+                  tbody: ({ children }) => <tbody>{children}</tbody>,
+                  tr: ({ children }) => <tr className="border-b border-white/10 last:border-0">{children}</tr>,
+                  th: ({ children }) => (
+                    <th className="px-4 py-2 text-left font-semibold text-white border-r border-white/10 last:border-0">
+                      {children}
+                    </th>
+                  ),
+                  td: ({ children }) => (
+                    <td className="px-4 py-2 text-gray-200 border-r border-white/10 last:border-0">
+                      {children}
+                    </td>
+                  ),
                 }}
               >
                 {safeContent}
@@ -284,7 +304,7 @@ export function MessageBubble({ role, content, model, onRegenerate, attachments,
             </div>
           ) : safeContent ? (
             <ReactMarkdown
-              remarkPlugins={[remarkGfm, remarkMath]}
+              remarkPlugins={[remarkGfm, [remarkMath, { singleDollarTextMath: false }]]}
               rehypePlugins={[rehypeKatex]}
               components={{
                 h1: ({ children }) => <h1 className="text-xl md:text-2xl font-bold mt-4 md:mt-6 mb-3 md:mb-4 text-white">{children}</h1>,

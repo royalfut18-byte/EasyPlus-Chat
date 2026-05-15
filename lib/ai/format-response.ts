@@ -21,18 +21,17 @@ export function cleanAssistantText(text: string): string {
     return `${CODE_BLOCK_PLACEHOLDER}${codeBlocks.length - 1}`
   })
 
+  // Convert LaTeX-style delimiters to $$...$$ before math protection
+  // \(...\) → $$...$$ (inline math)
+  cleaned = cleaned.replace(/\\\((.+?)\\\)/g, (_match, content) => `$$${content}$$`)
+  // \[...\] → display math (on own line)
+  cleaned = cleaned.replace(/\\\[([\s\S]+?)\\\]/g, (_match, content) => `\n$$\n${content.trim()}\n$$\n`)
+
   // Protect display math blocks ($$...$$)
   const displayMathBlocks: string[] = []
   cleaned = cleaned.replace(/\$\$[\s\S]*?\$\$/g, (match) => {
     displayMathBlocks.push(match)
     return `___DISPLAY_MATH___${displayMathBlocks.length - 1}`
-  })
-
-  // Protect inline math ($...$)
-  const inlineMathBlocks: string[] = []
-  cleaned = cleaned.replace(/\$(?!\d)([^$\n]+?)\$/g, (match) => {
-    inlineMathBlocks.push(match)
-    return `___INLINE_MATH___${inlineMathBlocks.length - 1}`
   })
 
   // Protect inline code
@@ -46,12 +45,11 @@ export function cleanAssistantText(text: string): string {
   cleaned = cleaned.replace(/([a-z])\.([A-Z])/g, '$1. $2')
   cleaned = cleaned.replace(/([a-z]),([A-Z])/g, '$1, $2')
 
-  // Restore protected content
-  cleaned = cleaned.replace(/___INLINE_CODE___(\d+)/g, (_, i) => inlineCodeBlocks[parseInt(i)])
-  cleaned = cleaned.replace(/___INLINE_MATH___(\d+)/g, (_, i) => inlineMathBlocks[parseInt(i)])
-  cleaned = cleaned.replace(/___DISPLAY_MATH___(\d+)/g, (_, i) => displayMathBlocks[parseInt(i)])
-  cleaned = cleaned.replace(new RegExp(`${CODE_BLOCK_PLACEHOLDER}(\\d+)`, 'g'), (_, i) => codeBlocks[parseInt(i)])
-  cleaned = cleaned.replace(new RegExp(`${ARTIFACT_BLOCK_PLACEHOLDER}(\\d+)`, 'g'), (_, i) => artifactBlocks[parseInt(i)])
+  // Restore protected content (with safety fallback to prevent "undefined")
+  cleaned = cleaned.replace(/___INLINE_CODE___(\d+)/g, (match, i) => inlineCodeBlocks[parseInt(i)] ?? match)
+  cleaned = cleaned.replace(/___DISPLAY_MATH___(\d+)/g, (match, i) => displayMathBlocks[parseInt(i)] ?? match)
+  cleaned = cleaned.replace(new RegExp(`${CODE_BLOCK_PLACEHOLDER}(\\d+)`, 'g'), (match, i) => codeBlocks[parseInt(i)] ?? match)
+  cleaned = cleaned.replace(new RegExp(`${ARTIFACT_BLOCK_PLACEHOLDER}(\\d+)`, 'g'), (match, i) => artifactBlocks[parseInt(i)] ?? match)
 
   return cleaned
 }
