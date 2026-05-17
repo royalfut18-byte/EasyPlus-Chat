@@ -14,6 +14,7 @@ function parseR2ErrorFromResponse(xml: string): { code?: string; message?: strin
 }
 
 const SMALL_FILE_THRESHOLD = 4.5 * 1024 * 1024
+const SERVER_UPLOAD_THRESHOLD = 20 * 1024 * 1024 // 20MB: use server upload if file is smaller
 
 interface UploadResult {
   attachment: ChatAttachment
@@ -72,6 +73,49 @@ function readAsDataUrl(file: File): Promise<string> {
   })
 }
 
+async function uploadViaServer(
+  file: File,
+  conversationId: string | null,
+  onProgress: (percent: number) => void
+): Promise<{ ok: boolean; data?: any; error?: string }> {
+  try {
+    const formData = new FormData()
+    formData.append('file', file)
+    if (conversationId) {
+      formData.append('conversationId', conversationId)
+    }
+
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('[Server Upload] Starting:', { fileName: file.name, size: file.size })
+    }
+
+    const res = await fetch('/api/upload/server-upload', {
+      method: 'POST',
+      body: formData,
+    })
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: 'Server upload failed' }))
+      if (process.env.NODE_ENV !== 'production') {
+        console.error('[Server Upload] Failed:', res.status, err)
+      }
+      return { ok: false, error: err.error || `Server upload failed (${res.status})` }
+    }
+
+    const data = await res.json()
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('[Server Upload] Success:', data)
+    }
+    onProgress(100)
+    return { ok: true, data }
+  } catch (err: any) {
+    if (process.env.NODE_ENV !== 'production') {
+      console.error('[Server Upload] Error:', err.message)
+    }
+    return { ok: false, error: err.message || 'Server upload error' }
+  }
+}
+
 export function useR2Upload() {
   const [uploading, setUploading] = useState(false)
 
@@ -128,6 +172,45 @@ export function useR2Upload() {
     attachmentBase.uploadProgress = 0
     onProgress?.({ ...attachmentBase })
 
+    // For files <= 20MB, try server-side upload first (more reliable than presigned)
+    if (uploadFile.size <= SERVER_UPLOAD_THRESHOLD) {
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('[R2 Upload] Attempting server-side upload:', { fileName: uploadFile.name, sizeBytes: uploadFile.size })
+      }
+
+      const serverResult = await uploadViaServer(uploadFile, conversationId, (progress) => {
+        attachmentBase.uploadProgress = progress
+        onProgress?.({ ...attachmentBase })
+      })
+
+      if (serverResult.ok && serverResult.data) {
+        let previewDataUrl: string | undefined
+        if (isImage && uploadFile.size <= 2 * 1024 * 1024) {
+          try {
+            previewDataUrl = await readAsDataUrl(uploadFile)
+          } catch { /* no preview */ }
+        }
+
+        return {
+          attachment: {
+            ...attachmentBase,
+            storageProvider: 'r2',
+            storageKey: serverResult.data.key,
+            bucket: serverResult.data.bucket,
+            storagePath: serverResult.data.key,
+            dataUrl: previewDataUrl,
+            uploadStatus: 'uploaded',
+            uploadProgress: 100,
+          },
+        }
+      }
+      // If server upload fails, log and fall through to presigned URL
+      if (process.env.NODE_ENV !== 'production') {
+        console.warn('[R2 Upload] Server upload failed, falling back to presigned:', serverResult.error)
+      }
+    }
+
+    // Fall back to presigned URL (for files > 20MB or if server upload failed)
     try {
       if (process.env.NODE_ENV !== 'production') {
         console.log('[R2 Upload] Requesting presign:', { fileName: uploadFile.name, mimeType: uploadFile.type, sizeBytes: uploadFile.size })
