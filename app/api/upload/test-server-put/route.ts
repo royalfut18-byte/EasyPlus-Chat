@@ -24,8 +24,8 @@ export async function POST() {
     responseChecksumValidation: "WHEN_REQUIRED",
   })
 
-  const testKey = `_test/${Date.now()}-health-check.txt`
-  const testBody = `R2 health check at ${new Date().toISOString()}`
+  const testKey = 'uploads/debug/server-test.txt'
+  const testBody = 'hello'
 
   try {
     await client.send(new PutObjectCommand({

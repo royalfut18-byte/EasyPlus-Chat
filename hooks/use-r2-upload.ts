@@ -227,64 +227,50 @@ interface UploadWithProgressResult {
   responseText?: string
 }
 
-function parseR2Error(xml: string): { code?: string; message?: string } {
-  const codeMatch = xml.match(/<Code>(.*?)<\/Code>/)
-  const msgMatch = xml.match(/<Message>(.*?)<\/Message>/)
-  return { code: codeMatch?.[1], message: msgMatch?.[1] }
-}
-
 function uploadWithProgress(
   url: string,
   file: File,
   onProgress: (percent: number) => void
 ): Promise<UploadWithProgressResult> {
-  return new Promise((resolve) => {
-    const xhr = new XMLHttpRequest()
+  // Blob with empty type so browser does NOT send Content-Type header.
+  // The presigned URL only signs "host" — any extra header causes R2 400.
+  const uploadBody = new Blob([file], { type: '' })
 
-    xhr.upload.addEventListener('progress', (e) => {
-      if (e.lengthComputable) {
-        const percent = Math.round((e.loaded / e.total) * 100)
-        onProgress(percent)
-      }
-    })
-
-    xhr.addEventListener('load', () => {
-      const ok = xhr.status >= 200 && xhr.status < 300
-      let responseText = ok ? undefined : xhr.responseText?.substring(0, 1000)
-      if (process.env.NODE_ENV !== 'production') {
-        const r2Error = responseText ? parseR2Error(responseText) : undefined
-        console.log('[R2 Upload] PUT response:', { status: xhr.status, statusText: xhr.statusText, ok, r2Error })
-      }
-      resolve({
-        ok,
-        status: xhr.status,
-        statusText: xhr.statusText,
-        responseText,
+  if (process.env.NODE_ENV !== 'production') {
+    try {
+      const urlOrigin = new URL(url).origin
+      console.log('[R2 Upload] PUT started:', {
+        origin: urlOrigin,
+        fileName: file.name,
+        size: file.size,
+        originalType: file.type,
+        blobType: uploadBody.type,
+        bodyIs: uploadBody instanceof Blob ? 'Blob' : 'other',
+        method: 'fetch',
       })
-    })
+    } catch { /* ignore */ }
+  }
 
-    xhr.addEventListener('error', () => {
-      if (process.env.NODE_ENV !== 'production') {
-        console.error('[R2 Upload] PUT network error, xhr.status:', xhr.status)
-      }
-      resolve({ ok: false, status: 0, errorType: 'network' })
-    })
-
-    xhr.addEventListener('abort', () => {
-      resolve({ ok: false, errorType: 'abort' })
-    })
-
-    if (process.env.NODE_ENV !== 'production') {
-      try {
-        const urlOrigin = new URL(url).origin
-        console.log('[R2 Upload] PUT started:', { origin: urlOrigin, fileName: file.name, size: file.size, type: file.type })
-      } catch { /* ignore URL parse errors */ }
+  // Use fetch() — unlike XHR, fetch does NOT send Content-Type for Blob with empty type.
+  return fetch(url, {
+    method: 'PUT',
+    body: uploadBody,
+  }).then(async (res) => {
+    const ok = res.status >= 200 && res.status < 300
+    let responseText: string | undefined
+    if (!ok) {
+      try { responseText = (await res.text()).substring(0, 1000) } catch { /* ignore */ }
     }
-
-    // Send as Blob with empty type to prevent browser from adding Content-Type header.
-    // The presigned URL only signs "host" header — any extra header causes R2 400.
-    const uploadBlob = new Blob([file], { type: '' })
-    xhr.open('PUT', url)
-    xhr.send(uploadBlob)
+    if (process.env.NODE_ENV !== 'production') {
+      const r2Error = responseText ? parseR2ErrorFromResponse(responseText) : undefined
+      console.log('[R2 Upload] PUT response:', { status: res.status, statusText: res.statusText, ok, r2Error })
+    }
+    onProgress(100)
+    return { ok, status: res.status, statusText: res.statusText, responseText }
+  }).catch((err) => {
+    if (process.env.NODE_ENV !== 'production') {
+      console.error('[R2 Upload] PUT fetch error:', err.message)
+    }
+    return { ok: false, status: 0, errorType: 'network' as const }
   })
 }
