@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Sparkles, Box, PanelRightOpen, Globe, Paperclip, Send, Loader2 } from 'lucide-react'
+import { Sparkles, Box, PanelRightOpen, Globe, Paperclip, Send, Loader2, X, FileText } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { ensureProfile } from '@/lib/supabase/ensure-profile'
 import { ModelSelector } from '@/components/chat/model-selector'
@@ -194,7 +194,9 @@ export default function ChatPage() {
   const [artifactPanelWidth, setArtifactPanelWidth] = useState(DEFAULT_PANEL_WIDTH)
   const [pendingResponses, setPendingResponses] = useState<Record<string, PendingResponse>>({})
   const [heroInput, setHeroInput] = useState('')
+  const [heroAttachments, setHeroAttachments] = useState<ChatAttachment[]>([])
   const heroTextareaRef = useRef<HTMLTextAreaElement>(null)
+  const heroFileInputRef = useRef<HTMLInputElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const isSendingRef = useRef(false)
   const lastUserPromptRef = useRef<string>('')
@@ -1222,6 +1224,70 @@ Rules:
     setWebSearchEnabled(!webSearchEnabled)
   }
 
+  const HERO_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp']
+  const HERO_ALLOWED_EXTENSIONS = ['.pdf', '.txt', '.md', '.csv', '.json', '.docx', '.png', '.jpg', '.jpeg', '.webp']
+  const HERO_MAX_FILE_SIZE = 5 * 1024 * 1024
+  const HERO_MAX_FILES = 3
+
+  const heroProcessFile = async (file: File): Promise<ChatAttachment | null> => {
+    const ext = '.' + (file.name.split('.').pop()?.toLowerCase() || '')
+    const mimeMap: Record<string, string> = {
+      '.pdf': 'application/pdf', '.txt': 'text/plain', '.md': 'text/markdown',
+      '.csv': 'text/csv', '.json': 'application/json',
+      '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp',
+    }
+    const mime = mimeMap[ext] || file.type
+
+    if (!HERO_ALLOWED_EXTENSIONS.includes(ext)) {
+      toast({ title: 'Unsupported file type', description: `Supported: ${HERO_ALLOWED_EXTENSIONS.join(', ')}`, variant: 'destructive' })
+      return null
+    }
+    if (file.size > HERO_MAX_FILE_SIZE) {
+      toast({ title: 'File too large', description: 'Please upload a file under 5MB.', variant: 'destructive' })
+      return null
+    }
+
+    return new Promise((resolve) => {
+      const reader = new FileReader()
+      reader.onload = (e) => {
+        const dataUrl = e.target?.result as string
+        resolve({
+          type: HERO_IMAGE_TYPES.includes(mime) ? 'image' : 'document',
+          name: file.name,
+          mimeType: mime,
+          size: file.size,
+          dataUrl,
+        })
+      }
+      reader.onerror = () => {
+        toast({ title: 'Error reading file', description: 'Failed to process file', variant: 'destructive' })
+        resolve(null)
+      }
+      reader.readAsDataURL(file)
+    })
+  }
+
+  const handleHeroFileSelect = async (files: FileList | null) => {
+    if (!files || files.length === 0) return
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('[Hero Upload] Files selected:', files.length)
+    }
+    for (let i = 0; i < files.length; i++) {
+      if (heroAttachments.length >= HERO_MAX_FILES) break
+      const attachment = await heroProcessFile(files[i])
+      if (attachment) {
+        if (process.env.NODE_ENV !== 'production') {
+          console.log('[Hero Upload] Attachment added:', attachment.name, attachment.type)
+        }
+        setHeroAttachments((prev) => {
+          if (prev.length >= HERO_MAX_FILES) return prev
+          return [...prev, attachment]
+        })
+      }
+    }
+  }
+
   const handleOpenArtifact = (artifact?: Artifact) => {
     // If artifact is provided (from message bubble), use it
     if (artifact) {
@@ -1409,49 +1475,108 @@ Rules:
                     className="relative w-full max-w-3xl"
                   >
                     <div className="absolute -inset-1.5 bg-violet-500/[0.05] rounded-[28px] blur-xl" />
-                    <div className="relative bg-white/[0.03] border border-white/[0.08] rounded-2xl md:rounded-3xl px-4 md:px-5 py-3 md:py-4 flex items-end gap-3 focus-within:border-white/[0.16] transition-colors">
-                      <Paperclip className="h-4.5 w-4.5 md:h-5 md:w-5 text-gray-600 shrink-0 mb-1" />
-                      <textarea
-                        ref={heroTextareaRef}
-                        value={heroInput}
+                    <div className="relative bg-white/[0.03] border border-white/[0.08] rounded-2xl md:rounded-3xl px-4 md:px-5 py-3 md:py-4 focus-within:border-white/[0.16] transition-colors">
+                      <input
+                        ref={heroFileInputRef}
+                        type="file"
+                        accept=".pdf,.txt,.md,.csv,.json,.docx,.png,.jpg,.jpeg,.webp"
+                        multiple
                         onChange={(e) => {
-                          setHeroInput(e.target.value)
-                          e.target.style.height = 'auto'
-                          e.target.style.height = `${Math.min(e.target.scrollHeight, 160)}px`
+                          handleHeroFileSelect(e.target.files)
+                          e.target.value = ''
                         }}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' && !e.shiftKey) {
-                            e.preventDefault()
-                            if (heroInput.trim() && !isRequestInProgress) {
-                              handleSendMessage(heroInput.trim())
+                        className="hidden"
+                      />
+                      {heroAttachments.length > 0 && (
+                        <div className="flex gap-2 mb-3 pb-3 border-b border-white/10 overflow-x-auto">
+                          {heroAttachments.map((att, idx) => (
+                            <div key={idx} className="relative group shrink-0">
+                              {att.type === 'image' ? (
+                                <div className="h-16 w-16 md:h-20 md:w-20 rounded-xl border-2 border-white/20 bg-black/20 overflow-hidden">
+                                  <img src={att.dataUrl} alt={att.name} className="h-full w-full object-cover" />
+                                </div>
+                              ) : (
+                                <div className="h-16 w-40 md:h-20 md:w-48 rounded-xl border-2 border-white/15 bg-white/5 p-2 flex items-center gap-2">
+                                  <FileText className="h-5 w-5 text-gray-400 shrink-0" />
+                                  <div className="min-w-0">
+                                    <p className="text-xs font-medium text-white truncate">{att.name}</p>
+                                    <p className="text-[10px] text-gray-400">{att.size ? `${(att.size / 1024).toFixed(0)} KB` : ''}</p>
+                                  </div>
+                                </div>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => setHeroAttachments(prev => prev.filter((_, i) => i !== idx))}
+                                className="absolute -top-2 -right-2 h-5 w-5 bg-red-500 hover:bg-red-600 rounded-full flex items-center justify-center shadow-lg"
+                              >
+                                <X className="h-3 w-3 text-white" />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      <div className="flex items-end gap-3">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (process.env.NODE_ENV !== 'production') {
+                              console.log('[Hero Upload] Paperclip clicked, fileInput exists:', !!heroFileInputRef.current)
+                            }
+                            heroFileInputRef.current?.click()
+                          }}
+                          disabled={isRequestInProgress}
+                          className="shrink-0 mb-1 text-gray-500 hover:text-gray-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                          title="Attach files"
+                        >
+                          <Paperclip className="h-[18px] w-[18px] md:h-5 md:w-5" />
+                        </button>
+                        <textarea
+                          ref={heroTextareaRef}
+                          value={heroInput}
+                          onChange={(e) => {
+                            setHeroInput(e.target.value)
+                            e.target.style.height = 'auto'
+                            e.target.style.height = `${Math.min(e.target.scrollHeight, 160)}px`
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' && !e.shiftKey) {
+                              e.preventDefault()
+                              if ((heroInput.trim() || heroAttachments.length > 0) && !isRequestInProgress) {
+                                const content = heroInput.trim() || (heroAttachments.length > 0 ? 'Please analyze the attached file.' : '')
+                                handleSendMessage(content, heroAttachments.length > 0 ? heroAttachments : undefined)
+                                setHeroInput('')
+                                setHeroAttachments([])
+                                if (heroTextareaRef.current) heroTextareaRef.current.style.height = 'auto'
+                              }
+                            }
+                          }}
+                          placeholder="What do you want to work on today?"
+                          disabled={isRequestInProgress}
+                          className="flex-1 bg-transparent border-none outline-none resize-none text-white placeholder:text-gray-600 text-sm md:text-base min-h-[28px] max-h-[160px] py-1 scrollbar-thin disabled:opacity-50"
+                          rows={1}
+                          autoFocus
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if ((heroInput.trim() || heroAttachments.length > 0) && !isRequestInProgress) {
+                              const content = heroInput.trim() || (heroAttachments.length > 0 ? 'Please analyze the attached file.' : '')
+                              handleSendMessage(content, heroAttachments.length > 0 ? heroAttachments : undefined)
                               setHeroInput('')
+                              setHeroAttachments([])
                               if (heroTextareaRef.current) heroTextareaRef.current.style.height = 'auto'
                             }
-                          }
-                        }}
-                        placeholder="What do you want to work on today?"
-                        disabled={isRequestInProgress}
-                        className="flex-1 bg-transparent border-none outline-none resize-none text-white placeholder:text-gray-600 text-sm md:text-base min-h-[28px] max-h-[160px] py-1 scrollbar-thin disabled:opacity-50"
-                        rows={1}
-                        autoFocus
-                      />
-                      <button
-                        onClick={() => {
-                          if (heroInput.trim() && !isRequestInProgress) {
-                            handleSendMessage(heroInput.trim())
-                            setHeroInput('')
-                            if (heroTextareaRef.current) heroTextareaRef.current.style.height = 'auto'
-                          }
-                        }}
-                        disabled={!heroInput.trim() || isRequestInProgress}
-                        className="bg-violet-600 hover:bg-violet-500 h-8 w-8 md:h-9 md:w-9 rounded-xl shrink-0 flex items-center justify-center transition-all disabled:opacity-30 disabled:cursor-not-allowed mb-0.5"
-                      >
-                        {isRequestInProgress ? (
-                          <Loader2 className="h-3.5 w-3.5 md:h-4 md:w-4 text-white animate-spin" />
-                        ) : (
-                          <Send className="h-3.5 w-3.5 md:h-4 md:w-4 text-white" />
-                        )}
-                      </button>
+                          }}
+                          disabled={(!heroInput.trim() && heroAttachments.length === 0) || isRequestInProgress}
+                          className="bg-violet-600 hover:bg-violet-500 h-8 w-8 md:h-9 md:w-9 rounded-xl shrink-0 flex items-center justify-center transition-all disabled:opacity-30 disabled:cursor-not-allowed mb-0.5"
+                        >
+                          {isRequestInProgress ? (
+                            <Loader2 className="h-3.5 w-3.5 md:h-4 md:w-4 text-white animate-spin" />
+                          ) : (
+                            <Send className="h-3.5 w-3.5 md:h-4 md:w-4 text-white" />
+                          )}
+                        </button>
+                      </div>
                     </div>
                   </motion.div>
 
