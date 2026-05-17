@@ -122,6 +122,10 @@ export function useR2Upload() {
     onProgress?.({ ...attachmentBase })
 
     try {
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('[R2 Upload] Requesting presign:', { fileName: uploadFile.name, mimeType: uploadFile.type, sizeBytes: uploadFile.size })
+      }
+
       const presignRes = await fetch('/api/upload/presign', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -135,24 +139,39 @@ export function useR2Upload() {
 
       if (!presignRes.ok) {
         const err = await presignRes.json().catch(() => ({ error: 'Presign failed' }))
+        if (process.env.NODE_ENV !== 'production') {
+          console.error('[R2 Upload] Presign failed:', presignRes.status, err)
+        }
         return {
           attachment: { ...attachmentBase, uploadStatus: 'failed' },
-          error: err.error || 'Failed to get upload URL',
+          error: err.error || `Presign failed (${presignRes.status})`,
         }
       }
 
       const { uploadUrl, key, bucket } = await presignRes.json()
 
-      const uploadProgress = await uploadWithProgress(uploadUrl, uploadFile, (progress) => {
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('[R2 Upload] Presign success:', { key, bucket, hasUploadUrl: !!uploadUrl })
+      }
+
+      const uploadResult = await uploadWithProgress(uploadUrl, uploadFile, (progress) => {
         attachmentBase.uploadProgress = progress
         attachmentBase.uploadStatus = 'uploading'
         onProgress?.({ ...attachmentBase })
       })
 
-      if (!uploadProgress.ok) {
+      if (!uploadResult.ok) {
+        const detail = uploadResult.status
+          ? `R2 upload failed with status ${uploadResult.status}${uploadResult.statusText ? ` (${uploadResult.statusText})` : ''}`
+          : uploadResult.errorType === 'cors'
+          ? 'R2 CORS blocked upload. Check R2 bucket CORS settings.'
+          : 'Upload to storage failed'
+        if (process.env.NODE_ENV !== 'production') {
+          console.error('[R2 Upload] PUT failed:', { status: uploadResult.status, statusText: uploadResult.statusText, errorType: uploadResult.errorType, responseText: uploadResult.responseText })
+        }
         return {
           attachment: { ...attachmentBase, uploadStatus: 'failed' },
-          error: 'Upload to storage failed',
+          error: detail,
         }
       }
 
@@ -186,11 +205,19 @@ export function useR2Upload() {
   return { uploadToR2, uploading, setUploading, maxUploadMB: MAX_UPLOAD_MB }
 }
 
+interface UploadWithProgressResult {
+  ok: boolean
+  status?: number
+  statusText?: string
+  errorType?: 'cors' | 'network' | 'abort'
+  responseText?: string
+}
+
 function uploadWithProgress(
   url: string,
   file: File,
   onProgress: (percent: number) => void
-): Promise<{ ok: boolean }> {
+): Promise<UploadWithProgressResult> {
   return new Promise((resolve) => {
     const xhr = new XMLHttpRequest()
 
@@ -202,15 +229,21 @@ function uploadWithProgress(
     })
 
     xhr.addEventListener('load', () => {
-      resolve({ ok: xhr.status >= 200 && xhr.status < 300 })
+      const ok = xhr.status >= 200 && xhr.status < 300
+      resolve({
+        ok,
+        status: xhr.status,
+        statusText: xhr.statusText,
+        responseText: ok ? undefined : xhr.responseText?.substring(0, 500),
+      })
     })
 
     xhr.addEventListener('error', () => {
-      resolve({ ok: false })
+      resolve({ ok: false, status: 0, errorType: xhr.status === 0 ? 'cors' : 'network' })
     })
 
     xhr.addEventListener('abort', () => {
-      resolve({ ok: false })
+      resolve({ ok: false, errorType: 'abort' })
     })
 
     xhr.open('PUT', url)

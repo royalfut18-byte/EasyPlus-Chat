@@ -40,8 +40,14 @@ function sanitizeFileName(name: string): string {
 export async function POST(request: NextRequest) {
   try {
     if (!isR2Configured()) {
+      const missing = [
+        !process.env.R2_ACCOUNT_ID && 'R2_ACCOUNT_ID',
+        !(process.env.R2_ACCESS_KEY_ID || process.env.R2_ACCESS_KEY) && 'R2_ACCESS_KEY_ID',
+        !process.env.R2_SECRET_ACCESS_KEY && 'R2_SECRET_ACCESS_KEY',
+      ].filter(Boolean)
+      console.error('[Upload Presign] R2 not configured. Missing:', missing.join(', '))
       return NextResponse.json(
-        { error: 'Cloud storage not configured' },
+        { error: `Cloud storage not configured. Missing: ${missing.join(', ')}` },
         { status: 503 }
       )
     }
@@ -90,6 +96,17 @@ export async function POST(request: NextRequest) {
     const folder = conversationId || 'temp'
     const key = `uploads/${user.id}/${folder}/${timestamp}-${safeFileName}`
 
+    console.log('[Upload Presign] Generating URL:', {
+      fileName: safeFileName,
+      mimeType,
+      sizeBytes,
+      key,
+      bucket: process.env.R2_BUCKET_NAME || 'easyplus-uploads',
+      hasAccountId: !!process.env.R2_ACCOUNT_ID,
+      hasAccessKeyId: !!(process.env.R2_ACCESS_KEY_ID || process.env.R2_ACCESS_KEY),
+      hasSecret: !!process.env.R2_SECRET_ACCESS_KEY,
+    })
+
     const result = await createPresignedUploadUrl({
       key,
       mimeType,
@@ -104,9 +121,9 @@ export async function POST(request: NextRequest) {
       expiresIn: result.expiresIn,
     })
   } catch (err: any) {
-    console.error('[Upload Presign] Error:', err.message)
+    console.error('[Upload Presign] Error:', err.message, err.stack)
     return NextResponse.json(
-      { error: 'Failed to generate upload URL' },
+      { error: `Failed to generate upload URL: ${err.message}` },
       { status: 500 }
     )
   }
