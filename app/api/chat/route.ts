@@ -332,7 +332,13 @@ RULES FOR USING THESE RESULTS:
     if (documentContext) {
       const docInstruction: ChatMessage = {
         role: 'user',
-        content: `[ATTACHED DOCUMENTS - USE THESE FOR YOUR ANSWER]\n\n${documentContext}\n\n---\nThe above documents are attached by the user. Read and use this content to answer their question. If the document does not contain enough information to answer, say so. Do not invent details not in the document.`,
+        content: `[ATTACHED DOCUMENTS - USE THESE FOR YOUR ANSWER]\n\n${documentContext}\n\n---\nCRITICAL INSTRUCTIONS for answering from these documents:
+1. ALWAYS quote or restate the relevant details from the document first before answering.
+2. Use EXACT numbers and values from the document. Do NOT change, simplify, or misread numbers (e.g., \$140, \$25.50, \$752).
+3. For multiple choice questions, restate ALL options from the document before answering.
+4. Your final answer MUST match exactly one of the listed options.
+5. If the document does not contain enough information, say so. Do not invent details.
+6. If values seem unclear or corrupted, re-check the source before calculating.`,
       }
       messagesToSend = [...messagesToSend.slice(0, -1), docInstruction, latestUserMessage] as ChatMessage[]
     } else if (historicalAttachmentContext) {

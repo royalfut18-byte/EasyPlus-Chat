@@ -141,17 +141,52 @@ export async function buildDocumentContext(attachments: ChatAttachment[]): Promi
       mimeType: attachment.mimeType,
       size: attachment.size,
       hasDataUrl: !!attachment.dataUrl,
+      storageProvider: attachment.storageProvider || 'inline',
+      hasStorageKey: !!attachment.storageKey,
     })
 
     const text = await extractTextFromAttachment(attachment)
 
+    // Detailed validation and logging
+    const textLength = text?.length || 0
+    const isMissingData = text === '__MISSING_DATA__'
+    const isPdfFailed = text === '__PDF_EXTRACTION_FAILED__'
+    const isPdfNoText = text === '__PDF_NO_TEXT__'
+    const isErrorState = isMissingData || isPdfFailed || isPdfNoText
+    
+    if (process.env.NODE_ENV !== 'production') {
+      const preview = !isErrorState && text ? text.substring(0, 1000) : '(error)'
+      const hasCurrency = !isErrorState && text ? /\$\d+/.test(text) : false
+      const hasDecimals = !isErrorState && text ? /\.\d{2}/.test(text) : false
+      
+      console.log('[Document Extract] Extraction details:', {
+        name: attachment.name,
+        extractedLength: textLength,
+        isErrorState,
+        hasCurrency,
+        hasDecimals,
+        preview: preview.substring(0, 300),
+      })
+      
+      // Check for specific expected values for debugging
+      if (!isErrorState && text) {
+        const criticalValues = ['$140', '$25.50', '$752', '$191', '$446', '$612', 'Sally', 'electronic game machine', 'hire purchase']
+        const foundValues = criticalValues.filter(val => text.includes(val))
+        if (foundValues.length > 0 || process.env.DEBUG_DOCUMENT_EXTRACTION === '1') {
+          console.log('[Document Extract] Critical values found:', foundValues)
+        }
+      }
+    }
+
     if (text === '__MISSING_DATA__') {
       extractionError = `Document data was missing for "${attachment.name}". Please re-upload the file.`
+      console.error('[Document Extract] Missing data:', attachment.name)
       continue
     }
 
     if (text === '__PDF_EXTRACTION_FAILED__') {
       extractionError = `PDF text extraction failed for "${attachment.name}". The file may be corrupted or unsupported.`
+      console.error('[Document Extract] PDF extraction failed:', attachment.name)
       blocks.push(
         `[Attached document: ${attachment.name}]\nPDF text extraction failed. The PDF may be scanned/image-based or corrupted. Please upload a text-based PDF or convert to .txt.\n[/Attached document]`
       )
@@ -160,6 +195,7 @@ export async function buildDocumentContext(attachments: ChatAttachment[]): Promi
 
     if (text === '__PDF_NO_TEXT__') {
       extractionError = `No readable text found in "${attachment.name}". This may be a scanned/image-only PDF.`
+      console.error('[Document Extract] No text in PDF:', attachment.name)
       blocks.push(
         `[Attached document: ${attachment.name}]\nNo readable text found in this PDF. It may be a scanned/image-only document.\n[/Attached document]`
       )
@@ -167,6 +203,7 @@ export async function buildDocumentContext(attachments: ChatAttachment[]): Promi
     }
 
     if (!text || text.trim().length === 0) {
+      console.warn('[Document Extract] Empty document:', attachment.name)
       blocks.push(
         `[Attached document: ${attachment.name}]\nDocument appears to be empty or could not be read.\n[/Attached document]`
       )
@@ -175,6 +212,7 @@ export async function buildDocumentContext(attachments: ChatAttachment[]): Promi
 
     const remaining = MAX_DOCUMENT_CHARS - totalChars
     if (remaining <= 0) {
+      console.warn('[Document Extract] Total length limit reached')
       blocks.push(
         `[Attached document: ${attachment.name}]\n[Document truncated due to total length limit]\n[/Attached document]`
       )
@@ -183,6 +221,11 @@ export async function buildDocumentContext(attachments: ChatAttachment[]): Promi
 
     let finalText = text
     if (finalText.length > remaining) {
+      console.warn('[Document Extract] Individual document truncated', {
+        name: attachment.name,
+        original: finalText.length,
+        truncated: remaining,
+      })
       finalText = finalText.substring(0, remaining) + '\n\n[Document truncated due to length]'
     }
 
@@ -192,6 +235,8 @@ export async function buildDocumentContext(attachments: ChatAttachment[]): Promi
     console.log('[Document Extract] Success:', {
       name: attachment.name,
       extractedLength: finalText.length,
+      totalSoFar: totalChars,
+      maxAllowed: MAX_DOCUMENT_CHARS,
     })
   }
 
