@@ -1,5 +1,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { ChatMessage } from '@/types/models'
+import type { ChatAttachment } from '@/types/models'
+import { extractTextFromAttachment } from '@/lib/ai/document-extract'
+import { saveAttachmentMemory } from '@/lib/ai/conversation-summary'
 
 export interface ContextBuildOptions {
   userId: string
@@ -24,6 +27,11 @@ export interface BuiltContext {
     memoriesCount: number
     chunksCount: number
     attachmentSummariesCount: number
+    historicalAttachmentsLoadedCount: number
+    attachmentChunksLoadedCount: number
+    attachmentExtractedTextLength: number
+    previousPdfContextInjected: boolean
+    fileNamesIncluded: string[]
     crossConversationCount: number
     estimatedTokens: number
     provider: string
@@ -32,6 +40,26 @@ export interface BuiltContext {
 
 const APPROX_CHARS_PER_TOKEN = 4
 const DEFAULT_TOKEN_BUDGET = 24000
+const DEFAULT_ATTACHMENT_CONTEXT_CHARS = 1200
+const FOLLOW_UP_ATTACHMENT_CONTEXT_CHARS = 12000
+
+interface HistoricalAttachment {
+  id?: string
+  messageId?: string
+  fileName: string
+  fileType: string
+  mimeType?: string | null
+  extractedText?: string | null
+  visionSummary?: string | null
+  ocrText?: string | null
+  importantDetails?: Record<string, any> | null
+  purposeNote?: string | null
+  storageProvider?: string | null
+  storageKey?: string | null
+  storagePath?: string | null
+  bucket?: string | null
+  createdAt?: string | null
+}
 
 function estimateTokens(text: string): number {
   return Math.ceil(text.length / APPROX_CHARS_PER_TOKEN)
@@ -63,6 +91,214 @@ function extractSearchKeywords(message: string): string[] {
   return [...filtered, ...bigrams].slice(0, 10)
 }
 
+export function isDocumentFollowUpRequest(message: string): boolean {
+  return /\b(q(?:uestion)?\s*\d+|question\s+(?:one|two|three|four|five|six|seven|eight|nine|ten)|next\s+question|previous\s+question|the\s+(?:pdf|document|file|worksheet|attachment)|uploaded\s+(?:pdf|document|file)|what\s+(?:pdf|document|file)\s+did\s+i\s+upload|continue|do\s+(?:q|question)|solve\s+(?:q|question))\b/i.test(message)
+}
+
+function getAttachmentField(att: any, camel: string, snake?: string): any {
+  return att?.[camel] ?? (snake ? att?.[snake] : undefined)
+}
+
+function attachmentStorageDetails(att: any): {
+  storageProvider?: string | null
+  storageKey?: string | null
+  storagePath?: string | null
+  bucket?: string | null
+} {
+  const importantDetails = att?.important_details || att?.importantDetails || {}
+  const storageProvider =
+    getAttachmentField(att, 'storageProvider', 'storage_provider') ||
+    importantDetails.storageProvider ||
+    importantDetails.storage_provider ||
+    (getAttachmentField(att, 'storageKey', 'storage_key') || getAttachmentField(att, 'storagePath', 'storage_path') ? 'r2' : null)
+  const storageKey =
+    getAttachmentField(att, 'storageKey', 'storage_key') ||
+    importantDetails.storageKey ||
+    importantDetails.storage_key ||
+    getAttachmentField(att, 'storagePath', 'storage_path') ||
+    importantDetails.storagePath ||
+    importantDetails.storage_path ||
+    null
+  const storagePath =
+    getAttachmentField(att, 'storagePath', 'storage_path') ||
+    importantDetails.storagePath ||
+    importantDetails.storage_path ||
+    storageKey ||
+    null
+  const bucket = getAttachmentField(att, 'bucket', 'storage_bucket') || importantDetails.bucket || null
+
+  return { storageProvider, storageKey, storagePath, bucket }
+}
+
+function addHistoricalAttachment(
+  attachments: HistoricalAttachment[],
+  seen: Set<string>,
+  attachment: HistoricalAttachment
+) {
+  const key = `${attachment.messageId || 'none'}:${attachment.fileName}:${attachment.storageKey || attachment.storagePath || 'inline'}`
+  const existingIndex = attachments.findIndex((att) => {
+    const existingKey = `${att.messageId || 'none'}:${att.fileName}:${att.storageKey || att.storagePath || 'inline'}`
+    return existingKey === key
+  })
+
+  if (existingIndex >= 0) {
+    const existing = attachments[existingIndex]
+    attachments[existingIndex] = {
+      ...existing,
+      ...attachment,
+      extractedText: attachment.extractedText || existing.extractedText,
+      id: attachment.id || existing.id,
+      messageId: attachment.messageId || existing.messageId,
+    }
+    return
+  }
+
+  if (seen.has(key)) return
+  seen.add(key)
+  attachments.push(attachment)
+}
+
+async function loadHistoricalAttachments(
+  db: SupabaseClient,
+  userId: string,
+  conversationId: string
+): Promise<HistoricalAttachment[]> {
+  const attachments: HistoricalAttachment[] = []
+  const seen = new Set<string>()
+
+  try {
+    const { data: attachmentRows } = await db
+      .from('attachments')
+      .select('id, message_id, file_name, file_type, mime_type, storage_path, public_url, extracted_text, vision_summary, ocr_text, important_details, purpose_note, created_at')
+      .eq('conversation_id', conversationId)
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(20)
+
+    for (const row of attachmentRows || []) {
+      const details = attachmentStorageDetails(row)
+      addHistoricalAttachment(attachments, seen, {
+        id: row.id,
+        messageId: row.message_id,
+        fileName: row.file_name || 'unknown',
+        fileType: row.file_type || 'document',
+        mimeType: row.mime_type,
+        extractedText: row.extracted_text,
+        visionSummary: row.vision_summary,
+        ocrText: row.ocr_text,
+        importantDetails: row.important_details || {},
+        purposeNote: row.purpose_note,
+        storageProvider: details.storageProvider,
+        storageKey: details.storageKey,
+        storagePath: details.storagePath,
+        bucket: details.bucket,
+        createdAt: row.created_at,
+      })
+    }
+  } catch (e: any) {
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('[ContextBuilder] Attachment table fetch skipped:', e.message)
+    }
+  }
+
+  try {
+    const { data: messageRows } = await db
+      .from('messages')
+      .select('id, attachments, created_at')
+      .eq('conversation_id', conversationId)
+      .order('created_at', { ascending: false })
+      .limit(50)
+
+    for (const msg of messageRows || []) {
+      if (!Array.isArray(msg.attachments)) continue
+
+      for (const rawAtt of msg.attachments) {
+        const name = rawAtt?.name || rawAtt?.file_name || 'unknown'
+        const type = rawAtt?.type || rawAtt?.file_type || 'document'
+        const details = attachmentStorageDetails(rawAtt)
+        addHistoricalAttachment(attachments, seen, {
+          messageId: msg.id,
+          fileName: name,
+          fileType: type,
+          mimeType: rawAtt?.mimeType || rawAtt?.mime_type || null,
+          extractedText: rawAtt?.textContent || rawAtt?.extracted_text || null,
+          storageProvider: details.storageProvider,
+          storageKey: details.storageKey,
+          storagePath: details.storagePath,
+          bucket: details.bucket,
+          createdAt: msg.created_at,
+        })
+      }
+    }
+  } catch (e: any) {
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('[ContextBuilder] Message attachment fetch skipped:', e.message)
+    }
+  }
+
+  return attachments.sort((a, b) =>
+    new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
+  )
+}
+
+function isRecoverableDocumentText(text: string): boolean {
+  return !!text &&
+    text !== '__MISSING_DATA__' &&
+    text !== '__PDF_EXTRACTION_FAILED__' &&
+    text !== '__PDF_NO_TEXT__'
+}
+
+async function recoverMissingR2Text(
+  db: SupabaseClient,
+  userId: string,
+  conversationId: string,
+  attachment: HistoricalAttachment
+): Promise<string | null> {
+  const storageKey = attachment.storageKey || attachment.storagePath
+  const provider = attachment.storageProvider || (storageKey ? 'r2' : null)
+  if (provider !== 'r2' || !storageKey || attachment.fileType !== 'document') return null
+
+  const recovered = await extractTextFromAttachment({
+    type: 'document',
+    name: attachment.fileName,
+    mimeType: attachment.mimeType || 'application/pdf',
+    storageProvider: 'r2',
+    storageKey,
+    storagePath: attachment.storagePath || storageKey,
+    bucket: attachment.bucket || undefined,
+  } as ChatAttachment)
+
+  if (!isRecoverableDocumentText(recovered)) return null
+
+  if (attachment.messageId) {
+    await saveAttachmentMemory(db, userId, conversationId, attachment.messageId, {
+      name: attachment.fileName,
+      type: 'document',
+      mimeType: attachment.mimeType || 'application/pdf',
+      textContent: recovered,
+      storageProvider: 'r2',
+      storageKey,
+      storagePath: attachment.storagePath || storageKey,
+      bucket: attachment.bucket || undefined,
+    })
+  } else if (attachment.id) {
+    await db
+      .from('attachments')
+      .update({
+        extracted_text: recovered.substring(0, 10000),
+        important_details: {
+          ...(attachment.importantDetails || {}),
+          totalLength: recovered.length,
+          recoveredFromR2: true,
+        },
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', attachment.id)
+  }
+
+  return recovered
+}
+
 export async function buildContext(
   db: SupabaseClient,
   options: ContextBuildOptions
@@ -90,6 +326,11 @@ export async function buildContext(
       memoriesCount: 0,
       chunksCount: 0,
       attachmentSummariesCount: 0,
+      historicalAttachmentsLoadedCount: 0,
+      attachmentChunksLoadedCount: 0,
+      attachmentExtractedTextLength: 0,
+      previousPdfContextInjected: false,
+      fileNamesIncluded: [],
       crossConversationCount: 0,
       estimatedTokens: 0,
       provider: modelProvider,
@@ -148,41 +389,62 @@ export async function buildContext(
   remainingBudget -= recentTokens
   result.debugInfo.recentMessagesCount = filteredRecent.length
 
-  // 3. Load attachment summaries for this conversation
-  try {
-    const { data: attachments } = await db
-      .from('attachments')
-      .select('file_name, file_type, extracted_text, vision_summary, ocr_text, important_details, purpose_note, created_at')
-      .eq('conversation_id', conversationId)
-      .eq('user_id', userId)
-      .order('created_at', { ascending: false })
-      .limit(10)
+  // 3. Load attachment context for this conversation, including message JSON
+  // fallback so follow-ups do not depend on only the latest message payload.
+  const documentFollowUp = isDocumentFollowUpRequest(latestUserMessage)
+  let historicalAttachments: HistoricalAttachment[] = []
 
-    if (attachments && attachments.length > 0) {
-      for (const att of attachments) {
+  try {
+    historicalAttachments = await loadHistoricalAttachments(db, userId, conversationId)
+    result.debugInfo.historicalAttachmentsLoadedCount = historicalAttachments.length
+
+    if (historicalAttachments.length > 0) {
+      for (const att of historicalAttachments.slice(0, 10)) {
         if (remainingBudget < 500) break
 
-        let summary = ''
-        if (att.purpose_note) summary += att.purpose_note + '\n'
-        if (att.vision_summary) summary += `Visual: ${att.vision_summary}\n`
-        if (att.ocr_text) summary += `Text found: ${att.ocr_text.substring(0, 500)}\n`
-        if (att.extracted_text && !att.ocr_text) {
-          summary += `Content: ${att.extracted_text.substring(0, 800)}\n`
+        let extractedText = att.extractedText || ''
+        if (!extractedText && documentFollowUp && att.fileType === 'document') {
+          const recovered = await recoverMissingR2Text(db, userId, conversationId, att)
+          if (recovered) {
+            extractedText = recovered
+            att.extractedText = recovered
+          }
         }
-        if (att.important_details && Object.keys(att.important_details).length > 0) {
-          summary += `Details: ${JSON.stringify(att.important_details)}\n`
+
+        if (extractedText) {
+          result.debugInfo.attachmentExtractedTextLength += extractedText.length
+        }
+
+        let summary = ''
+        if (att.purposeNote) summary += att.purposeNote + '\n'
+        if (att.visionSummary) summary += `Visual: ${att.visionSummary}\n`
+        if (att.ocrText) summary += `Text found: ${att.ocrText.substring(0, 500)}\n`
+        if (extractedText && !att.ocrText) {
+          const maxChars = documentFollowUp && att.fileType === 'document'
+            ? FOLLOW_UP_ATTACHMENT_CONTEXT_CHARS
+            : DEFAULT_ATTACHMENT_CONTEXT_CHARS
+          summary += `Content: ${extractedText.substring(0, maxChars)}\n`
+        }
+        if (att.importantDetails && Object.keys(att.importantDetails).length > 0) {
+          summary += `Details: ${JSON.stringify(att.importantDetails)}\n`
         }
 
         if (summary) {
-          const label = `[Attached ${att.file_type || 'file'}: ${att.file_name}]\n${summary.trim()}`
+          const label = `[Attached ${att.fileType || 'file'}: ${att.fileName}]\n${summary.trim()}`
           const tokens = estimateTokens(label)
           if (tokens < remainingBudget) {
             result.attachmentSummaries.push(label)
+            result.debugInfo.fileNamesIncluded.push(att.fileName)
             remainingBudget -= tokens
           }
         }
       }
+
       result.debugInfo.attachmentSummariesCount = result.attachmentSummaries.length
+      result.debugInfo.previousPdfContextInjected = documentFollowUp && historicalAttachments.some((att) =>
+        result.debugInfo.fileNamesIncluded.includes(att.fileName) &&
+        (att.fileName.toLowerCase().endsWith('.pdf') || att.mimeType === 'application/pdf')
+      )
     }
   } catch (e: any) {
     if (process.env.NODE_ENV !== 'production') {
@@ -227,7 +489,7 @@ export async function buildContext(
       // First: same-conversation chunks
       const { data: sameConvChunks } = await db
         .from('memory_chunks')
-        .select('content, summary, source_type')
+        .select('id, content, summary, source_type, chunk_index, metadata, created_at')
         .eq('conversation_id', conversationId)
         .eq('user_id', userId)
         .order('created_at', { ascending: false })
@@ -236,16 +498,45 @@ export async function buildContext(
       // Second: cross-conversation chunks (different conversations, same user)
       const { data: crossConvChunks } = await db
         .from('memory_chunks')
-        .select('content, summary, source_type, conversation_id')
+        .select('id, content, summary, source_type, conversation_id')
         .eq('user_id', userId)
         .neq('conversation_id', conversationId)
         .order('created_at', { ascending: false })
         .limit(40)
 
+      const includedChunkIds = new Set<string>()
+
+      if (documentFollowUp && sameConvChunks && sameConvChunks.length > 0) {
+        const attachmentChunks = sameConvChunks
+          .filter(chunk => chunk.source_type === 'attachment')
+          .sort((a, b) => {
+            const fileA = a.metadata?.file_name || ''
+            const fileB = b.metadata?.file_name || ''
+            if (fileA !== fileB) return fileA.localeCompare(fileB)
+            return (a.chunk_index || 0) - (b.chunk_index || 0)
+          })
+          .slice(0, 8)
+
+        for (const chunk of attachmentChunks) {
+          if (remainingBudget < 300) break
+          const fileName = chunk.metadata?.file_name ? ` from ${chunk.metadata.file_name}` : ''
+          const text = `[Document chunk${fileName}]\n${chunk.content.substring(0, 1400)}`
+          const tokens = estimateTokens(text)
+          if (tokens < remainingBudget) {
+            result.relevantChunks.push(text)
+            result.debugInfo.attachmentChunksLoadedCount++
+            if (chunk.id) includedChunkIds.add(chunk.id)
+            if (chunk.metadata?.file_name) result.debugInfo.fileNamesIncluded.push(chunk.metadata.file_name)
+            remainingBudget -= tokens
+          }
+        }
+      }
+
       const allChunks = [...(sameConvChunks || []), ...(crossConvChunks || [])]
 
       if (allChunks.length > 0) {
         const scored = allChunks
+          .filter(chunk => !chunk.id || !includedChunkIds.has(chunk.id))
           .map(chunk => {
             const text = (chunk.summary || chunk.content).toLowerCase()
             let matchCount = 0
@@ -405,6 +696,7 @@ export async function buildContext(
   }
 
   result.debugInfo.estimatedTokens = maxTokenBudget - remainingBudget
+  result.debugInfo.fileNamesIncluded = Array.from(new Set(result.debugInfo.fileNamesIncluded))
 
   if (process.env.NODE_ENV !== 'production') {
     console.log('[ContextBuilder] Built context:', result.debugInfo)

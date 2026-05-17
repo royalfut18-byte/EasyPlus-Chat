@@ -124,15 +124,17 @@ export async function extractTextFromAttachment(attachment: ChatAttachment): Pro
 
 export interface DocumentExtractionResult {
   context: string
+  extractedTexts: Map<string, string>
   error?: string
 }
 
 export async function buildDocumentContext(attachments: ChatAttachment[]): Promise<DocumentExtractionResult> {
   const docAttachments = attachments.filter((a) => a.type === 'document')
-  if (docAttachments.length === 0) return { context: '' }
+  if (docAttachments.length === 0) return { context: '', extractedTexts: new Map() }
 
   let totalChars = 0
   const blocks: string[] = []
+  const extractedTexts = new Map<string, string>()
   let extractionError: string | undefined
 
   for (const attachment of docAttachments) {
@@ -210,6 +212,8 @@ export async function buildDocumentContext(attachments: ChatAttachment[]): Promi
       continue
     }
 
+    extractedTexts.set(attachment.name, text)
+
     const remaining = MAX_DOCUMENT_CHARS - totalChars
     if (remaining <= 0) {
       console.warn('[Document Extract] Total length limit reached')
@@ -242,6 +246,7 @@ export async function buildDocumentContext(attachments: ChatAttachment[]): Promi
 
   return {
     context: blocks.join('\n\n'),
+    extractedTexts,
     error: extractionError,
   }
 }

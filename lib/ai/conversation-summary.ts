@@ -282,7 +282,8 @@ export async function chunkLongMessage(
   conversationId: string,
   messageId: string,
   content: string,
-  sourceType: 'message' | 'attachment' = 'message'
+  sourceType: 'message' | 'attachment' = 'message',
+  metadata: Record<string, any> = {}
 ): Promise<void> {
   if (!content || content.length < CHUNK_SIZE) return
 
@@ -306,6 +307,7 @@ export async function chunkLongMessage(
         chunk_index: c.chunk_index,
         content: c.content,
         summary: c.summary,
+        metadata,
       }))
     )
 
@@ -328,11 +330,18 @@ export async function saveAttachmentMemory(
     mimeType?: string
     textContent?: string
     dataUrl?: string
+    storageProvider?: string
+    storageKey?: string
+    storagePath?: string
+    bucket?: string
+    url?: string
   }
-): Promise<void> {
+): Promise<string | null> {
   try {
     const extractedText = attachment.textContent || null
     const isImage = attachment.type === 'image'
+    const storagePath = attachment.storagePath || attachment.storageKey || null
+    let attachmentId: string | null = null
 
     const attRow: Record<string, any> = {
       user_id: userId,
@@ -341,7 +350,15 @@ export async function saveAttachmentMemory(
       file_name: attachment.name || 'unknown',
       file_type: attachment.type || 'document',
       mime_type: attachment.mimeType || null,
+      storage_path: storagePath,
+      public_url: attachment.url || null,
       extracted_text: extractedText ? extractedText.substring(0, 10000) : null,
+      important_details: {
+        storageProvider: attachment.storageProvider || null,
+        storageKey: attachment.storageKey || null,
+        storagePath: attachment.storagePath || null,
+        bucket: attachment.bucket || null,
+      },
     }
 
     if (isImage && attachment.name) {
@@ -350,14 +367,62 @@ export async function saveAttachmentMemory(
     } else if (extractedText) {
       attRow.purpose_note = `User uploaded document "${attachment.name}" containing ${extractedText.length} characters`
       const preview = extractedText.substring(0, 500)
-      attRow.important_details = { preview, totalLength: extractedText.length }
+      attRow.important_details = {
+        ...attRow.important_details,
+        preview,
+        totalLength: extractedText.length,
+      }
     }
 
-    await db.from('attachments').insert(attRow)
+    const { data: existing } = await db
+      .from('attachments')
+      .select('id, extracted_text')
+      .eq('conversation_id', conversationId)
+      .eq('message_id', messageId)
+      .eq('file_name', attachment.name || 'unknown')
+      .limit(1)
+
+    if (existing && existing.length > 0) {
+      attachmentId = existing[0].id
+      const shouldUpdateText = extractedText && (!existing[0].extracted_text || existing[0].extracted_text.length < attRow.extracted_text.length)
+      const updatePayload = shouldUpdateText
+        ? attRow
+        : {
+            storage_path: attRow.storage_path,
+            public_url: attRow.public_url,
+            important_details: attRow.important_details,
+            updated_at: new Date().toISOString(),
+          }
+
+      await db
+        .from('attachments')
+        .update(updatePayload)
+        .eq('id', attachmentId)
+    } else {
+      const { data: inserted } = await db
+        .from('attachments')
+        .insert(attRow)
+        .select('id')
+        .single()
+      attachmentId = inserted?.id || null
+    }
 
     // Chunk long text content
-    if (extractedText && extractedText.length > CHUNK_SIZE) {
-      await chunkLongMessage(db, userId, conversationId, messageId, extractedText, 'attachment')
+    if (extractedText && extractedText.length > CHUNK_SIZE && attachmentId) {
+      const { count } = await db
+        .from('memory_chunks')
+        .select('*', { count: 'exact', head: true })
+        .eq('source_type', 'attachment')
+        .eq('source_id', attachmentId)
+
+      if ((count || 0) === 0) {
+        await chunkLongMessage(db, userId, conversationId, attachmentId, extractedText, 'attachment', {
+          message_id: messageId,
+          attachment_id: attachmentId,
+          file_name: attachment.name || 'unknown',
+          mime_type: attachment.mimeType || null,
+        })
+      }
     }
 
     // Create conversation memory about this upload
@@ -365,19 +430,33 @@ export async function saveAttachmentMemory(
       ? `Image uploaded: ${attachment.name}`
       : `Document "${attachment.name}" uploaded${extractedText ? ` (${extractedText.length} chars)` : ''}`
 
-    await db.from('conversation_memories').insert({
-      user_id: userId,
-      conversation_id: conversationId,
-      scope: 'attachment',
-      title: `File: ${attachment.name}`,
-      content: memContent,
-      importance: 3,
-      source_message_id: messageId,
-    })
+    const { data: existingMemory } = await db
+      .from('conversation_memories')
+      .select('id')
+      .eq('conversation_id', conversationId)
+      .eq('source_message_id', messageId)
+      .eq('title', `File: ${attachment.name}`)
+      .limit(1)
+
+    if (!existingMemory || existingMemory.length === 0) {
+      await db.from('conversation_memories').insert({
+        user_id: userId,
+        conversation_id: conversationId,
+        scope: 'attachment',
+        title: `File: ${attachment.name}`,
+        content: memContent,
+        importance: 3,
+        source_message_id: messageId,
+        source_attachment_id: attachmentId,
+      })
+    }
+
+    return attachmentId
   } catch (e: any) {
     // Non-fatal: table may not exist yet
     if (process.env.NODE_ENV !== 'production') {
       console.log('[AttachmentMemory] Save skipped:', e.message)
     }
+    return null
   }
 }

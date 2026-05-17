@@ -4,7 +4,7 @@ import { streamBedrockResponse, getModelCost } from '@/lib/ai/bedrock'
 import { streamGeminiResponse } from '@/lib/ai/gemini'
 import { searchWeb, buildWebSearchQuery } from '@/lib/ai/web-search'
 import { buildSystemPrompt, isTimeSensitiveQuery, detectQueryType } from '@/lib/ai/system-prompt'
-import { buildDocumentContext, extractTextFromAttachment } from '@/lib/ai/document-extract'
+import { buildDocumentContext } from '@/lib/ai/document-extract'
 import { sanitizeAttachmentsForStorage } from '@/lib/ai/sanitize-attachments'
 import {
   getUserMemories,
@@ -172,6 +172,7 @@ export async function POST(request: NextRequest) {
     // Stage: Prepare messages
     stage = 'prepare-messages'
     const userMessage = messages[messages.length - 1]
+    const currentMessageAttachmentsCount = userMessage.attachments?.length || 0
 
     // Validate inline attachment sizes (R2 metadata attachments bypass this check)
     if (userMessage.attachments && userMessage.attachments.length > 0) {
@@ -282,6 +283,7 @@ RULES FOR USING THESE RESULTS:
     stage = 'document-extraction'
     let documentContext = ''
     const extractedDocTexts = new Map<string, string>()
+    const currentDocumentFileNames: string[] = []
 
     if (userMessage.attachments && userMessage.attachments.length > 0) {
       const docAttachments = userMessage.attachments.filter((a: any) => a.type === 'document')
@@ -289,20 +291,13 @@ RULES FOR USING THESE RESULTS:
         try {
           const result = await buildDocumentContext(docAttachments)
           documentContext = result.context
+          for (const [name, text] of result.extractedTexts) {
+            extractedDocTexts.set(name, text)
+          }
           if (result.error) {
             console.warn('[Chat API] Document extraction warning:', result.error)
           }
-          // Save extracted text per document for DB persistence
-          for (const att of docAttachments) {
-            if (att.textContent) {
-              extractedDocTexts.set(att.name, att.textContent)
-            } else if (att.dataUrl) {
-              const text = await extractTextFromAttachment(att)
-              if (text && !text.startsWith('__')) {
-                extractedDocTexts.set(att.name, text.substring(0, 8000))
-              }
-            }
-          }
+          currentDocumentFileNames.push(...docAttachments.map((att: any) => att.name).filter(Boolean))
           console.log('[Chat API] Document context extracted, length:', documentContext.length)
         } catch (docErr: any) {
           console.error('[Chat API] Document extraction error:', docErr.message)
@@ -353,6 +348,8 @@ RULES FOR USING THESE RESULTS:
     stage = 'memory'
     let memoryContext = ''
     let fullContextPrompt = ''
+    let contextDebugInfo: any = null
+    let documentDebugLogged = false
     let memorySaveResult: { saved: boolean; memoryText?: string } | null = null
 
     try {
@@ -369,6 +366,7 @@ RULES FOR USING THESE RESULTS:
           includeUserMemories: true,
         })
         fullContextPrompt = formatContextForPrompt(builtContext)
+        contextDebugInfo = builtContext.debugInfo
 
         console.log('[Chat API] Context built:', {
           ...builtContext.debugInfo,
@@ -400,6 +398,24 @@ RULES FOR USING THESE RESULTS:
         })
       }
 
+      if (process.env.NODE_ENV !== 'production') {
+        const fileNamesIncluded = [
+          ...currentDocumentFileNames,
+          ...(contextDebugInfo?.fileNamesIncluded || []),
+        ].filter(Boolean)
+        console.log('[Chat API] Document context debug:', {
+          conversationId: conversationId || 'new',
+          latestUserMessage: latestUserMessage.content.substring(0, 160),
+          currentMessageAttachmentsCount,
+          historicalAttachmentsLoadedCount: contextDebugInfo?.historicalAttachmentsLoadedCount || 0,
+          attachmentChunksLoadedCount: contextDebugInfo?.attachmentChunksLoadedCount || 0,
+          attachmentExtractedTextLength: (contextDebugInfo?.attachmentExtractedTextLength || 0) + Array.from(extractedDocTexts.values()).reduce((sum, text) => sum + text.length, 0),
+          previousPdfContextInjected: !!contextDebugInfo?.previousPdfContextInjected || !!historicalAttachmentContext,
+          fileNamesIncluded: Array.from(new Set(fileNamesIncluded)),
+        })
+        documentDebugLogged = true
+      }
+
       // Defer memory save/delete - fire-and-forget after getting context
       if (shouldExtractMemory(latestUserMessage.content)) {
         const memText = extractMemoryText(latestUserMessage.content)
@@ -419,6 +435,18 @@ RULES FOR USING THESE RESULTS:
       }
     } catch (memErr: any) {
       console.warn('[Chat API] Memory/context non-fatal error:', memErr.message)
+      if (process.env.NODE_ENV !== 'production' && !documentDebugLogged) {
+        console.log('[Chat API] Document context debug:', {
+          conversationId: conversationId || 'new',
+          latestUserMessage: latestUserMessage.content.substring(0, 160),
+          currentMessageAttachmentsCount,
+          historicalAttachmentsLoadedCount: 0,
+          attachmentChunksLoadedCount: 0,
+          attachmentExtractedTextLength: Array.from(extractedDocTexts.values()).reduce((sum, text) => sum + text.length, 0),
+          previousPdfContextInjected: !!historicalAttachmentContext,
+          fileNamesIncluded: currentDocumentFileNames,
+        })
+      }
     }
 
     // Stage: Route to provider
@@ -550,6 +578,22 @@ RULES FOR USING THESE RESULTS:
 
           savedUserMessageId = insertedMsg?.id || null
           console.log('[Chat API] User message saved, order_index:', userMessageOrderIndex)
+        }
+
+        if (savedUserMessageId && userMessage.attachments && userMessage.attachments.length > 0) {
+          for (const att of userMessage.attachments) {
+            await saveAttachmentMemory(db, user.id, conversationId, savedUserMessageId, {
+              name: att.name || 'unknown',
+              type: att.type || 'document',
+              mimeType: att.mimeType,
+              textContent: att.textContent || extractedDocTexts.get(att.name) || undefined,
+              storageProvider: att.storageProvider || att.storage_provider,
+              storageKey: att.storageKey || att.storage_key,
+              storagePath: att.storagePath,
+              bucket: att.bucket,
+              url: att.url,
+            })
+          }
         }
       } catch (saveErr: any) {
         console.error('[Chat API] User message save exception:', saveErr.message)
@@ -744,6 +788,11 @@ RULES FOR USING THESE RESULTS:
                         type: att.type || 'document',
                         mimeType: att.mimeType,
                         textContent: att.textContent || extractedDocTexts.get(att.name) || undefined,
+                        storageProvider: att.storageProvider || att.storage_provider,
+                        storageKey: att.storageKey || att.storage_key,
+                        storagePath: att.storagePath,
+                        bucket: att.bucket,
+                        url: att.url,
                       })
                     }
                   }
