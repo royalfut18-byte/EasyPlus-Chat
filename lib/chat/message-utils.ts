@@ -370,7 +370,10 @@ export function processLoadedMessages(
 }
 
 /**
- * Parse artifacts from old assistant messages
+ * Parse artifacts from old assistant messages.
+ * SAFETY: NEVER replace or truncate message.content.
+ * Only attach the artifact metadata for the artifact panel.
+ * The original full content is always preserved for display.
  */
 function parseArtifactsFromMessages(
   messages: Message[],
@@ -385,10 +388,10 @@ function parseArtifactsFromMessages(
 
     if (message.role === 'assistant' && message.content && !message.artifact) {
       // Try to parse artifact from old message
-      const { artifact, cleanContent } = parseArtifactFromResponse(
+      const { artifact } = parseArtifactFromResponse(
         message.content,
-        true, // Always try to parse for old messages
-        '' // No user prompt context
+        true,
+        ''
       )
 
       if (artifact && artifact.title && artifact.language && artifact.code) {
@@ -405,16 +408,10 @@ function parseArtifactsFromMessages(
           console.error('[Chat] Failed to save artifact:', e)
         }
 
-        // Ensure clean content
-        let finalContent = cleanContent?.trim() || ''
-        if (!finalContent) {
-          finalContent = `I created an artifact for you: **${artifact.title}**.`
-        }
-
+        // PRESERVE original content — only attach artifact metadata
         processed.push({
           ...message,
           artifact,
-          content: finalContent,
         })
       } else {
         processed.push(message)

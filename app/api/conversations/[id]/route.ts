@@ -76,7 +76,8 @@ export async function GET(
 
       // ALWAYS keep assistant messages with real content regardless of status/request_id/parent_message_id
       if (isServerReal(content)) {
-        // If status is stale 'generating' but has real content, fix status in-place
+        // If status is stale 'generating' but has real content, mark as completed
+        // but preserve the content exactly as-is (never truncate or replace)
         if (m.status === 'generating') {
           const age = now - new Date(m.updated_at || m.created_at || 0).getTime()
           if (age > STALE_THRESHOLD_MS) {
