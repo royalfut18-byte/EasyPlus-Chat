@@ -16,8 +16,38 @@ const NUMBER_WORDS: Record<string, number> = {
   ten: 10,
 }
 
+export function parseQuestionNumberRequest(message: string): number | null {
+  const normalized = message
+    .toLowerCase()
+    .replace(/\u2019/g, "'")
+    .replace(/[\u2013\u2014]/g, '-')
+    .replace(/\s+/g, ' ')
+    .trim()
+
+  const patterns = [
+    /\bq(?:uestion)?\s*#?\s*(\d{1,3})\b/i,
+    /\b(?:do|solve|answer|explain|calculate|find|work\s*out|help\s+with)\s+(?:the\s+)?(?:question\s+|q\s*)?(\d{1,3})\b/i,
+    /\bwhat(?:'s| is)?\s+(?:the\s+)?answer\s+(?:to|for)\s+(?:question\s+|q\s*)?(\d{1,3})\b/i,
+    /\b(?:answer|solution)\s+(?:to|for)\s+(?:question\s+|q\s*)?(\d{1,3})\b/i,
+  ]
+
+  for (const pattern of patterns) {
+    const match = normalized.match(pattern)
+    if (!match) continue
+
+    const questionNumber = Number.parseInt(match[1], 10)
+    if (Number.isFinite(questionNumber) && questionNumber > 0 && questionNumber < 1000) {
+      return questionNumber
+    }
+  }
+
+  return null
+}
+
 export function isDocumentFollowUpRequest(message: string): boolean {
-  return /\b(q(?:uestion)?\s*\d+|question\s+(?:one|two|three|four|five|six|seven|eight|nine|ten)|chapter\s+\d+(?:\.\d+)?|next\s+question|previous\s+question|the\s+(?:pdf|document|file|worksheet|attachment)|uploaded\s+(?:pdf|document|file)|what\s+(?:pdf|document|file)\s+did\s+i\s+upload|continue|do\s+(?:q|question)|solve\s+(?:q|question)|ocr\s+(?:pages?|the\s+first)|pages?\s+\d+)\b/i.test(message)
+  if (parseQuestionNumberRequest(message) || parsePageRangeRequest(message)) return true
+
+  return /\b(question\s+(?:one|two|three|four|five|six|seven|eight|nine|ten)|chapter\s+\d+(?:\.\d+)?|next\s+(?:one|question)|do\s+the\s+next\s+one|previous\s+(?:one|question)|the\s+(?:pdf|document|file|worksheet|attachment)|uploaded\s+(?:pdf|document|file)|what\s+(?:pdf|document|file)\s+did\s+i\s+upload|continue|do\s+(?:q|question)|solve\s+(?:q|question)|ocr\s+(?:pages?|the\s+first)|pages?\s+\d+)\b/i.test(message)
 }
 
 export function parsePageRangeRequest(message: string, maxPages = 10): PageRangeRequest | null {

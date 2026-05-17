@@ -2,8 +2,9 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import type { ChatMessage } from '@/types/models'
 import type { ChatAttachment } from '@/types/models'
 import { extractTextFromAttachment } from '@/lib/ai/document-extract'
-import { saveAttachmentMemory } from '@/lib/ai/conversation-summary'
-import { isDocumentFollowUpRequest, parsePageRangeRequest } from '@/lib/ai/document-requests'
+import { chunkLongMessage, MAX_ATTACHMENT_EXTRACTED_TEXT_CHARS, MEMORY_CHUNK_SIZE, saveAttachmentMemory } from '@/lib/ai/conversation-summary'
+import { isDocumentFollowUpRequest, parsePageRangeRequest, parseQuestionNumberRequest } from '@/lib/ai/document-requests'
+import { compactPreview, containsQuestionNumber, extractQuestionNumberExcerpt } from '@/lib/ai/document-question-retrieval'
 
 export interface ContextBuildOptions {
   userId: string
@@ -33,6 +34,9 @@ export interface BuiltContext {
     attachmentExtractedTextLength: number
     previousPdfContextInjected: boolean
     fileNamesIncluded: string[]
+    questionNumberDetected: number | null
+    matchedChunkIds: string[]
+    matchedChunkPreviews: string[]
     crossConversationCount: number
     estimatedTokens: number
     provider: string
@@ -65,6 +69,18 @@ interface HistoricalAttachment {
   createdAt?: string | null
 }
 
+interface MemoryChunkRow {
+  id?: string | null
+  content: string
+  summary?: string | null
+  source_type?: string | null
+  source_id?: string | null
+  chunk_index?: number | null
+  metadata?: Record<string, any> | null
+  created_at?: string | null
+  conversation_id?: string | null
+}
+
 function estimateTokens(text: string): number {
   return Math.ceil(text.length / APPROX_CHARS_PER_TOKEN)
 }
@@ -93,6 +109,29 @@ function extractSearchKeywords(message: string): string[] {
   }
 
   return [...filtered, ...bigrams].slice(0, 10)
+}
+
+function inferNextQuestionNumber(message: string, currentMessages: ChatMessage[]): number | null {
+  if (!/\b(next\s+(?:one|question)|do\s+the\s+next\s+one|continue)\b/i.test(message)) {
+    return null
+  }
+
+  for (const msg of [...currentMessages].reverse()) {
+    const parsed = parseQuestionNumberRequest(msg.content || '')
+    if (parsed) return parsed + 1
+
+    const fallback = (msg.content || '').match(/\bquestion\s+(\d{1,3})\b/i)
+    if (fallback) {
+      const questionNumber = Number.parseInt(fallback[1], 10)
+      if (Number.isFinite(questionNumber) && questionNumber > 0) return questionNumber + 1
+    }
+  }
+
+  return null
+}
+
+function questionNumberForMessage(message: string, currentMessages: ChatMessage[]): number | null {
+  return parseQuestionNumberRequest(message) || inferNextQuestionNumber(message, currentMessages)
 }
 
 function getAttachmentField(att: any, camel: string, snake?: string): any {
@@ -274,7 +313,7 @@ async function recoverMissingR2Text(
   if (!isRecoverableDocumentText(recovered)) return null
 
   if (attachment.messageId) {
-    await saveAttachmentMemory(db, userId, conversationId, attachment.messageId, {
+    const savedId = await saveAttachmentMemory(db, userId, conversationId, attachment.messageId, {
       name: attachment.fileName,
       type: 'document',
       mimeType: attachment.mimeType || 'application/pdf',
@@ -284,11 +323,12 @@ async function recoverMissingR2Text(
       storagePath: attachment.storagePath || storageKey,
       bucket: attachment.bucket || undefined,
     })
+    attachment.id = savedId || attachment.id
   } else if (attachment.id) {
     await db
       .from('attachments')
       .update({
-        extracted_text: recovered.substring(0, 10000),
+        extracted_text: recovered.substring(0, MAX_ATTACHMENT_EXTRACTED_TEXT_CHARS),
         important_details: {
           ...(attachment.importantDetails || {}),
           totalLength: recovered.length,
@@ -297,9 +337,129 @@ async function recoverMissingR2Text(
         updated_at: new Date().toISOString(),
       })
       .eq('id', attachment.id)
+
+    await chunkLongMessage(db, userId, conversationId, attachment.id, recovered, 'attachment', {
+      attachment_id: attachment.id,
+      file_name: attachment.fileName,
+      mime_type: attachment.mimeType || null,
+      recovered_from_r2: true,
+    })
   }
 
   return recovered
+}
+
+function getStoredTotalLength(attachment: HistoricalAttachment): number {
+  const details = attachment.importantDetails || {}
+  const raw = details.totalLength ?? details.total_length ?? details.extractedTextLength ?? details.extracted_text_length
+  const totalLength = typeof raw === 'number' ? raw : Number.parseInt(String(raw || ''), 10)
+  return Number.isFinite(totalLength) && totalLength > 0 ? totalLength : 0
+}
+
+async function getAttachmentChunkCount(
+  db: SupabaseClient,
+  userId: string,
+  conversationId: string,
+  attachmentId?: string | null
+): Promise<number> {
+  if (!attachmentId) return 0
+
+  const { count } = await db
+    .from('memory_chunks')
+    .select('*', { count: 'exact', head: true })
+    .eq('user_id', userId)
+    .eq('conversation_id', conversationId)
+    .eq('source_type', 'attachment')
+    .eq('source_id', attachmentId)
+
+  return count || 0
+}
+
+async function ensureHistoricalDocumentIndexed(
+  db: SupabaseClient,
+  userId: string,
+  conversationId: string,
+  attachment: HistoricalAttachment,
+  options: { forceFullText?: boolean } = {}
+): Promise<{ text: string; chunksCreated: number; chunkCount: number; recoveredFromStorage: boolean }> {
+  if (attachment.fileType !== 'document') {
+    return { text: '', chunksCreated: 0, chunkCount: 0, recoveredFromStorage: false }
+  }
+
+  let text = isRecoverableDocumentText(attachment.extractedText || '') ? (attachment.extractedText || '') : ''
+  const storedTotalLength = getStoredTotalLength(attachment)
+  let chunkCount = await getAttachmentChunkCount(db, userId, conversationId, attachment.id)
+  const expectedChunks = storedTotalLength > MEMORY_CHUNK_SIZE
+    ? Math.ceil(storedTotalLength / MEMORY_CHUNK_SIZE)
+    : 0
+  const storageKey = attachment.storageKey || attachment.storagePath
+  const looksTruncated = !!text && storedTotalLength > text.length + MEMORY_CHUNK_SIZE
+  const needsFullText =
+    !!storageKey &&
+    (
+      !text ||
+      looksTruncated ||
+      (expectedChunks > 0 && chunkCount < expectedChunks) ||
+      (options.forceFullText && chunkCount === 0 && text.length <= MAX_ATTACHMENT_EXTRACTED_TEXT_CHARS)
+    )
+
+  let recoveredFromStorage = false
+  if (needsFullText) {
+    const recovered = await recoverMissingR2Text(db, userId, conversationId, attachment)
+    if (recovered) {
+      text = recovered
+      attachment.extractedText = recovered
+      recoveredFromStorage = true
+      chunkCount = await getAttachmentChunkCount(db, userId, conversationId, attachment.id)
+    }
+  }
+
+  if (!text) {
+    return { text: '', chunksCreated: 0, chunkCount, recoveredFromStorage }
+  }
+
+  let chunksCreated = 0
+  if (attachment.id && text.length > MEMORY_CHUNK_SIZE) {
+    chunksCreated = await chunkLongMessage(db, userId, conversationId, attachment.id, text, 'attachment', {
+      attachment_id: attachment.id,
+      message_id: attachment.messageId || null,
+      file_name: attachment.fileName,
+      mime_type: attachment.mimeType || null,
+      indexed_from_context_builder: true,
+    })
+    chunkCount += chunksCreated
+  } else if (!attachment.id && attachment.messageId) {
+    const savedId = await saveAttachmentMemory(db, userId, conversationId, attachment.messageId, {
+      name: attachment.fileName,
+      type: 'document',
+      mimeType: attachment.mimeType || 'application/pdf',
+      textContent: text,
+      storageProvider: attachment.storageProvider || undefined,
+      storageKey: attachment.storageKey || undefined,
+      storagePath: attachment.storagePath || undefined,
+      bucket: attachment.bucket || undefined,
+    })
+    attachment.id = savedId || attachment.id
+    chunkCount = await getAttachmentChunkCount(db, userId, conversationId, attachment.id)
+  }
+
+  if (attachment.id && (recoveredFromStorage || chunksCreated > 0)) {
+    await db
+      .from('attachments')
+      .update({
+        extracted_text: text.substring(0, MAX_ATTACHMENT_EXTRACTED_TEXT_CHARS),
+        processing_status: 'ready',
+        important_details: {
+          ...(attachment.importantDetails || {}),
+          totalLength: text.length,
+          reprocessedForSearch: recoveredFromStorage || chunksCreated > 0,
+        },
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', attachment.id)
+  }
+
+  return { text, chunksCreated, chunkCount, recoveredFromStorage }
 }
 
 export async function buildContext(
@@ -334,6 +494,9 @@ export async function buildContext(
       attachmentExtractedTextLength: 0,
       previousPdfContextInjected: false,
       fileNamesIncluded: [],
+      questionNumberDetected: null,
+      matchedChunkIds: [],
+      matchedChunkPreviews: [],
       crossConversationCount: 0,
       estimatedTokens: 0,
       provider: modelProvider,
@@ -395,6 +558,8 @@ export async function buildContext(
   // 3. Load attachment context for this conversation, including message JSON
   // fallback so follow-ups do not depend on only the latest message payload.
   const documentFollowUp = isDocumentFollowUpRequest(latestUserMessage)
+  const requestedQuestionNumber = questionNumberForMessage(latestUserMessage, currentMessages)
+  result.debugInfo.questionNumberDetected = requestedQuestionNumber
   let historicalAttachments: HistoricalAttachment[] = []
 
   try {
@@ -402,20 +567,53 @@ export async function buildContext(
     result.debugInfo.historicalAttachmentsLoadedCount = historicalAttachments.length
 
     if (historicalAttachments.length > 0) {
-      for (const att of historicalAttachments.slice(0, 10)) {
-        if (remainingBudget < 500) break
+      const attachmentsToInspect = historicalAttachments.slice(0, documentFollowUp ? 20 : 10)
+
+      for (const att of attachmentsToInspect) {
+        if (remainingBudget < 500 && !requestedQuestionNumber) break
 
         let extractedText = att.extractedText || ''
-        if (!extractedText && documentFollowUp && att.fileType === 'document') {
-          const recovered = await recoverMissingR2Text(db, userId, conversationId, att)
-          if (recovered) {
-            extractedText = recovered
-            att.extractedText = recovered
+        if (documentFollowUp && att.fileType === 'document') {
+          const indexed = await ensureHistoricalDocumentIndexed(db, userId, conversationId, att, {
+            forceFullText: !!requestedQuestionNumber,
+          })
+          if (indexed.text) {
+            extractedText = indexed.text
+            att.extractedText = indexed.text
+          }
+
+          if (process.env.NODE_ENV !== 'production') {
+            console.log('[ContextBuilder] Attachment indexing check:', {
+              fileName: att.fileName,
+              extractedTextLength: extractedText.length,
+              chunksCreated: indexed.chunksCreated,
+              chunkCount: indexed.chunkCount,
+              recoveredFromStorage: indexed.recoveredFromStorage,
+              currentQuery: latestUserMessage.substring(0, 160),
+              questionNumberDetected: requestedQuestionNumber,
+            })
           }
         }
 
         if (extractedText) {
           result.debugInfo.attachmentExtractedTextLength += extractedText.length
+        }
+
+        if (requestedQuestionNumber && extractedText) {
+          const questionMatch = extractQuestionNumberExcerpt(extractedText, requestedQuestionNumber)
+          if (questionMatch) {
+            const label = `[Matched question ${requestedQuestionNumber} from ${att.fileName}]\n${questionMatch.excerpt}`
+            const tokens = estimateTokens(label)
+            if (tokens < remainingBudget) {
+              result.relevantChunks.push(label)
+              result.debugInfo.attachmentChunksLoadedCount++
+              result.debugInfo.fileNamesIncluded.push(att.fileName)
+              result.debugInfo.matchedChunkIds.push(`attachment:${att.id || att.messageId || att.fileName}:question-${requestedQuestionNumber}`)
+              result.debugInfo.matchedChunkPreviews.push(compactPreview(questionMatch.excerpt))
+              result.debugInfo.previousPdfContextInjected = att.fileName.toLowerCase().endsWith('.pdf') || att.mimeType === 'application/pdf'
+              remainingBudget -= tokens
+            }
+          }
         }
 
         let summary = ''
@@ -448,10 +646,10 @@ export async function buildContext(
       }
 
       result.debugInfo.attachmentSummariesCount = result.attachmentSummaries.length
-      result.debugInfo.previousPdfContextInjected = documentFollowUp && historicalAttachments.some((att) =>
+      result.debugInfo.previousPdfContextInjected = result.debugInfo.previousPdfContextInjected || (documentFollowUp && historicalAttachments.some((att) =>
         result.debugInfo.fileNamesIncluded.includes(att.fileName) &&
         (att.fileName.toLowerCase().endsWith('.pdf') || att.mimeType === 'application/pdf')
-      )
+      ))
     }
   } catch (e: any) {
     if (process.env.NODE_ENV !== 'production') {
@@ -535,81 +733,145 @@ export async function buildContext(
   const keywords = extractSearchKeywords(latestUserMessage)
 
   try {
-    if (keywords.length > 0) {
-      // First: same-conversation chunks
-      const { data: sameConvChunks } = await db
+    if (keywords.length > 0 || documentFollowUp || requestedQuestionNumber) {
+      const sameConvLimit = documentFollowUp || requestedQuestionNumber ? 1000 : 80
+
+      // First: same-conversation chunks. For document follow-ups, load enough
+      // attachment chunks to search the whole indexed PDF, not only recent/early text.
+      const { data: sameConvChunksRaw } = await db
         .from('memory_chunks')
-        .select('id, content, summary, source_type, chunk_index, metadata, created_at')
+        .select('id, content, summary, source_type, source_id, chunk_index, metadata, created_at, conversation_id')
         .eq('conversation_id', conversationId)
         .eq('user_id', userId)
-        .order('created_at', { ascending: false })
-        .limit(20)
+        .order('source_id', { ascending: true })
+        .order('chunk_index', { ascending: true })
+        .limit(sameConvLimit)
 
       // Second: cross-conversation chunks (different conversations, same user)
-      const { data: crossConvChunks } = await db
-        .from('memory_chunks')
-        .select('id, content, summary, source_type, conversation_id')
-        .eq('user_id', userId)
-        .neq('conversation_id', conversationId)
-        .order('created_at', { ascending: false })
-        .limit(40)
+      const { data: crossConvChunksRaw } = keywords.length > 0
+        ? await db
+            .from('memory_chunks')
+            .select('id, content, summary, source_type, source_id, chunk_index, metadata, conversation_id')
+            .eq('user_id', userId)
+            .neq('conversation_id', conversationId)
+            .order('created_at', { ascending: false })
+            .limit(40)
+        : { data: [] }
 
-      const includedChunkIds = new Set<string>()
+      const sameConvChunks = (sameConvChunksRaw || []) as MemoryChunkRow[]
+      const crossConvChunks = (crossConvChunksRaw || []) as MemoryChunkRow[]
+      const includedChunkIds = new Set<string>(result.debugInfo.matchedChunkIds)
+      const chunkKey = (chunk: MemoryChunkRow) =>
+        chunk.id || `${chunk.source_id || 'source'}:${chunk.chunk_index ?? 'unknown'}`
+      const scoredMap = new Map<string, { chunk: MemoryChunkRow; score: number; reason: string }>()
 
-      if (documentFollowUp && sameConvChunks && sameConvChunks.length > 0) {
-        const attachmentChunks = sameConvChunks
-          .filter(chunk => chunk.source_type === 'attachment')
-          .sort((a, b) => {
-            const fileA = a.metadata?.file_name || ''
-            const fileB = b.metadata?.file_name || ''
-            if (fileA !== fileB) return fileA.localeCompare(fileB)
-            return (a.chunk_index || 0) - (b.chunk_index || 0)
-          })
-          .slice(0, 8)
+      const scoreChunk = (chunk: MemoryChunkRow): { score: number; reason: string } => {
+        const searchable = `${chunk.summary || ''}\n${chunk.content || ''}`.toLowerCase()
+        let score = 0
+        const reasons: string[] = []
 
-        for (const chunk of attachmentChunks) {
-          if (remainingBudget < 300) break
-          const fileName = chunk.metadata?.file_name ? ` from ${chunk.metadata.file_name}` : ''
-          const text = `[Document chunk${fileName}]\n${chunk.content.substring(0, 1400)}`
-          const tokens = estimateTokens(text)
-          if (tokens < remainingBudget) {
-            result.relevantChunks.push(text)
-            result.debugInfo.attachmentChunksLoadedCount++
-            if (chunk.id) includedChunkIds.add(chunk.id)
-            if (chunk.metadata?.file_name) result.debugInfo.fileNamesIncluded.push(chunk.metadata.file_name)
-            remainingBudget -= tokens
+        if (chunk.conversation_id === conversationId) {
+          score += 10
+        }
+
+        if (documentFollowUp && chunk.source_type === 'attachment') {
+          score += 30
+          reasons.push('attachment')
+        }
+
+        if (requestedQuestionNumber && containsQuestionNumber(chunk.content || '', requestedQuestionNumber)) {
+          score += 10000
+          reasons.push(`question-${requestedQuestionNumber}`)
+        }
+
+        for (const kw of keywords) {
+          if (searchable.includes(kw)) {
+            score += chunk.source_type === 'attachment' ? 20 : 8
+            reasons.push(`kw:${kw}`)
           }
         }
+
+        return { score, reason: reasons.join(',') || 'generic' }
       }
 
-      const allChunks = [...(sameConvChunks || []), ...(crossConvChunks || [])]
+      for (const chunk of [...sameConvChunks, ...crossConvChunks]) {
+        if (!chunk.content) continue
+        const key = chunkKey(chunk)
+        if (includedChunkIds.has(key)) continue
 
-      if (allChunks.length > 0) {
-        const scored = allChunks
-          .filter(chunk => !chunk.id || !includedChunkIds.has(chunk.id))
-          .map(chunk => {
-            const text = (chunk.summary || chunk.content).toLowerCase()
-            let matchCount = 0
-            for (const kw of keywords) {
-              if (text.includes(kw)) matchCount++
+        const scored = scoreChunk(chunk)
+        if (scored.score <= 0) continue
+        scoredMap.set(key, { chunk, score: scored.score, reason: scored.reason })
+      }
+
+      if (requestedQuestionNumber) {
+        const exactMatches = Array.from(scoredMap.values())
+          .filter((entry) => entry.reason.includes(`question-${requestedQuestionNumber}`))
+
+        for (const exact of exactMatches) {
+          const sourceId = exact.chunk.source_id
+          const index = exact.chunk.chunk_index
+          if (!sourceId || typeof index !== 'number') continue
+
+          for (const neighborIndex of [index - 1, index + 1]) {
+            const neighbor = sameConvChunks.find((chunk) =>
+              chunk.source_type === 'attachment' &&
+              chunk.source_id === sourceId &&
+              chunk.chunk_index === neighborIndex
+            )
+            if (!neighbor) continue
+
+            const key = chunkKey(neighbor)
+            if (!scoredMap.has(key) && !includedChunkIds.has(key)) {
+              scoredMap.set(key, {
+                chunk: neighbor,
+                score: exact.score - 100,
+                reason: `neighbor-of-question-${requestedQuestionNumber}`,
+              })
             }
-            return { chunk, score: matchCount }
-          })
-          .filter(s => s.score > 0)
-          .sort((a, b) => b.score - a.score)
-          .slice(0, 8)
-
-        for (const { chunk } of scored) {
-          if (remainingBudget < 300) break
-          const text = chunk.summary || chunk.content.substring(0, 600)
-          const tokens = estimateTokens(text)
-          if (tokens < remainingBudget) {
-            result.relevantChunks.push(text)
-            remainingBudget -= tokens
           }
         }
-        result.debugInfo.chunksCount = result.relevantChunks.length
       }
+
+      // Only fall back to early document chunks for generic follow-ups like
+      // "do the next one"; exact numbered questions should use ranked matches.
+      if (documentFollowUp && !requestedQuestionNumber && scoredMap.size === 0) {
+        for (const chunk of sameConvChunks.filter((c) => c.source_type === 'attachment').slice(0, 8)) {
+          const key = chunkKey(chunk)
+          if (!chunk.content || scoredMap.has(key) || includedChunkIds.has(key)) continue
+          scoredMap.set(key, { chunk, score: 20, reason: 'document-follow-up-fallback' })
+        }
+      }
+
+      const scored = Array.from(scoredMap.values())
+        .sort((a, b) => {
+          if (b.score !== a.score) return b.score - a.score
+          const fileA = a.chunk.metadata?.file_name || ''
+          const fileB = b.chunk.metadata?.file_name || ''
+          if (fileA !== fileB) return fileA.localeCompare(fileB)
+          return (a.chunk.chunk_index || 0) - (b.chunk.chunk_index || 0)
+        })
+        .slice(0, requestedQuestionNumber ? 10 : 8)
+
+      for (const { chunk, reason } of scored) {
+        if (remainingBudget < 300) break
+        const fileName = chunk.metadata?.file_name ? ` from ${chunk.metadata.file_name}` : ''
+        const isQuestionMatch = requestedQuestionNumber && reason.includes(`question-${requestedQuestionNumber}`)
+        const label = isQuestionMatch
+          ? `[Exact document match for question ${requestedQuestionNumber}${fileName}]\n${chunk.content.substring(0, 1800)}`
+          : `[Relevant document chunk${fileName}]\n${(chunk.summary || chunk.content).substring(0, 1400)}`
+        const tokens = estimateTokens(label)
+        if (tokens < remainingBudget) {
+          result.relevantChunks.push(label)
+          if (chunk.source_type === 'attachment') result.debugInfo.attachmentChunksLoadedCount++
+          if (chunk.id) result.debugInfo.matchedChunkIds.push(chunk.id)
+          result.debugInfo.matchedChunkPreviews.push(compactPreview(chunk.content))
+          if (chunk.metadata?.file_name) result.debugInfo.fileNamesIncluded.push(chunk.metadata.file_name)
+          remainingBudget -= tokens
+        }
+      }
+
+      result.debugInfo.chunksCount = result.relevantChunks.length
     }
   } catch (e: any) {
     if (process.env.NODE_ENV !== 'production') {

@@ -1,8 +1,10 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 
 const SUMMARY_INTERVAL = 6
-const CHUNK_SIZE = 1500
+export const MEMORY_CHUNK_SIZE = 1500
+export const MAX_ATTACHMENT_EXTRACTED_TEXT_CHARS = 100000
 const MAX_SUMMARY_LENGTH = 2000
+const CHUNK_INSERT_BATCH_SIZE = 50
 
 interface MessageRow {
   id: string
@@ -284,38 +286,94 @@ export async function chunkLongMessage(
   content: string,
   sourceType: 'message' | 'attachment' = 'message',
   metadata: Record<string, any> = {}
-): Promise<void> {
-  if (!content || content.length < CHUNK_SIZE) return
+): Promise<number> {
+  const result = await ensureTextChunks(db, {
+    userId,
+    conversationId,
+    sourceId: messageId,
+    content,
+    sourceType,
+    metadata,
+  })
+
+  return result.inserted
+}
+
+export async function ensureTextChunks(
+  db: SupabaseClient,
+  params: {
+    userId: string
+    conversationId: string
+    sourceId: string
+    content: string
+    sourceType?: 'message' | 'attachment'
+    metadata?: Record<string, any>
+  }
+): Promise<{ inserted: number; total: number; existing: number }> {
+  const {
+    userId,
+    conversationId,
+    sourceId,
+    content,
+    sourceType = 'message',
+    metadata = {},
+  } = params
+
+  if (!content || content.length < MEMORY_CHUNK_SIZE) {
+    return { inserted: 0, total: 0, existing: 0 }
+  }
 
   try {
     const chunks: Array<{ content: string; summary: string; chunk_index: number }> = []
 
-    for (let i = 0; i < content.length; i += CHUNK_SIZE) {
-      const chunk = content.substring(i, i + CHUNK_SIZE)
+    for (let i = 0; i < content.length; i += MEMORY_CHUNK_SIZE) {
+      const chunk = content.substring(i, i + MEMORY_CHUNK_SIZE)
       const summary = summarizeMessage(chunk, 150)
-      chunks.push({ content: chunk, summary, chunk_index: Math.floor(i / CHUNK_SIZE) })
+      chunks.push({ content: chunk, summary, chunk_index: Math.floor(i / MEMORY_CHUNK_SIZE) })
     }
 
-    if (chunks.length > 20) return // don't chunk absurdly long content
+    const { data: existingRows } = await db
+      .from('memory_chunks')
+      .select('chunk_index')
+      .eq('user_id', userId)
+      .eq('conversation_id', conversationId)
+      .eq('source_type', sourceType)
+      .eq('source_id', sourceId)
 
-    await db.from('memory_chunks').insert(
-      chunks.map(c => ({
-        user_id: userId,
-        conversation_id: conversationId,
-        source_type: sourceType,
-        source_id: messageId,
-        chunk_index: c.chunk_index,
-        content: c.content,
-        summary: c.summary,
-        metadata,
-      }))
-    )
+    const existingIndexes = new Set((existingRows || []).map((row: any) => row.chunk_index))
+    const chunksToInsert = chunks.filter((chunk) => !existingIndexes.has(chunk.chunk_index))
+
+    for (let i = 0; i < chunksToInsert.length; i += CHUNK_INSERT_BATCH_SIZE) {
+      const batch = chunksToInsert.slice(i, i + CHUNK_INSERT_BATCH_SIZE)
+      await db.from('memory_chunks').insert(
+        batch.map(c => ({
+          user_id: userId,
+          conversation_id: conversationId,
+          source_type: sourceType,
+          source_id: sourceId,
+          chunk_index: c.chunk_index,
+          content: c.content,
+          summary: c.summary,
+          metadata,
+        }))
+      )
+    }
 
     if (process.env.NODE_ENV !== 'production') {
-      console.log('[Chunker] Saved', chunks.length, 'chunks for message', messageId)
+      console.log('[Chunker] Indexed text chunks:', {
+        sourceType,
+        sourceId,
+        totalChunks: chunks.length,
+        existingChunks: existingIndexes.size,
+        insertedChunks: chunksToInsert.length,
+        contentLength: content.length,
+      })
     }
+
+    return { inserted: chunksToInsert.length, total: chunks.length, existing: existingIndexes.size }
   } catch (e: any) {
     console.error('[Chunker] Failed:', e.message)
+    return { inserted: 0, total: 0, existing: 0 }
   }
 }
 
@@ -356,7 +414,7 @@ export async function saveAttachmentMemory(
       mime_type: attachment.mimeType || null,
       storage_path: storagePath,
       public_url: attachment.url || null,
-      extracted_text: extractedText ? extractedText.substring(0, 10000) : null,
+      extracted_text: extractedText ? extractedText.substring(0, MAX_ATTACHMENT_EXTRACTED_TEXT_CHARS) : null,
       processing_status: attachment.processingStatus || (extractedText ? 'ready' : null),
       ocr_status: attachment.ocrStatus || (attachment.processingStatus === 'needs_ocr' ? 'needs_ocr' : null),
       page_count: attachment.pageCount || null,
@@ -394,7 +452,8 @@ export async function saveAttachmentMemory(
 
     if (existing && existing.length > 0) {
       attachmentId = existing[0].id
-      const shouldUpdateText = extractedText && (!existing[0].extracted_text || existing[0].extracted_text.length < attRow.extracted_text.length)
+      const storedTextLength = attRow.extracted_text?.length || 0
+      const shouldUpdateText = !!extractedText && (!existing[0].extracted_text || existing[0].extracted_text.length < storedTextLength)
       const updatePayload = shouldUpdateText
         ? attRow
         : {
@@ -422,19 +481,20 @@ export async function saveAttachmentMemory(
     }
 
     // Chunk long text content
-    if (extractedText && extractedText.length > CHUNK_SIZE && attachmentId) {
-      const { count } = await db
-        .from('memory_chunks')
-        .select('*', { count: 'exact', head: true })
-        .eq('source_type', 'attachment')
-        .eq('source_id', attachmentId)
+    if (extractedText && extractedText.length > MEMORY_CHUNK_SIZE && attachmentId) {
+      const chunksCreated = await chunkLongMessage(db, userId, conversationId, attachmentId, extractedText, 'attachment', {
+        message_id: messageId,
+        attachment_id: attachmentId,
+        file_name: attachment.name || 'unknown',
+        mime_type: attachment.mimeType || null,
+      })
 
-      if ((count || 0) === 0) {
-        await chunkLongMessage(db, userId, conversationId, attachmentId, extractedText, 'attachment', {
-          message_id: messageId,
-          attachment_id: attachmentId,
-          file_name: attachment.name || 'unknown',
-          mime_type: attachment.mimeType || null,
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('[AttachmentMemory] Document indexed:', {
+          fileName: attachment.name || 'unknown',
+          attachmentId,
+          extractedTextLength: extractedText.length,
+          chunksCreated,
         })
       }
     }

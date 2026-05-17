@@ -526,7 +526,7 @@ async function processConversation(
           // Chunk long document text
           if (att.textContent.length > CHUNK_SIZE && !chunkedSourceIds.has(msg.id + ':' + att.name)) {
             const docChunks: Array<Record<string, any>> = []
-            for (let i = 0; i < att.textContent.length && i < CHUNK_SIZE * 20; i += CHUNK_SIZE) {
+            for (let i = 0; i < att.textContent.length; i += CHUNK_SIZE) {
               docChunks.push({
                 user_id: userId,
                 conversation_id: conversationId,
@@ -538,8 +538,11 @@ async function processConversation(
                 metadata: { backfill_version: BACKFILL_VERSION, file_name: att.name },
               })
             }
-            if (docChunks.length > 0 && docChunks.length <= 20) {
-              await db.from('memory_chunks').insert(docChunks)
+            if (docChunks.length > 0) {
+              for (let i = 0; i < docChunks.length; i += 20) {
+                const batch = docChunks.slice(i, i + 20)
+                await db.from('memory_chunks').insert(batch)
+              }
               progress.chunksCreated += docChunks.length
             }
           }

@@ -5,7 +5,8 @@ import { streamGeminiResponse } from '@/lib/ai/gemini'
 import { searchWeb, buildWebSearchQuery } from '@/lib/ai/web-search'
 import { buildSystemPrompt, isTimeSensitiveQuery, detectQueryType } from '@/lib/ai/system-prompt'
 import { buildDocumentContext } from '@/lib/ai/document-extract'
-import { parsePageRangeRequest } from '@/lib/ai/document-requests'
+import { parsePageRangeRequest, parseQuestionNumberRequest } from '@/lib/ai/document-requests'
+import { compactPreview, extractQuestionNumberExcerpt } from '@/lib/ai/document-question-retrieval'
 import { ocrAttachmentPages, findLatestPdfAttachmentForOcr } from '@/lib/ai/pdf-ocr'
 import { sanitizeAttachmentsForStorage } from '@/lib/ai/sanitize-attachments'
 import {
@@ -231,6 +232,7 @@ export async function POST(request: NextRequest) {
 
     const latestUserMessage = cleanedMessages[cleanedMessages.length - 1]
     let messagesToSend = cleanedMessages as ChatMessage[]
+    const detectedQuestionNumber = parseQuestionNumberRequest(latestUserMessage.content)
 
     // Stage: Web search
     stage = 'web-search'
@@ -287,6 +289,7 @@ RULES FOR USING THESE RESULTS:
     const extractedDocTexts = new Map<string, string>()
     const attachmentProcessingStatuses = new Map<string, string>()
     const currentDocumentFileNames: string[] = []
+    const currentDocumentQuestionMatches: string[] = []
 
     if (userMessage.attachments && userMessage.attachments.length > 0) {
       const docAttachments = userMessage.attachments.filter((a: any) => a.type === 'document')
@@ -300,11 +303,28 @@ RULES FOR USING THESE RESULTS:
           for (const [name, status] of result.attachmentStatuses) {
             attachmentProcessingStatuses.set(name, status)
           }
+          if (detectedQuestionNumber) {
+            for (const [name, text] of result.extractedTexts) {
+              const questionMatch = extractQuestionNumberExcerpt(text, detectedQuestionNumber)
+              if (questionMatch) {
+                currentDocumentQuestionMatches.push(
+                  `[Exact match for question ${detectedQuestionNumber} from ${name}]\n${questionMatch.excerpt}`
+                )
+              }
+            }
+            if (currentDocumentQuestionMatches.length > 0) {
+              documentContext += `\n\n[TARGETED QUESTION MATCHES]\n${currentDocumentQuestionMatches.join('\n\n')}\n[/TARGETED QUESTION MATCHES]`
+            }
+          }
           if (result.error) {
             console.warn('[Chat API] Document extraction warning:', result.error)
           }
           currentDocumentFileNames.push(...docAttachments.map((att: any) => att.name).filter(Boolean))
-          console.log('[Chat API] Document context extracted, length:', documentContext.length)
+          console.log('[Chat API] Document context extracted:', {
+            length: documentContext.length,
+            detectedQuestionNumber,
+            targetedMatches: currentDocumentQuestionMatches.map((match) => compactPreview(match)),
+          })
         } catch (docErr: any) {
           console.error('[Chat API] Document extraction error:', docErr.message)
           return NextResponse.json(
@@ -448,6 +468,12 @@ RULES FOR USING THESE RESULTS:
           attachmentExtractedTextLength: (contextDebugInfo?.attachmentExtractedTextLength || 0) + Array.from(extractedDocTexts.values()).reduce((sum, text) => sum + text.length, 0),
           previousPdfContextInjected: !!contextDebugInfo?.previousPdfContextInjected || !!historicalAttachmentContext,
           fileNamesIncluded: Array.from(new Set(fileNamesIncluded)),
+          questionNumberDetected: detectedQuestionNumber || contextDebugInfo?.questionNumberDetected || null,
+          matchedChunkIds: contextDebugInfo?.matchedChunkIds || [],
+          matchedChunkPreviews: [
+            ...(contextDebugInfo?.matchedChunkPreviews || []),
+            ...currentDocumentQuestionMatches.map((match) => compactPreview(match)),
+          ].slice(0, 8),
         })
         documentDebugLogged = true
       }
