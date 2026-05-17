@@ -13,12 +13,15 @@ export function sanitizeAttachmentsForStorage(attachments?: ChatAttachment[], ex
     if (a.storagePath) safe.storagePath = a.storagePath
     if (a.bucket) safe.bucket = a.bucket
     if (a.url) safe.url = a.url
+    if (a.storageProvider) safe.storageProvider = a.storageProvider
+    if (a.storageKey) safe.storageKey = a.storageKey
     // Persist extracted text so context survives across messages
     if (a.textContent) safe.textContent = a.textContent
     if (extractedTexts && extractedTexts.has(a.name)) {
       safe.textContent = extractedTexts.get(a.name)
     }
     // Never save dataUrl to DB — too large for JSONB/Vercel payload
+    // Never save upload progress/status — ephemeral UI state
     return safe
   })
 

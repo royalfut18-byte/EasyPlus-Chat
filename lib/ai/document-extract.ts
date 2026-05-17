@@ -1,4 +1,5 @@
 import type { ChatAttachment } from '@/types/models'
+import { isR2Configured, createPresignedDownloadUrl } from '@/lib/storage/r2'
 
 const MAX_DOCUMENT_CHARS = 16000
 
@@ -52,14 +53,55 @@ async function extractTextFromPdf(dataUrl: string): Promise<string> {
   }
 }
 
+async function fetchR2FileAsBuffer(storageKey: string): Promise<Buffer | null> {
+  try {
+    if (!isR2Configured()) return null
+    const signedUrl = await createPresignedDownloadUrl(storageKey)
+    const res = await fetch(signedUrl)
+    if (!res.ok) return null
+    const arrayBuffer = await res.arrayBuffer()
+    return Buffer.from(arrayBuffer)
+  } catch (err: any) {
+    console.error('[Document Extract] R2 fetch failed:', err.message)
+    return null
+  }
+}
+
 export async function extractTextFromAttachment(attachment: ChatAttachment): Promise<string> {
   if (attachment.type !== 'document') return ''
   if (attachment.textContent) return attachment.textContent
 
+  const mime = attachment.mimeType.toLowerCase()
+
+  if (attachment.storageProvider === 'r2' && attachment.storageKey) {
+    const buffer = await fetchR2FileAsBuffer(attachment.storageKey)
+    if (!buffer) return '__MISSING_DATA__'
+
+    if (mime === 'application/pdf') {
+      try {
+        const pdfParse = (await import('pdf-parse/lib/pdf-parse.js')).default
+        const result = await pdfParse(buffer)
+        if (!result.text || result.text.trim().length === 0) return '__PDF_NO_TEXT__'
+        return result.text
+      } catch (err: any) {
+        console.error('[Document Extract] R2 PDF extraction failed:', err.message)
+        return '__PDF_EXTRACTION_FAILED__'
+      }
+    }
+
+    const textContent = buffer.toString('utf-8')
+    if (mime === 'application/json') {
+      try {
+        return JSON.stringify(JSON.parse(textContent), null, 2)
+      } catch {
+        return textContent
+      }
+    }
+    return textContent
+  }
+
   const dataUrl = attachment.dataUrl
   if (!dataUrl) return '__MISSING_DATA__'
-
-  const mime = attachment.mimeType.toLowerCase()
 
   if (mime === 'application/pdf') {
     return extractTextFromPdf(dataUrl)

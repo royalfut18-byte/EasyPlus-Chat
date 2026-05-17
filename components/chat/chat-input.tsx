@@ -1,16 +1,18 @@
 'use client'
 
-import { useState, useRef, KeyboardEvent, useEffect } from 'react'
-import { Send, Loader2, Image as ImageIcon, X, Paperclip, FileText, FileSpreadsheet, FileJson, File } from 'lucide-react'
+import { useState, useRef, KeyboardEvent } from 'react'
+import { Send, Loader2, Image as ImageIcon, X, Paperclip, FileText, FileSpreadsheet, FileJson, File, Upload, CheckCircle2, AlertCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { ChatAttachment } from '@/types/models'
 import { toast } from '@/components/ui/use-toast'
+import { useR2Upload } from '@/hooks/use-r2-upload'
 
 interface ChatInputProps {
   onSend: (message: string, attachments?: ChatAttachment[]) => void
   disabled?: boolean
   isLoading?: boolean
+  conversationId?: string | null
 }
 
 const IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp']
@@ -22,9 +24,8 @@ const DOCUMENT_TYPES = [
   'application/json',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
 ]
-const ALLOWED_EXTENSIONS = ['.pdf', '.txt', '.md', '.csv', '.json', '.docx', '.png', '.jpg', '.jpeg', '.webp']
-const MAX_FILE_SIZE = 5 * 1024 * 1024
-const MAX_FILES = 3
+const ALLOWED_EXTENSIONS = ['.pdf', '.txt', '.md', '.csv', '.json', '.docx', '.png', '.jpg', '.jpeg', '.webp', '.mp4', '.webm', '.mp3', '.wav', '.zip', '.tar', '.gz', '.xlsx', '.pptx']
+const MAX_FILES = 5
 
 function getMimeFromExtension(filename: string): string | null {
   const ext = filename.toLowerCase().split('.').pop()
@@ -35,10 +36,20 @@ function getMimeFromExtension(filename: string): string | null {
     csv: 'text/csv',
     json: 'application/json',
     docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
     png: 'image/png',
     jpg: 'image/jpeg',
     jpeg: 'image/jpeg',
     webp: 'image/webp',
+    gif: 'image/gif',
+    mp4: 'video/mp4',
+    webm: 'video/webm',
+    mp3: 'audio/mpeg',
+    wav: 'audio/wav',
+    zip: 'application/zip',
+    tar: 'application/x-tar',
+    gz: 'application/gzip',
   }
   return map[ext || ''] || null
 }
@@ -59,17 +70,22 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
-export function ChatInput({ onSend, disabled, isLoading }: ChatInputProps) {
+export function ChatInput({ onSend, disabled, isLoading, conversationId }: ChatInputProps) {
   const [message, setMessage] = useState('')
   const [attachments, setAttachments] = useState<ChatAttachment[]>([])
   const [isDragging, setIsDragging] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const { uploadToR2, maxUploadMB } = useR2Upload()
+
+  const hasActiveUpload = attachments.some(a => a.uploadStatus === 'uploading' || a.uploadStatus === 'compressing')
 
   const handleSubmit = () => {
+    if (hasActiveUpload) return
     if ((message.trim() || attachments.length > 0) && !disabled && !isLoading) {
       const content = message.trim() || (attachments.length > 0 ? 'Please analyze the attached file.' : '')
-      onSend(content, attachments.length > 0 ? attachments : undefined)
+      const readyAttachments = attachments.filter(a => a.uploadStatus !== 'failed')
+      onSend(content, readyAttachments.length > 0 ? readyAttachments : undefined)
       setMessage('')
       setAttachments([])
       if (textareaRef.current) {
@@ -91,14 +107,14 @@ export function ChatInput({ onSend, disabled, isLoading }: ChatInputProps) {
     e.target.style.height = `${Math.min(e.target.scrollHeight, 200)}px`
   }
 
-  const processFile = async (file: File): Promise<ChatAttachment | null> => {
+  const processFile = async (file: File): Promise<void> => {
     if (attachments.length >= MAX_FILES) {
       toast({
         title: 'Too many files',
         description: `Maximum ${MAX_FILES} files per message`,
         variant: 'destructive',
       })
-      return null
+      return
     }
 
     const ext = '.' + (file.name.split('.').pop()?.toLowerCase() || '')
@@ -110,65 +126,54 @@ export function ChatInput({ onSend, disabled, isLoading }: ChatInputProps) {
         description: `Only these file types are supported: ${ALLOWED_EXTENSIONS.join(', ')}`,
         variant: 'destructive',
       })
-      return null
+      return
     }
 
-    if (mime.includes('wordprocessingml')) {
+    const maxBytes = maxUploadMB * 1024 * 1024
+    if (file.size > maxBytes) {
       toast({
-        title: 'DOCX support coming soon',
-        description: 'Please convert to PDF or TXT for now.',
+        title: 'File too large',
+        description: `Maximum file size is ${maxUploadMB}MB.`,
         variant: 'destructive',
       })
-      return null
+      return
     }
 
     const isImage = IMAGE_TYPES.includes(mime)
+    const placeholderIndex = attachments.length
 
-    if (file.size > MAX_FILE_SIZE) {
-      toast({
-        title: 'File too large',
-        description: 'Please upload a file under 5MB.',
-        variant: 'destructive',
-      })
-      return null
+    const placeholder: ChatAttachment = {
+      type: isImage ? 'image' : 'document',
+      name: file.name,
+      mimeType: mime,
+      size: file.size,
+      uploadStatus: 'uploading',
+      uploadProgress: 0,
     }
 
-    return new Promise((resolve) => {
-      const reader = new FileReader()
-      reader.onload = (e) => {
-        const dataUrl = e.target?.result as string
-        resolve({
-          type: isImage ? 'image' : 'document',
-          name: file.name,
-          mimeType: mime,
-          size: file.size,
-          dataUrl,
-        })
-      }
-      reader.onerror = () => {
-        toast({
-          title: 'Error reading file',
-          description: 'Failed to process file',
-          variant: 'destructive',
-        })
-        resolve(null)
-      }
-      reader.readAsDataURL(file)
+    setAttachments((prev) => [...prev, placeholder])
+
+    const result = await uploadToR2(file, conversationId || null, (updated) => {
+      setAttachments((prev) => prev.map((a, i) => i === placeholderIndex ? { ...a, ...updated } : a))
     })
+
+    if (result.error) {
+      toast({
+        title: 'Upload failed',
+        description: result.error,
+        variant: 'destructive',
+      })
+    }
+
+    setAttachments((prev) => prev.map((a, i) => i === placeholderIndex ? result.attachment : a))
   }
 
   const handleFileSelect = async (files: FileList | null) => {
     if (!files || files.length === 0) return
 
     for (let i = 0; i < files.length; i++) {
-      if (attachments.length >= MAX_FILES) break
-      const attachment = await processFile(files[i])
-      if (attachment) {
-        setAttachments((prev) => {
-          if (prev.length >= MAX_FILES) return prev
-          return [...prev, attachment]
-        })
-      }
+      if (attachments.length + i >= MAX_FILES) break
+      await processFile(files[i])
     }
   }
 
@@ -181,10 +186,7 @@ export function ChatInput({ onSend, disabled, isLoading }: ChatInputProps) {
         e.preventDefault()
         const file = item.getAsFile()
         if (file) {
-          const attachment = await processFile(file)
-          if (attachment) {
-            setAttachments((prev) => [...prev, attachment])
-          }
+          await processFile(file)
         }
       }
     }
@@ -236,22 +238,43 @@ export function ChatInput({ onSend, disabled, isLoading }: ChatInputProps) {
             <div className="flex gap-2 mb-2 md:mb-3 pb-2 md:pb-3 border-b border-white/10 overflow-x-auto">
               {attachments.map((attachment, index) => (
                 <div key={index} className="relative group shrink-0">
-                  {attachment.type === 'image' ? (
-                    <div className="h-20 w-20 md:h-24 md:w-24 rounded-xl border-2 border-white/20 bg-black/20 overflow-hidden">
+                  {attachment.type === 'image' && attachment.dataUrl ? (
+                    <div className="h-20 w-20 md:h-24 md:w-24 rounded-xl border-2 border-white/20 bg-black/20 overflow-hidden relative">
                       <img
                         src={attachment.dataUrl}
                         alt={attachment.name}
                         className="h-full w-full object-cover"
                       />
+                      {attachment.uploadStatus === 'uploading' && (
+                        <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
+                          <span className="text-xs font-bold text-white">{attachment.uploadProgress || 0}%</span>
+                        </div>
+                      )}
+                      {attachment.uploadStatus === 'compressing' && (
+                        <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
+                          <Loader2 className="h-4 w-4 animate-spin text-violet-400" />
+                        </div>
+                      )}
                     </div>
                   ) : (
                     <div className="h-20 w-48 md:h-24 md:w-56 rounded-xl border-2 border-white/15 bg-white/5 backdrop-blur-sm p-2.5 md:p-3 flex flex-col justify-between">
                       <div className="flex items-start gap-2">
-                        {getFileIcon(attachment.mimeType)}
+                        {attachment.uploadStatus === 'uploading' ? (
+                          <Upload className="h-5 w-5 text-violet-400 animate-pulse shrink-0" />
+                        ) : attachment.uploadStatus === 'failed' ? (
+                          <AlertCircle className="h-5 w-5 text-red-400 shrink-0" />
+                        ) : attachment.uploadStatus === 'uploaded' ? (
+                          <CheckCircle2 className="h-5 w-5 text-emerald-400 shrink-0" />
+                        ) : (
+                          getFileIcon(attachment.mimeType)
+                        )}
                         <div className="flex-1 min-w-0">
                           <p className="text-xs font-medium text-white truncate">{attachment.name}</p>
                           <p className="text-[10px] text-gray-400 mt-0.5">
-                            {attachment.size ? formatFileSize(attachment.size) : ''}
+                            {attachment.uploadStatus === 'compressing' ? 'Compressing...' :
+                             attachment.uploadStatus === 'uploading' ? `Uploading ${attachment.uploadProgress || 0}%` :
+                             attachment.uploadStatus === 'failed' ? 'Failed' :
+                             attachment.size ? formatFileSize(attachment.size) : ''}
                           </p>
                         </div>
                       </div>
@@ -259,6 +282,19 @@ export function ChatInput({ onSend, disabled, isLoading }: ChatInputProps) {
                         <span className="text-[10px] px-1.5 py-0.5 rounded bg-white/10 text-gray-300 uppercase tracking-wider">
                           {attachment.name.split('.').pop()}
                         </span>
+                        {attachment.uploadStatus === 'uploading' && (
+                          <div className="flex-1 h-1 bg-white/10 rounded-full overflow-hidden ml-2">
+                            <div
+                              className="h-full bg-violet-500 rounded-full transition-all duration-300"
+                              style={{ width: `${attachment.uploadProgress || 0}%` }}
+                            />
+                          </div>
+                        )}
+                        {attachment.storageProvider === 'r2' && attachment.uploadStatus === 'uploaded' && (
+                          <span className="text-[9px] px-1 py-0.5 rounded bg-emerald-500/20 text-emerald-300 ml-auto">
+                            Cloud
+                          </span>
+                        )}
                       </div>
                     </div>
                   )}
@@ -277,7 +313,7 @@ export function ChatInput({ onSend, disabled, isLoading }: ChatInputProps) {
             <input
               ref={fileInputRef}
               type="file"
-              accept=".pdf,.txt,.md,.csv,.json,.docx,.png,.jpg,.jpeg,.webp"
+              accept=".pdf,.txt,.md,.csv,.json,.docx,.xlsx,.pptx,.png,.jpg,.jpeg,.webp,.gif,.mp4,.webm,.mp3,.wav,.zip,.tar,.gz"
               multiple
               onChange={(e) => handleFileSelect(e.target.files)}
               className="hidden"
@@ -312,12 +348,14 @@ export function ChatInput({ onSend, disabled, isLoading }: ChatInputProps) {
             />
             <Button
               onClick={handleSubmit}
-              disabled={(!message.trim() && attachments.length === 0) || disabled || isLoading}
+              disabled={(!message.trim() && attachments.length === 0) || disabled || isLoading || hasActiveUpload}
               size="icon"
               className="bg-violet-600 hover:bg-violet-500 h-9 w-9 md:h-10 md:w-10 rounded-xl shrink-0 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isLoading ? (
                 <Loader2 className="h-4 w-4 md:h-5 md:w-5 animate-spin" />
+              ) : hasActiveUpload ? (
+                <Loader2 className="h-4 w-4 md:h-5 md:w-5 animate-spin text-violet-300" />
               ) : (
                 <Send className="h-4 w-4 md:h-5 md:w-5" />
               )}

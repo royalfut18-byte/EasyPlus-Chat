@@ -46,6 +46,10 @@ export interface ChatAttachment {
   url?: string
   storagePath?: string
   bucket?: string
+  storageProvider?: 'supabase' | 'r2'
+  storageKey?: string
+  uploadProgress?: number
+  uploadStatus?: 'compressing' | 'uploading' | 'uploaded' | 'failed'
 }
 
 export interface ChatMessage {

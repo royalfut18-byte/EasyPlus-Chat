@@ -1652,6 +1652,7 @@ Rules:
             onSend={handleSendMessage}
             disabled={isRequestInProgress}
             isLoading={isLoading || isCreatingConversation}
+            conversationId={currentConversation?.id || null}
           />
         )}
         </main>
