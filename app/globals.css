@@ -270,6 +270,13 @@
 .katex {
   color: #e2e8f0;
   font-size: 1.05em;
+  white-space: normal;
+  word-break: normal;
+  overflow-wrap: normal;
+}
+
+.katex .base {
+  display: inline;
 }
 
 .katex-display {
@@ -291,6 +298,11 @@
 
 .prose .katex-display {
   @apply my-4;
+}
+
+.message-content .katex {
+  word-break: normal;
+  overflow-wrap: normal;
 }
 
 @media (max-width: 767px) {

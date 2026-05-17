@@ -21,25 +21,43 @@ export function cleanAssistantText(text: string): string {
     return `${CODE_BLOCK_PLACEHOLDER}${codeBlocks.length - 1}`
   })
 
-  // Convert LaTeX-style delimiters to $$...$$ before math protection
-  // \(...\) → $$...$$ (inline math)
-  cleaned = cleaned.replace(/\\\((.+?)\\\)/g, (_match, content) => `$$${content}$$`)
-  // \[...\] → display math (on own line)
-  cleaned = cleaned.replace(/\\\[([\s\S]+?)\\\]/g, (_match, content) => `\n$$\n${content.trim()}\n$$\n`)
-
-  // Protect display math blocks ($$...$$)
-  const displayMathBlocks: string[] = []
-  cleaned = cleaned.replace(/\$\$[\s\S]*?\$\$/g, (match) => {
-    displayMathBlocks.push(match)
-    return `___DISPLAY_MATH___${displayMathBlocks.length - 1}`
-  })
-
   // Protect inline code
   const inlineCodeBlocks: string[] = []
   cleaned = cleaned.replace(/`[^`\n]+`/g, (match) => {
     inlineCodeBlocks.push(match)
     return `___INLINE_CODE___${inlineCodeBlocks.length - 1}`
   })
+
+  // Convert LaTeX-style delimiters to dollar-sign delimiters
+  // \(...\) → $...$ (inline math)
+  cleaned = cleaned.replace(/\\\((.+?)\\\)/g, (_match, content) => `$${content}$`)
+  // \[...\] → $$...$$ display math (on own line)
+  cleaned = cleaned.replace(/\\\[([\s\S]+?)\\\]/g, (_match, content) => `\n$$\n${content.trim()}\n$$\n`)
+
+  // Protect display math blocks ($$...$$) before currency escaping
+  const displayMathBlocks: string[] = []
+  cleaned = cleaned.replace(/\$\$[\s\S]*?\$\$/g, (match) => {
+    displayMathBlocks.push(match)
+    return `___DISPLAY_MATH___${displayMathBlocks.length - 1}`
+  })
+
+  // Protect inline math blocks ($...$) before currency escaping
+  // Match $...$ where content looks like LaTeX (contains backslash, ^, _, or letters with operators)
+  const inlineMathBlocks: string[] = []
+  cleaned = cleaned.replace(/\$([^$\n]+)\$/g, (match, content) => {
+    const looksLikeMath = /[\\^_{}]|[a-zA-Z]\s*[=<>+\-*/]|[a-zA-Z]{2,}\s*[({]/.test(content)
+    if (looksLikeMath) {
+      inlineMathBlocks.push(match)
+      return `___INLINE_MATH___${inlineMathBlocks.length - 1}`
+    }
+    return match
+  })
+
+  // Escape currency: $<digits> should not trigger math parsing
+  cleaned = cleaned.replace(/\$(\d[\d,.']*)/g, '\\$$1')
+
+  // Restore protected inline math
+  cleaned = cleaned.replace(/___INLINE_MATH___(\d+)/g, (match, i) => inlineMathBlocks[parseInt(i)] ?? match)
 
   // Only safe fix: add space after period/comma before uppercase (sentence boundaries)
   cleaned = cleaned.replace(/([a-z])\.([A-Z])/g, '$1. $2')

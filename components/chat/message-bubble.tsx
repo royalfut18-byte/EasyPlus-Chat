@@ -247,7 +247,7 @@ export function MessageBubble({ role, content, model, onRegenerate, attachments,
           ) : hasArtifactCard && onOpenArtifact ? (
             <div>
               <ReactMarkdown
-                remarkPlugins={[remarkGfm, [remarkMath, { singleDollarTextMath: false }]]}
+                remarkPlugins={[remarkGfm, [remarkMath, { singleDollarTextMath: true }]]}
                 rehypePlugins={[rehypeKatex]}
                 components={{
                   h1: ({ children }) => <h1 className="text-xl md:text-2xl font-bold mt-4 md:mt-6 mb-3 md:mb-4 text-white">{children}</h1>,
@@ -305,7 +305,7 @@ export function MessageBubble({ role, content, model, onRegenerate, attachments,
             </div>
           ) : safeContent ? (
             <ReactMarkdown
-              remarkPlugins={[remarkGfm, [remarkMath, { singleDollarTextMath: false }]]}
+              remarkPlugins={[remarkGfm, [remarkMath, { singleDollarTextMath: true }]]}
               rehypePlugins={[rehypeKatex]}
               components={{
                 h1: ({ children }) => <h1 className="text-xl md:text-2xl font-bold mt-4 md:mt-6 mb-3 md:mb-4 text-white">{children}</h1>,

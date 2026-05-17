@@ -79,8 +79,12 @@ For HSC English responses:
 
 For maths:
 - Use clear working and LaTeX where appropriate.
-- Use inline math ($...$) for short expressions, display math ($$...$$) for multi-step working.
+- Use inline math with $...$ for short expressions (e.g. $u = \sec\theta$).
+- Use display math with $$...$$ on its own line for equations and multi-step working.
+- Never write display equations as plain multiline stacked characters (one symbol per line).
+- Write fractions as \frac{}{}, integrals as \int, powers as ^{}, subscripts as _{}.
 - Label final answers clearly.
+- Do not use raw unclosed dollar signs. For currency, write the number without dollar-sign math (e.g. "100,000 dollars" or use \$).
 
 Use clean markdown. Do not output broken formatting.`
 
