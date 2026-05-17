@@ -6,6 +6,13 @@ import { ChatAttachment } from '@/types/models'
 const MAX_UPLOAD_MB = parseInt(process.env.NEXT_PUBLIC_MAX_UPLOAD_MB || '512', 10)
 const MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024
 
+function parseR2ErrorFromResponse(xml: string): { code?: string; message?: string } | undefined {
+  const codeMatch = xml.match(/<Code>(.*?)<\/Code>/)
+  const msgMatch = xml.match(/<Message>(.*?)<\/Message>/)
+  if (!codeMatch) return undefined
+  return { code: codeMatch[1], message: msgMatch?.[1] }
+}
+
 const SMALL_FILE_THRESHOLD = 4.5 * 1024 * 1024
 
 interface UploadResult {
@@ -163,7 +170,12 @@ export function useR2Upload() {
       if (!uploadResult.ok) {
         let detail: string
         if (uploadResult.status && uploadResult.status > 0) {
-          detail = `R2 upload failed with status ${uploadResult.status}.`
+          const r2Err = uploadResult.responseText ? parseR2ErrorFromResponse(uploadResult.responseText) : undefined
+          if (r2Err?.code) {
+            detail = `R2 error: ${r2Err.code} — ${r2Err.message || 'unknown'}`
+          } else {
+            detail = `R2 upload failed with status ${uploadResult.status}.`
+          }
           if (uploadResult.status === 403) detail += ' Check token permissions, bucket name, or signed headers.'
         } else {
           detail = 'Browser blocked upload or network failed. Open DevTools Network and check the OPTIONS/PUT request.'
@@ -215,6 +227,12 @@ interface UploadWithProgressResult {
   responseText?: string
 }
 
+function parseR2Error(xml: string): { code?: string; message?: string } {
+  const codeMatch = xml.match(/<Code>(.*?)<\/Code>/)
+  const msgMatch = xml.match(/<Message>(.*?)<\/Message>/)
+  return { code: codeMatch?.[1], message: msgMatch?.[1] }
+}
+
 function uploadWithProgress(
   url: string,
   file: File,
@@ -232,14 +250,16 @@ function uploadWithProgress(
 
     xhr.addEventListener('load', () => {
       const ok = xhr.status >= 200 && xhr.status < 300
+      let responseText = ok ? undefined : xhr.responseText?.substring(0, 1000)
       if (process.env.NODE_ENV !== 'production') {
-        console.log('[R2 Upload] PUT response:', { status: xhr.status, statusText: xhr.statusText, ok })
+        const r2Error = responseText ? parseR2Error(responseText) : undefined
+        console.log('[R2 Upload] PUT response:', { status: xhr.status, statusText: xhr.statusText, ok, r2Error })
       }
       resolve({
         ok,
         status: xhr.status,
         statusText: xhr.statusText,
-        responseText: ok ? undefined : xhr.responseText?.substring(0, 500),
+        responseText,
       })
     })
 
@@ -261,7 +281,10 @@ function uploadWithProgress(
       } catch { /* ignore URL parse errors */ }
     }
 
+    // Send as Blob with empty type to prevent browser from adding Content-Type header.
+    // The presigned URL only signs "host" header — any extra header causes R2 400.
+    const uploadBlob = new Blob([file], { type: '' })
     xhr.open('PUT', url)
-    xhr.send(file)
+    xhr.send(uploadBlob)
   })
 }
