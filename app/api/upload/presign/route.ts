@@ -115,9 +115,14 @@ export async function POST(request: NextRequest) {
 
     if (process.env.NODE_ENV !== 'production') {
       try {
-        const urlOrigin = new URL(result.uploadUrl).origin
+        const parsedUrl = new URL(result.uploadUrl)
         const hasChecksumParams = result.uploadUrl.includes('x-amz-checksum') || result.uploadUrl.includes('x-amz-sdk-checksum')
-        console.log('[Upload Presign] URL diagnostics:', { origin: urlOrigin, hasChecksumParams })
+        console.log('[Upload Presign] URL diagnostics:', {
+          uploadUrlHost: parsedUrl.host,
+          uploadUrlPath: parsedUrl.pathname.slice(0, 80),
+          isPathStyle: parsedUrl.pathname.includes('/easyplus-uploads/'),
+          hasChecksumParams,
+        })
       } catch { /* ignore */ }
     }
 
