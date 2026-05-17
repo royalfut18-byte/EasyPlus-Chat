@@ -17,6 +17,7 @@ import { cn } from '@/lib/utils'
 import { parseArtifactFromResponse } from '@/lib/artifact-parser'
 import { sortMessagesChronologically, dedupeMessages, processMessages, processLoadedMessages, getStoredArtifact } from '@/lib/chat/message-utils'
 import { useR2Upload } from '@/hooks/use-r2-upload'
+import { parsePageRangeRequest } from '@/lib/ai/document-requests'
 import type { Conversation, Message, ChatAttachment, Artifact } from '@/types/models'
 
 const DEFAULT_PANEL_WIDTH = 560
@@ -1335,6 +1336,76 @@ Rules:
     }
   }
 
+  const handleRequestOcr = async (attachment: ChatAttachment, pageRangeText: string) => {
+    if (!currentConversation?.id || !attachment.attachmentId) {
+      toast({
+        title: 'OCR unavailable',
+        description: 'Refresh the chat, then try OCR again for this file.',
+        variant: 'destructive',
+      })
+      return
+    }
+
+    const parsedRange = parsePageRangeRequest(`pages ${pageRangeText || '1-5'}`)
+    if (!parsedRange) {
+      toast({
+        title: 'Enter a page range',
+        description: 'Use a range like 120-125 or a single page like 5.',
+        variant: 'destructive',
+      })
+      return
+    }
+
+    try {
+      toast({
+        title: 'OCR started',
+        description: `Processing pages ${parsedRange.pageStart}-${parsedRange.pageEnd}`,
+      })
+
+      const response = await fetch('/api/attachments/ocr-pages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          attachmentId: attachment.attachmentId,
+          conversationId: currentConversation.id,
+          pageStart: parsedRange.pageStart,
+          pageEnd: parsedRange.pageEnd,
+        }),
+      })
+
+      const result = await response.json()
+      if (!response.ok) {
+        throw new Error(result.error || 'OCR failed')
+      }
+
+      setMessages((prev) => processMessages(prev.map((message) => ({
+        ...message,
+        attachments: message.attachments?.map((att) =>
+          att.attachmentId === attachment.attachmentId
+            ? {
+                ...att,
+                processingStatus: 'ocr_ready',
+                ocrStatus: result.status === 'completed' ? 'completed' : att.ocrStatus,
+                pageCount: result.pageCount || att.pageCount,
+                ocrPagesProcessed: result.pagesProcessed || att.ocrPagesProcessed,
+              }
+            : att
+        ),
+      })), currentConversation.id))
+
+      toast({
+        title: 'OCR complete',
+        description: `Saved ${result.extractedTextLength || 0} characters from selected pages.`,
+      })
+    } catch (error: any) {
+      toast({
+        title: 'OCR failed',
+        description: error.message || 'Could not OCR those pages.',
+        variant: 'destructive',
+      })
+    }
+  }
+
   const handleOpenArtifact = (artifact?: Artifact) => {
     // If artifact is provided (from message bubble), use it
     if (artifact) {
@@ -1699,6 +1770,7 @@ Rules:
                       artifact={message.artifact}
                       onOpenArtifact={message.artifact ? handleOpenArtifact : (artifactMessageId === message.id && activeArtifact ? handleOpenArtifact : undefined)}
                       statusLabel={message.statusLabel}
+                      onRequestOcr={handleRequestOcr}
                     />
                   ))}
                 </>

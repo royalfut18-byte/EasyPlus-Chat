@@ -5,6 +5,8 @@ import { streamGeminiResponse } from '@/lib/ai/gemini'
 import { searchWeb, buildWebSearchQuery } from '@/lib/ai/web-search'
 import { buildSystemPrompt, isTimeSensitiveQuery, detectQueryType } from '@/lib/ai/system-prompt'
 import { buildDocumentContext } from '@/lib/ai/document-extract'
+import { parsePageRangeRequest } from '@/lib/ai/document-requests'
+import { ocrAttachmentPages, findLatestPdfAttachmentForOcr } from '@/lib/ai/pdf-ocr'
 import { sanitizeAttachmentsForStorage } from '@/lib/ai/sanitize-attachments'
 import {
   getUserMemories,
@@ -283,6 +285,7 @@ RULES FOR USING THESE RESULTS:
     stage = 'document-extraction'
     let documentContext = ''
     const extractedDocTexts = new Map<string, string>()
+    const attachmentProcessingStatuses = new Map<string, string>()
     const currentDocumentFileNames: string[] = []
 
     if (userMessage.attachments && userMessage.attachments.length > 0) {
@@ -293,6 +296,9 @@ RULES FOR USING THESE RESULTS:
           documentContext = result.context
           for (const [name, text] of result.extractedTexts) {
             extractedDocTexts.set(name, text)
+          }
+          for (const [name, status] of result.attachmentStatuses) {
+            attachmentProcessingStatuses.set(name, status)
           }
           if (result.error) {
             console.warn('[Chat API] Document extraction warning:', result.error)
@@ -342,6 +348,36 @@ RULES FOR USING THESE RESULTS:
         content: `[CONTEXT FROM EARLIER IN THIS CONVERSATION]\n\n${historicalAttachmentContext}---\nThe above documents/images were shared earlier in this conversation. Use this context to inform your answer. The user may be asking follow-up questions about this content.`,
       }
       messagesToSend = [...messagesToSend.slice(0, -1), historyInstruction, latestUserMessage] as ChatMessage[]
+    }
+
+    // If the user supplied a page range for a previously uploaded scanned PDF,
+    // OCR only those pages before context building so the answer can use saved OCR text.
+    if (conversationId && !documentContext) {
+      const requestedPages = parsePageRangeRequest(latestUserMessage.content)
+      if (requestedPages) {
+        try {
+          const candidate = await findLatestPdfAttachmentForOcr(db, user.id, conversationId)
+          if (candidate?.id) {
+            const ocrResult = await ocrAttachmentPages(db, {
+              userId: user.id,
+              conversationId,
+              attachmentId: candidate.id,
+              pageStart: requestedPages.pageStart,
+              pageEnd: requestedPages.pageEnd,
+            })
+
+            if (ocrResult.combinedText) {
+              const ocrInstruction: ChatMessage = {
+                role: 'user',
+                content: `[OCR TEXT FROM SCANNED PDF - USE THIS FOR YOUR ANSWER]\nDocument: ${ocrResult.fileName}\nPages: ${ocrResult.pageStart}-${ocrResult.pageEnd}\n\n${ocrResult.combinedText}\n\n---\nUse this OCR text as document context. If the OCR text is incomplete or does not contain the requested chapter/question, ask for the correct page range.`,
+              }
+              messagesToSend = [...messagesToSend.slice(0, -1), ocrInstruction, latestUserMessage] as ChatMessage[]
+            }
+          }
+        } catch (ocrErr: any) {
+          console.warn('[Chat API] Automatic selected-page OCR skipped:', ocrErr.message)
+        }
+      }
     }
 
     // Stage: Memory & Context Building
@@ -555,7 +591,7 @@ RULES FOR USING THESE RESULTS:
           const maxOrder = maxOrderData?.order_index || 0
           userMessageOrderIndex = (typeof maxOrder === 'number' ? maxOrder : 0) + 1
 
-          const safeAttachments = sanitizeAttachmentsForStorage(userMessage.attachments, extractedDocTexts)
+          const safeAttachments = sanitizeAttachmentsForStorage(userMessage.attachments, extractedDocTexts, attachmentProcessingStatuses)
           const { data: insertedMsg, error: userInsertError } = await db.from('messages').insert({
             conversation_id: conversationId,
             role: 'user',
@@ -587,6 +623,8 @@ RULES FOR USING THESE RESULTS:
               type: att.type || 'document',
               mimeType: att.mimeType,
               textContent: att.textContent || extractedDocTexts.get(att.name) || undefined,
+              processingStatus: attachmentProcessingStatuses.get(att.name),
+              ocrStatus: attachmentProcessingStatuses.get(att.name) === 'needs_ocr' ? 'needs_ocr' : undefined,
               storageProvider: att.storageProvider || att.storage_provider,
               storageKey: att.storageKey || att.storage_key,
               storagePath: att.storagePath,
@@ -788,6 +826,8 @@ RULES FOR USING THESE RESULTS:
                         type: att.type || 'document',
                         mimeType: att.mimeType,
                         textContent: att.textContent || extractedDocTexts.get(att.name) || undefined,
+                        processingStatus: attachmentProcessingStatuses.get(att.name),
+                        ocrStatus: attachmentProcessingStatuses.get(att.name) === 'needs_ocr' ? 'needs_ocr' : undefined,
                         storageProvider: att.storageProvider || att.storage_provider,
                         storageKey: att.storageKey || att.storage_key,
                         storagePath: att.storagePath,

@@ -39,6 +39,42 @@ export async function GET(
     })) as Message[]
     const filtered = messages.filter(m => m?.conversation_id === id)
 
+    try {
+      const messageIds = filtered.map(m => m.id).filter(Boolean)
+      if (messageIds.length > 0) {
+        const { data: attachmentRows } = await supabase
+          .from('attachments')
+          .select('id, message_id, file_name, processing_status, ocr_status, page_count, ocr_pages_processed')
+          .in('message_id', messageIds)
+          .eq('user_id', user.id)
+
+        const attachmentMeta = new Map<string, any>()
+        for (const row of (attachmentRows || []) as any[]) {
+          attachmentMeta.set(`${row.message_id}:${row.file_name}`, row)
+        }
+
+        for (const message of filtered) {
+          if (!Array.isArray(message.attachments)) continue
+          message.attachments = message.attachments.map((att: any) => {
+            const row = attachmentMeta.get(`${message.id}:${att.name || att.file_name}`)
+            if (!row) return att
+            return {
+              ...att,
+              attachmentId: row.id,
+              processingStatus: row.processing_status || att.processingStatus,
+              ocrStatus: row.ocr_status || att.ocrStatus,
+              pageCount: row.page_count || att.pageCount,
+              ocrPagesProcessed: row.ocr_pages_processed || att.ocrPagesProcessed,
+            }
+          })
+        }
+      }
+    } catch (attachmentErr: any) {
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('[Conversations API] Attachment metadata enrich skipped:', attachmentErr.message)
+      }
+    }
+
     // Server-side sort with robust tie-breaking
     filtered.sort((a, b) => {
       const ai = typeof a.order_index === 'number' ? a.order_index : Number.MAX_SAFE_INTEGER

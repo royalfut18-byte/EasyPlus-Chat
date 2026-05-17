@@ -48,6 +48,11 @@ export interface ChatAttachment {
   bucket?: string
   storageProvider?: 'supabase' | 'r2'
   storageKey?: string
+  attachmentId?: string
+  processingStatus?: string
+  ocrStatus?: string
+  pageCount?: number
+  ocrPagesProcessed?: number[]
   uploadProgress?: number
   uploadStatus?: 'compressing' | 'uploading' | 'uploaded' | 'failed'
 }

@@ -1,6 +1,10 @@
 import type { ChatAttachment } from '@/types/models'
 
-export function sanitizeAttachmentsForStorage(attachments?: ChatAttachment[], extractedTexts?: Map<string, string>): ChatAttachment[] | undefined {
+export function sanitizeAttachmentsForStorage(
+  attachments?: ChatAttachment[],
+  extractedTexts?: Map<string, string>,
+  processingStatuses?: Map<string, string>
+): ChatAttachment[] | undefined {
   if (!attachments || attachments.length === 0) return undefined
 
   const sanitized = attachments.map((a) => {
@@ -19,6 +23,10 @@ export function sanitizeAttachmentsForStorage(attachments?: ChatAttachment[], ex
     if (a.textContent) safe.textContent = a.textContent
     if (extractedTexts && extractedTexts.has(a.name)) {
       safe.textContent = extractedTexts.get(a.name)
+    }
+    if (processingStatuses && processingStatuses.has(a.name)) {
+      safe.processingStatus = processingStatuses.get(a.name)
+      safe.ocrStatus = processingStatuses.get(a.name) === 'needs_ocr' ? 'needs_ocr' : safe.ocrStatus
     }
     // Never save dataUrl to DB — too large for JSONB/Vercel payload
     // Never save upload progress/status — ephemeral UI state

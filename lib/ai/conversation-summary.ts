@@ -335,6 +335,10 @@ export async function saveAttachmentMemory(
     storagePath?: string
     bucket?: string
     url?: string
+    processingStatus?: string
+    ocrStatus?: string
+    pageCount?: number
+    ocrPagesProcessed?: number[]
   }
 ): Promise<string | null> {
   try {
@@ -353,6 +357,10 @@ export async function saveAttachmentMemory(
       storage_path: storagePath,
       public_url: attachment.url || null,
       extracted_text: extractedText ? extractedText.substring(0, 10000) : null,
+      processing_status: attachment.processingStatus || (extractedText ? 'ready' : null),
+      ocr_status: attachment.ocrStatus || (attachment.processingStatus === 'needs_ocr' ? 'needs_ocr' : null),
+      page_count: attachment.pageCount || null,
+      ocr_pages_processed: attachment.ocrPagesProcessed || [],
       important_details: {
         storageProvider: attachment.storageProvider || null,
         storageKey: attachment.storageKey || null,
@@ -364,6 +372,8 @@ export async function saveAttachmentMemory(
     if (isImage && attachment.name) {
       attRow.vision_summary = `Image uploaded: ${attachment.name}`
       attRow.purpose_note = `User shared image "${attachment.name}" in conversation`
+    } else if (attachment.processingStatus === 'needs_ocr') {
+      attRow.purpose_note = `Text extraction failed for "${attachment.name}" - scanned PDF detected. OCR needed.`
     } else if (extractedText) {
       attRow.purpose_note = `User uploaded document "${attachment.name}" containing ${extractedText.length} characters`
       const preview = extractedText.substring(0, 500)
@@ -390,6 +400,10 @@ export async function saveAttachmentMemory(
         : {
             storage_path: attRow.storage_path,
             public_url: attRow.public_url,
+            processing_status: attRow.processing_status,
+            ocr_status: attRow.ocr_status,
+            page_count: attRow.page_count,
+            ocr_pages_processed: attRow.ocr_pages_processed,
             important_details: attRow.important_details,
             updated_at: new Date().toISOString(),
           }

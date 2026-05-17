@@ -6,10 +6,10 @@ function assert(condition, message) {
   }
 }
 
-const contextBuilderSource = fs.readFileSync('lib/ai/context-builder.ts', 'utf8')
+const documentRequestSource = fs.readFileSync('lib/ai/document-requests.ts', 'utf8')
 const promptSource = fs.readFileSync('lib/ai/system-prompt.ts', 'utf8')
 
-const regexMatch = contextBuilderSource.match(
+const regexMatch = documentRequestSource.match(
   /export function isDocumentFollowUpRequest\(message: string\): boolean \{\s*return (\/[\s\S]+?\/i)\.test\(message\)\s*\}/
 )
 
@@ -23,6 +23,8 @@ for (const phrase of [
   'next question',
   'the PDF',
   'what PDF did I upload?',
+  'do chapter 11.2 questions',
+  'OCR the first 10 pages',
 ]) {
   assert(followUpRegex.test(phrase), `Expected follow-up phrase to match: ${phrase}`)
 }

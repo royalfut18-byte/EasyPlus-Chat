@@ -3,6 +3,7 @@ import type { ChatMessage } from '@/types/models'
 import type { ChatAttachment } from '@/types/models'
 import { extractTextFromAttachment } from '@/lib/ai/document-extract'
 import { saveAttachmentMemory } from '@/lib/ai/conversation-summary'
+import { isDocumentFollowUpRequest, parsePageRangeRequest } from '@/lib/ai/document-requests'
 
 export interface ContextBuildOptions {
   userId: string
@@ -54,6 +55,9 @@ interface HistoricalAttachment {
   ocrText?: string | null
   importantDetails?: Record<string, any> | null
   purposeNote?: string | null
+  processingStatus?: string | null
+  ocrStatus?: string | null
+  pageCount?: number | null
   storageProvider?: string | null
   storageKey?: string | null
   storagePath?: string | null
@@ -89,10 +93,6 @@ function extractSearchKeywords(message: string): string[] {
   }
 
   return [...filtered, ...bigrams].slice(0, 10)
-}
-
-export function isDocumentFollowUpRequest(message: string): boolean {
-  return /\b(q(?:uestion)?\s*\d+|question\s+(?:one|two|three|four|five|six|seven|eight|nine|ten)|next\s+question|previous\s+question|the\s+(?:pdf|document|file|worksheet|attachment)|uploaded\s+(?:pdf|document|file)|what\s+(?:pdf|document|file)\s+did\s+i\s+upload|continue|do\s+(?:q|question)|solve\s+(?:q|question))\b/i.test(message)
 }
 
 function getAttachmentField(att: any, camel: string, snake?: string): any {
@@ -169,7 +169,7 @@ async function loadHistoricalAttachments(
   try {
     const { data: attachmentRows } = await db
       .from('attachments')
-      .select('id, message_id, file_name, file_type, mime_type, storage_path, public_url, extracted_text, vision_summary, ocr_text, important_details, purpose_note, created_at')
+      .select('id, message_id, file_name, file_type, mime_type, storage_path, public_url, extracted_text, vision_summary, ocr_text, important_details, purpose_note, processing_status, ocr_status, page_count, created_at')
       .eq('conversation_id', conversationId)
       .eq('user_id', userId)
       .order('created_at', { ascending: false })
@@ -188,6 +188,9 @@ async function loadHistoricalAttachments(
         ocrText: row.ocr_text,
         importantDetails: row.important_details || {},
         purposeNote: row.purpose_note,
+        processingStatus: row.processing_status,
+        ocrStatus: row.ocr_status,
+        pageCount: row.page_count,
         storageProvider: details.storageProvider,
         storageKey: details.storageKey,
         storagePath: details.storagePath,
@@ -417,6 +420,10 @@ export async function buildContext(
 
         let summary = ''
         if (att.purposeNote) summary += att.purposeNote + '\n'
+        if (att.processingStatus === 'needs_ocr' || att.ocrStatus === 'needs_ocr') {
+          summary += 'Text extraction failed - scanned PDF detected. OCR needed. Ask for a page range or OCR the first pages/table of contents to locate the requested section.\n'
+        }
+        if (att.pageCount) summary += `Page count: ${att.pageCount}\n`
         if (att.visionSummary) summary += `Visual: ${att.visionSummary}\n`
         if (att.ocrText) summary += `Text found: ${att.ocrText.substring(0, 500)}\n`
         if (extractedText && !att.ocrText) {
@@ -449,6 +456,49 @@ export async function buildContext(
   } catch (e: any) {
     if (process.env.NODE_ENV !== 'production') {
       console.log('[ContextBuilder] Attachments fetch skipped:', e.message)
+    }
+  }
+
+  // 3b. Include saved OCR page text for scanned PDFs.
+  if (documentFollowUp) {
+    try {
+      const requestedPages = parsePageRangeRequest(latestUserMessage)
+      let pageQuery = db
+        .from('attachment_pages')
+        .select('attachment_id, page_number, ocr_text, vision_summary, processing_status, attachments(file_name, mime_type)')
+        .eq('conversation_id', conversationId)
+        .eq('user_id', userId)
+        .not('ocr_text', 'is', null)
+        .order('page_number', { ascending: true })
+        .limit(20)
+
+      if (requestedPages) {
+        pageQuery = pageQuery
+          .gte('page_number', requestedPages.pageStart)
+          .lte('page_number', requestedPages.pageEnd)
+      }
+
+      const { data: ocrPages } = await pageQuery
+
+      for (const page of (ocrPages || []) as any[]) {
+        if (!page.ocr_text || remainingBudget < 300) break
+        const attachmentRow = page.attachments as any
+        const fileName = Array.isArray(attachmentRow)
+          ? attachmentRow[0]?.file_name
+          : attachmentRow?.file_name
+        const label = `[OCR page ${page.page_number}${fileName ? ` from ${fileName}` : ''}]\n${page.ocr_text.substring(0, 1600)}`
+        const tokens = estimateTokens(label)
+        if (tokens < remainingBudget) {
+          result.relevantChunks.push(label)
+          result.debugInfo.attachmentChunksLoadedCount++
+          if (fileName) result.debugInfo.fileNamesIncluded.push(fileName)
+          remainingBudget -= tokens
+        }
+      }
+    } catch (e: any) {
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('[ContextBuilder] Attachment OCR pages fetch skipped:', e.message)
+      }
     }
   }
 

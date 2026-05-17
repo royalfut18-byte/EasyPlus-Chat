@@ -1,7 +1,8 @@
 'use client'
 
+import { useState } from 'react'
 import { motion } from 'framer-motion'
-import { Copy, ThumbsUp, ThumbsDown, RotateCw, FileCode, Sparkles, PanelRightOpen, Sparkles as GeminiIcon, Download, FileText, FileSpreadsheet, FileJson, File as FileIcon, ImageIcon } from 'lucide-react'
+import { Copy, ThumbsUp, ThumbsDown, RotateCw, FileCode, Sparkles, PanelRightOpen, Sparkles as GeminiIcon, Download, FileText, FileSpreadsheet, FileJson, File as FileIcon, ImageIcon, ScanText } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism'
@@ -29,6 +30,7 @@ interface MessageBubbleProps {
   artifact?: Artifact | null
   onOpenArtifact?: (artifact?: Artifact) => void
   statusLabel?: string | null
+  onRequestOcr?: (attachment: ChatAttachment, pageRange: string) => void
 }
 
 const ARTIFACT_LOADING_MARKER = '__ARTIFACT_LOADING__'
@@ -55,8 +57,9 @@ function getStatusFromMarker(content: string): string | null {
   return null
 }
 
-export function MessageBubble({ role, content, model, onRegenerate, attachments, hasArtifact, artifact, onOpenArtifact, statusLabel }: MessageBubbleProps) {
+export function MessageBubble({ role, content, model, onRegenerate, attachments, hasArtifact, artifact, onOpenArtifact, statusLabel, onRequestOcr }: MessageBubbleProps) {
   const isUser = role === 'user'
+  const [ocrRanges, setOcrRanges] = useState<Record<number, string>>({})
   const modelData = model ? AI_MODELS.find((m) => m.id === model) : null
   const rawContent = content || ''
 
@@ -174,11 +177,12 @@ export function MessageBubble({ role, content, model, onRegenerate, attachments,
                   </>
                 ) : (
                   <div className={cn(
-                    'flex items-center gap-3 px-3.5 py-3 rounded-xl border',
+                    'flex flex-col gap-3 px-3.5 py-3 rounded-xl border',
                     isUser
                       ? 'border-white/20 bg-white/10'
                       : 'border-white/10 bg-white/5'
                   )}>
+                    <div className="flex items-center gap-3 min-w-0">
                     {attachment.type === 'image' ? (
                       <ImageIcon className="h-5 w-5 text-purple-400 shrink-0" />
                     ) : attachment.mimeType === 'application/pdf' ? (
@@ -205,7 +209,44 @@ export function MessageBubble({ role, content, model, onRegenerate, attachments,
                         {attachment.size ? ` · ${attachment.size < 1024 * 1024 ? `${(attachment.size / 1024).toFixed(0)} KB` : `${(attachment.size / (1024 * 1024)).toFixed(1)} MB`}` : ''}
                         {attachment.storagePath ? ' · Stored' : ''}
                       </p>
+                      {(attachment.processingStatus === 'needs_ocr' || attachment.ocrStatus === 'needs_ocr') && (
+                        <p className="mt-1 text-[11px] leading-4 text-amber-200">Text extraction failed - scanned PDF detected. OCR needed.</p>
+                      )}
+                      {attachment.ocrStatus === 'completed' && (
+                        <p className="mt-1 text-[11px] leading-4 text-emerald-200">OCR ready</p>
+                      )}
                     </div>
+                    </div>
+
+                    {attachment.mimeType === 'application/pdf' && onRequestOcr && attachment.attachmentId && (
+                      <div className="flex flex-wrap items-center gap-2 border-t border-white/10 pt-2">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 px-2 text-xs bg-white/10 hover:bg-white/15"
+                          onClick={() => onRequestOcr(attachment, '1-5')}
+                        >
+                          <ScanText className="h-3.5 w-3.5 mr-1.5" />
+                          OCR first 5 pages
+                        </Button>
+                        <input
+                          value={ocrRanges[index] || ''}
+                          onChange={(event) => setOcrRanges((prev) => ({ ...prev, [index]: event.target.value }))}
+                          placeholder="120-125"
+                          className="h-7 w-24 rounded-md border border-white/10 bg-black/20 px-2 text-xs text-white placeholder:text-gray-500 outline-none focus:border-violet-400/60"
+                        />
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 px-2 text-xs bg-white/10 hover:bg-white/15"
+                          onClick={() => onRequestOcr(attachment, ocrRanges[index] || '')}
+                        >
+                          OCR selected pages
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

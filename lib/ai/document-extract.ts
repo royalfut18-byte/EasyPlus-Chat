@@ -125,16 +125,18 @@ export async function extractTextFromAttachment(attachment: ChatAttachment): Pro
 export interface DocumentExtractionResult {
   context: string
   extractedTexts: Map<string, string>
+  attachmentStatuses: Map<string, 'ready' | 'needs_ocr' | 'failed'>
   error?: string
 }
 
 export async function buildDocumentContext(attachments: ChatAttachment[]): Promise<DocumentExtractionResult> {
   const docAttachments = attachments.filter((a) => a.type === 'document')
-  if (docAttachments.length === 0) return { context: '', extractedTexts: new Map() }
+  if (docAttachments.length === 0) return { context: '', extractedTexts: new Map(), attachmentStatuses: new Map() }
 
   let totalChars = 0
   const blocks: string[] = []
   const extractedTexts = new Map<string, string>()
+  const attachmentStatuses = new Map<string, 'ready' | 'needs_ocr' | 'failed'>()
   let extractionError: string | undefined
 
   for (const attachment of docAttachments) {
@@ -181,12 +183,14 @@ export async function buildDocumentContext(attachments: ChatAttachment[]): Promi
     }
 
     if (text === '__MISSING_DATA__') {
+      attachmentStatuses.set(attachment.name, 'failed')
       extractionError = `Document data was missing for "${attachment.name}". Please re-upload the file.`
       console.error('[Document Extract] Missing data:', attachment.name)
       continue
     }
 
     if (text === '__PDF_EXTRACTION_FAILED__') {
+      attachmentStatuses.set(attachment.name, 'failed')
       extractionError = `PDF text extraction failed for "${attachment.name}". The file may be corrupted or unsupported.`
       console.error('[Document Extract] PDF extraction failed:', attachment.name)
       blocks.push(
@@ -196,15 +200,17 @@ export async function buildDocumentContext(attachments: ChatAttachment[]): Promi
     }
 
     if (text === '__PDF_NO_TEXT__') {
-      extractionError = `No readable text found in "${attachment.name}". This may be a scanned/image-only PDF.`
-      console.error('[Document Extract] No text in PDF:', attachment.name)
+      attachmentStatuses.set(attachment.name, 'needs_ocr')
+      extractionError = `No readable text found in "${attachment.name}". This appears to be a scanned/image-only PDF and needs OCR.`
+      console.error('[Document Extract] Scanned PDF needs OCR:', attachment.name)
       blocks.push(
-        `[Attached document: ${attachment.name}]\nNo readable text found in this PDF. It may be a scanned/image-only document.\n[/Attached document]`
+        `[Attached document: ${attachment.name}]\nText extraction failed - scanned PDF detected. OCR needed. Ask the user for a page range, or offer to OCR the first pages/table of contents to locate the requested section. Do not say the PDF is unavailable.\n[/Attached document]`
       )
       continue
     }
 
     if (!text || text.trim().length === 0) {
+      attachmentStatuses.set(attachment.name, 'failed')
       console.warn('[Document Extract] Empty document:', attachment.name)
       blocks.push(
         `[Attached document: ${attachment.name}]\nDocument appears to be empty or could not be read.\n[/Attached document]`
@@ -212,6 +218,7 @@ export async function buildDocumentContext(attachments: ChatAttachment[]): Promi
       continue
     }
 
+    attachmentStatuses.set(attachment.name, 'ready')
     extractedTexts.set(attachment.name, text)
 
     const remaining = MAX_DOCUMENT_CHARS - totalChars
@@ -247,6 +254,7 @@ export async function buildDocumentContext(attachments: ChatAttachment[]): Promi
   return {
     context: blocks.join('\n\n'),
     extractedTexts,
+    attachmentStatuses,
     error: extractionError,
   }
 }
