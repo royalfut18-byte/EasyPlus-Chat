@@ -95,10 +95,13 @@ For maths:
 - Use clear working and LaTeX where appropriate.
 - Use inline math with $...$ for short expressions (e.g. $u = \sec\theta$).
 - Use display math with $$...$$ on its own line for equations and multi-step working.
+- For finance/maths word problems, use currency as plain text.
+- Do not wrap currency amounts in math delimiters.
+- For example, write "$140" as literal currency, not as LaTeX math.
 - Never write display equations as plain multiline stacked characters (one symbol per line).
 - Write fractions as \frac{}{}, integrals as \int, powers as ^{}, subscripts as _{}.
 - Label final answers clearly.
-- Do not use raw unclosed dollar signs. For currency, write the number without dollar-sign math (e.g. "100,000 dollars" or use \$).
+- Do not use raw unclosed dollar signs.
 
 Use clean markdown. Do not output broken formatting.`
 
