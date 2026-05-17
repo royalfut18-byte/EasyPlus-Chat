@@ -113,6 +113,14 @@ export async function POST(request: NextRequest) {
       sizeBytes,
     })
 
+    if (process.env.NODE_ENV !== 'production') {
+      try {
+        const urlOrigin = new URL(result.uploadUrl).origin
+        const hasChecksumParams = result.uploadUrl.includes('x-amz-checksum') || result.uploadUrl.includes('x-amz-sdk-checksum')
+        console.log('[Upload Presign] URL diagnostics:', { origin: urlOrigin, hasChecksumParams })
+      } catch { /* ignore */ }
+    }
+
     return NextResponse.json({
       uploadUrl: result.uploadUrl,
       key: result.key,
