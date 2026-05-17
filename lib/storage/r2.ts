@@ -31,19 +31,15 @@ export async function createPresignedUploadUrl(params: {
   sizeBytes: number
   expiresIn?: number
 }): Promise<{ uploadUrl: string; key: string; bucket: string; expiresIn: number }> {
-  const { key, mimeType, expiresIn = 600 } = params
+  const { key, expiresIn = 600 } = params
   const client = getR2Client()
 
   const command = new PutObjectCommand({
     Bucket: R2_BUCKET_NAME,
     Key: key,
-    ContentType: mimeType,
   })
 
-  const uploadUrl = await getSignedUrl(client, command, {
-    expiresIn,
-    signableHeaders: new Set(['content-type']),
-  })
+  const uploadUrl = await getSignedUrl(client, command, { expiresIn })
 
   return {
     uploadUrl,

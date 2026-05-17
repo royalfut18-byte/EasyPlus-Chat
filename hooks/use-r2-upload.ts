@@ -161,11 +161,13 @@ export function useR2Upload() {
       })
 
       if (!uploadResult.ok) {
-        const detail = uploadResult.status
-          ? `R2 upload failed with status ${uploadResult.status}${uploadResult.statusText ? ` (${uploadResult.statusText})` : ''}`
-          : uploadResult.errorType === 'cors'
-          ? 'R2 CORS blocked upload. Check R2 bucket CORS settings.'
-          : 'Upload to storage failed'
+        let detail: string
+        if (uploadResult.status && uploadResult.status > 0) {
+          detail = `R2 upload failed with status ${uploadResult.status}.`
+          if (uploadResult.status === 403) detail += ' Check token permissions, bucket name, or signed headers.'
+        } else {
+          detail = 'Browser blocked upload or network failed. Open DevTools Network and check the OPTIONS/PUT request.'
+        }
         if (process.env.NODE_ENV !== 'production') {
           console.error('[R2 Upload] PUT failed:', { status: uploadResult.status, statusText: uploadResult.statusText, errorType: uploadResult.errorType, responseText: uploadResult.responseText })
         }
@@ -209,7 +211,7 @@ interface UploadWithProgressResult {
   ok: boolean
   status?: number
   statusText?: string
-  errorType?: 'cors' | 'network' | 'abort'
+  errorType?: 'network' | 'abort'
   responseText?: string
 }
 
@@ -230,6 +232,9 @@ function uploadWithProgress(
 
     xhr.addEventListener('load', () => {
       const ok = xhr.status >= 200 && xhr.status < 300
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('[R2 Upload] PUT response:', { status: xhr.status, statusText: xhr.statusText, ok })
+      }
       resolve({
         ok,
         status: xhr.status,
@@ -239,15 +244,24 @@ function uploadWithProgress(
     })
 
     xhr.addEventListener('error', () => {
-      resolve({ ok: false, status: 0, errorType: xhr.status === 0 ? 'cors' : 'network' })
+      if (process.env.NODE_ENV !== 'production') {
+        console.error('[R2 Upload] PUT network error, xhr.status:', xhr.status)
+      }
+      resolve({ ok: false, status: 0, errorType: 'network' })
     })
 
     xhr.addEventListener('abort', () => {
       resolve({ ok: false, errorType: 'abort' })
     })
 
+    if (process.env.NODE_ENV !== 'production') {
+      try {
+        const urlOrigin = new URL(url).origin
+        console.log('[R2 Upload] PUT started:', { origin: urlOrigin, fileName: file.name, size: file.size, type: file.type })
+      } catch { /* ignore URL parse errors */ }
+    }
+
     xhr.open('PUT', url)
-    xhr.setRequestHeader('Content-Type', file.type)
     xhr.send(file)
   })
 }
