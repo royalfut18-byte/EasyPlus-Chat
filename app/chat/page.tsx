@@ -887,7 +887,7 @@ Rules:
         try {
           const text = await response.text()
           if (response.status === 413 || text.includes('PAYLOAD_TOO_LARGE') || text.includes('FUNCTION_PAYLOAD_TOO_LARGE') || text.includes('Request Entity Too Large')) {
-            errorMessage = 'File too large for upload. Try a smaller file under 5MB.'
+            errorMessage = 'File too large for inline upload. Use the attachment button to upload large files via R2.'
           } else if (response.status === 504 || text.includes('FUNCTION_INVOCATION_TIMEOUT')) {
             try {
               const errorData = JSON.parse(text)
@@ -1226,7 +1226,8 @@ Rules:
 
   const HERO_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp']
   const HERO_ALLOWED_EXTENSIONS = ['.pdf', '.txt', '.md', '.csv', '.json', '.docx', '.png', '.jpg', '.jpeg', '.webp']
-  const HERO_MAX_FILE_SIZE = 5 * 1024 * 1024
+  const HERO_MAX_UPLOAD_MB = Number(process.env.NEXT_PUBLIC_MAX_UPLOAD_MB || 512)
+  const HERO_MAX_FILE_SIZE = HERO_MAX_UPLOAD_MB * 1024 * 1024
   const HERO_MAX_FILES = 3
 
   const heroProcessFile = async (file: File): Promise<ChatAttachment | null> => {
@@ -1244,7 +1245,7 @@ Rules:
       return null
     }
     if (file.size > HERO_MAX_FILE_SIZE) {
-      toast({ title: 'File too large', description: 'Please upload a file under 5MB.', variant: 'destructive' })
+      toast({ title: 'File too large', description: `Maximum upload size is ${HERO_MAX_UPLOAD_MB}MB.`, variant: 'destructive' })
       return null
     }
 

@@ -73,7 +73,7 @@ export async function POST(request: NextRequest) {
     if (sizeBytes > MAX_UPLOAD_BYTES) {
       const maxMB = Math.round(MAX_UPLOAD_BYTES / (1024 * 1024))
       return NextResponse.json(
-        { error: `File too large. Maximum size is ${maxMB}MB.` },
+        { error: `File too large. Maximum upload size is ${maxMB}MB.` },
         { status: 413 }
       )
     }

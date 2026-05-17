@@ -173,12 +173,13 @@ export async function POST(request: NextRequest) {
     stage = 'prepare-messages'
     const userMessage = messages[messages.length - 1]
 
-    // Validate attachment sizes (5MB limit per file)
+    // Validate inline attachment sizes (R2 metadata attachments bypass this check)
     if (userMessage.attachments && userMessage.attachments.length > 0) {
       for (const att of userMessage.attachments) {
-        if (att.dataUrl && att.dataUrl.length > 7 * 1024 * 1024) {
+        const isR2 = att.storageProvider === 'r2' || att.storage_provider === 'r2' || att.storageKey || att.storage_key || att.storagePath
+        if (!isR2 && att.dataUrl && att.dataUrl.length > 7 * 1024 * 1024) {
           return NextResponse.json(
-            { error: 'File too large. Please upload a file under 5MB.' },
+            { error: 'Inline attachment too large. For large files, upload through R2 direct upload.' },
             { status: 400 }
           )
         }
