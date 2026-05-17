@@ -208,6 +208,8 @@ export async function POST(request: NextRequest) {
         mimeType: a.mimeType,
         size: a.size,
         hasDataUrl: !!a.dataUrl,
+        storageProvider: a.storageProvider || a.storage_provider || 'inline',
+        storageKey: a.storageKey || a.storage_key || null,
       })))
     }
 

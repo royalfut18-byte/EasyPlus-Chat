@@ -16,6 +16,7 @@ import { AI_MODELS } from '@/types/models'
 import { cn } from '@/lib/utils'
 import { parseArtifactFromResponse } from '@/lib/artifact-parser'
 import { sortMessagesChronologically, dedupeMessages, processMessages, processLoadedMessages, getStoredArtifact } from '@/lib/chat/message-utils'
+import { useR2Upload } from '@/hooks/use-r2-upload'
 import type { Conversation, Message, ChatAttachment, Artifact } from '@/types/models'
 
 const DEFAULT_PANEL_WIDTH = 560
@@ -195,8 +196,10 @@ export default function ChatPage() {
   const [pendingResponses, setPendingResponses] = useState<Record<string, PendingResponse>>({})
   const [heroInput, setHeroInput] = useState('')
   const [heroAttachments, setHeroAttachments] = useState<ChatAttachment[]>([])
+  const [heroUploading, setHeroUploading] = useState(false)
   const heroTextareaRef = useRef<HTMLTextAreaElement>(null)
   const heroFileInputRef = useRef<HTMLInputElement>(null)
+  const { uploadToR2, maxUploadMB: heroMaxUploadMB } = useR2Upload()
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const isSendingRef = useRef(false)
   const lastUserPromptRef = useRef<string>('')
@@ -1226,11 +1229,11 @@ Rules:
 
   const HERO_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp']
   const HERO_ALLOWED_EXTENSIONS = ['.pdf', '.txt', '.md', '.csv', '.json', '.docx', '.png', '.jpg', '.jpeg', '.webp']
-  const HERO_MAX_UPLOAD_MB = Number(process.env.NEXT_PUBLIC_MAX_UPLOAD_MB || 512)
-  const HERO_MAX_FILE_SIZE = HERO_MAX_UPLOAD_MB * 1024 * 1024
+  const HERO_MAX_FILE_SIZE = heroMaxUploadMB * 1024 * 1024
   const HERO_MAX_FILES = 3
+  const HERO_INLINE_THRESHOLD = 4 * 1024 * 1024
 
-  const heroProcessFile = async (file: File): Promise<ChatAttachment | null> => {
+  const heroProcessFile = async (file: File): Promise<void> => {
     const ext = '.' + (file.name.split('.').pop()?.toLowerCase() || '')
     const mimeMap: Record<string, string> = {
       '.pdf': 'application/pdf', '.txt': 'text/plain', '.md': 'text/markdown',
@@ -1242,31 +1245,83 @@ Rules:
 
     if (!HERO_ALLOWED_EXTENSIONS.includes(ext)) {
       toast({ title: 'Unsupported file type', description: `Supported: ${HERO_ALLOWED_EXTENSIONS.join(', ')}`, variant: 'destructive' })
-      return null
+      return
     }
     if (file.size > HERO_MAX_FILE_SIZE) {
-      toast({ title: 'File too large', description: `Maximum upload size is ${HERO_MAX_UPLOAD_MB}MB.`, variant: 'destructive' })
-      return null
+      toast({ title: 'File too large', description: `Maximum upload size is ${heroMaxUploadMB}MB.`, variant: 'destructive' })
+      return
     }
 
-    return new Promise((resolve) => {
+    const isImage = HERO_IMAGE_TYPES.includes(mime)
+    const useInline = isImage && file.size <= HERO_INLINE_THRESHOLD
+
+    if (useInline) {
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('[Hero Upload] Using inline dataUrl for small image:', file.name, `${(file.size / 1024 / 1024).toFixed(1)}MB`)
+      }
       const reader = new FileReader()
       reader.onload = (e) => {
         const dataUrl = e.target?.result as string
-        resolve({
-          type: HERO_IMAGE_TYPES.includes(mime) ? 'image' : 'document',
-          name: file.name,
-          mimeType: mime,
-          size: file.size,
-          dataUrl,
+        setHeroAttachments((prev) => {
+          if (prev.length >= HERO_MAX_FILES) return prev
+          return [...prev, {
+            type: 'image',
+            name: file.name,
+            mimeType: mime,
+            size: file.size,
+            dataUrl,
+            uploadStatus: 'uploaded',
+            uploadProgress: 100,
+            storageProvider: 'supabase',
+          }]
         })
       }
       reader.onerror = () => {
         toast({ title: 'Error reading file', description: 'Failed to process file', variant: 'destructive' })
-        resolve(null)
       }
       reader.readAsDataURL(file)
+      return
+    }
+
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('[Hero Upload] Using R2 upload for:', file.name, `${(file.size / 1024 / 1024).toFixed(1)}MB`)
+    }
+
+    const placeholderIndex = heroAttachments.length
+    const placeholder: ChatAttachment = {
+      type: isImage ? 'image' : 'document',
+      name: file.name,
+      mimeType: mime,
+      size: file.size,
+      uploadStatus: 'uploading',
+      uploadProgress: 0,
+    }
+    setHeroAttachments((prev) => {
+      if (prev.length >= HERO_MAX_FILES) return prev
+      return [...prev, placeholder]
     })
+    setHeroUploading(true)
+
+    const result = await uploadToR2(file, null, (updated) => {
+      setHeroAttachments((prev) => prev.map((a, i) => i === placeholderIndex ? { ...a, ...updated } : a))
+    })
+
+    if (result.error) {
+      toast({ title: 'Upload failed', description: result.error, variant: 'destructive' })
+      if (process.env.NODE_ENV !== 'production') {
+        console.error('[Hero Upload] R2 upload failed:', result.error)
+      }
+    } else if (process.env.NODE_ENV !== 'production') {
+      console.log('[Hero Upload] R2 upload success:', {
+        name: file.name,
+        storageProvider: result.attachment.storageProvider,
+        storageKey: result.attachment.storageKey,
+        uploadStatus: result.attachment.uploadStatus,
+      })
+    }
+
+    setHeroAttachments((prev) => prev.map((a, i) => i === placeholderIndex ? result.attachment : a))
+    setHeroUploading(false)
   }
 
   const handleHeroFileSelect = async (files: FileList | null) => {
@@ -1275,17 +1330,8 @@ Rules:
       console.log('[Hero Upload] Files selected:', files.length)
     }
     for (let i = 0; i < files.length; i++) {
-      if (heroAttachments.length >= HERO_MAX_FILES) break
-      const attachment = await heroProcessFile(files[i])
-      if (attachment) {
-        if (process.env.NODE_ENV !== 'production') {
-          console.log('[Hero Upload] Attachment added:', attachment.name, attachment.type)
-        }
-        setHeroAttachments((prev) => {
-          if (prev.length >= HERO_MAX_FILES) return prev
-          return [...prev, attachment]
-        })
-      }
+      if (heroAttachments.length + i >= HERO_MAX_FILES) break
+      await heroProcessFile(files[i])
     }
   }
 
@@ -1492,7 +1538,7 @@ Rules:
                         <div className="flex gap-2 mb-3 pb-3 border-b border-white/10 overflow-x-auto">
                           {heroAttachments.map((att, idx) => (
                             <div key={idx} className="relative group shrink-0">
-                              {att.type === 'image' ? (
+                              {att.type === 'image' && att.dataUrl ? (
                                 <div className="h-16 w-16 md:h-20 md:w-20 rounded-xl border-2 border-white/20 bg-black/20 overflow-hidden">
                                   <img src={att.dataUrl} alt={att.name} className="h-full w-full object-cover" />
                                 </div>
@@ -1501,8 +1547,18 @@ Rules:
                                   <FileText className="h-5 w-5 text-gray-400 shrink-0" />
                                   <div className="min-w-0">
                                     <p className="text-xs font-medium text-white truncate">{att.name}</p>
-                                    <p className="text-[10px] text-gray-400">{att.size ? `${(att.size / 1024).toFixed(0)} KB` : ''}</p>
+                                    <p className="text-[10px] text-gray-400">
+                                      {att.uploadStatus === 'uploading' ? `Uploading${att.uploadProgress ? ` ${att.uploadProgress}%` : '...'}` :
+                                       att.uploadStatus === 'compressing' ? 'Compressing...' :
+                                       att.uploadStatus === 'failed' ? 'Failed' :
+                                       att.size ? (att.size >= 1024 * 1024 ? `${(att.size / 1024 / 1024).toFixed(1)} MB` : `${(att.size / 1024).toFixed(0)} KB`) : ''}
+                                    </p>
                                   </div>
+                                </div>
+                              )}
+                              {att.uploadStatus === 'uploading' && (
+                                <div className="absolute bottom-0 left-0 right-0 h-1 bg-white/10 rounded-b-xl overflow-hidden">
+                                  <div className="h-full bg-violet-500 transition-all" style={{ width: `${att.uploadProgress || 0}%` }} />
                                 </div>
                               )}
                               <button
@@ -1542,9 +1598,11 @@ Rules:
                           onKeyDown={(e) => {
                             if (e.key === 'Enter' && !e.shiftKey) {
                               e.preventDefault()
-                              if ((heroInput.trim() || heroAttachments.length > 0) && !isRequestInProgress) {
-                                const content = heroInput.trim() || (heroAttachments.length > 0 ? 'Please analyze the attached file.' : '')
-                                handleSendMessage(content, heroAttachments.length > 0 ? heroAttachments : undefined)
+                              const hasActiveHeroUpload = heroAttachments.some(a => a.uploadStatus === 'uploading' || a.uploadStatus === 'compressing')
+                              if ((heroInput.trim() || heroAttachments.length > 0) && !isRequestInProgress && !hasActiveHeroUpload) {
+                                const readyAttachments = heroAttachments.filter(a => a.uploadStatus !== 'failed')
+                                const content = heroInput.trim() || (readyAttachments.length > 0 ? 'Please analyze the attached file.' : '')
+                                handleSendMessage(content, readyAttachments.length > 0 ? readyAttachments : undefined)
                                 setHeroInput('')
                                 setHeroAttachments([])
                                 if (heroTextareaRef.current) heroTextareaRef.current.style.height = 'auto'
@@ -1560,18 +1618,20 @@ Rules:
                         <button
                           type="button"
                           onClick={() => {
-                            if ((heroInput.trim() || heroAttachments.length > 0) && !isRequestInProgress) {
-                              const content = heroInput.trim() || (heroAttachments.length > 0 ? 'Please analyze the attached file.' : '')
-                              handleSendMessage(content, heroAttachments.length > 0 ? heroAttachments : undefined)
+                            const hasActiveHeroUpload = heroAttachments.some(a => a.uploadStatus === 'uploading' || a.uploadStatus === 'compressing')
+                            if ((heroInput.trim() || heroAttachments.length > 0) && !isRequestInProgress && !hasActiveHeroUpload) {
+                              const readyAttachments = heroAttachments.filter(a => a.uploadStatus !== 'failed')
+                              const content = heroInput.trim() || (readyAttachments.length > 0 ? 'Please analyze the attached file.' : '')
+                              handleSendMessage(content, readyAttachments.length > 0 ? readyAttachments : undefined)
                               setHeroInput('')
                               setHeroAttachments([])
                               if (heroTextareaRef.current) heroTextareaRef.current.style.height = 'auto'
                             }
                           }}
-                          disabled={(!heroInput.trim() && heroAttachments.length === 0) || isRequestInProgress}
+                          disabled={(!heroInput.trim() && heroAttachments.length === 0) || isRequestInProgress || heroAttachments.some(a => a.uploadStatus === 'uploading' || a.uploadStatus === 'compressing')}
                           className="bg-violet-600 hover:bg-violet-500 h-8 w-8 md:h-9 md:w-9 rounded-xl shrink-0 flex items-center justify-center transition-all disabled:opacity-30 disabled:cursor-not-allowed mb-0.5"
                         >
-                          {isRequestInProgress ? (
+                          {isRequestInProgress || heroAttachments.some(a => a.uploadStatus === 'uploading') ? (
                             <Loader2 className="h-3.5 w-3.5 md:h-4 md:w-4 text-white animate-spin" />
                           ) : (
                             <Send className="h-3.5 w-3.5 md:h-4 md:w-4 text-white" />
