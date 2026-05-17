@@ -1294,7 +1294,7 @@ Rules:
       name: file.name,
       mimeType: mime,
       size: file.size,
-      uploadStatus: 'uploading',
+      uploadStatus: 'pending',
       uploadProgress: 0,
     }
     setHeroAttachments((prev) => {
@@ -1619,17 +1619,20 @@ Rules:
                                   <div className="min-w-0">
                                     <p className="text-xs font-medium text-white truncate">{att.name}</p>
                                     <p className="text-[10px] text-gray-400">
-                                      {att.uploadStatus === 'uploading' ? `Uploading${att.uploadProgress ? ` ${att.uploadProgress}%` : '...'}` :
+                                      {att.uploadStatus === 'pending' ? 'Preparing...' :
+                                       att.uploadStatus === 'uploading' ? `Uploading ${att.uploadProgress || 0}%` :
+                                       att.uploadStatus === 'processing' ? 'Processing in cloud...' :
                                        att.uploadStatus === 'compressing' ? 'Compressing...' :
-                                       att.uploadStatus === 'failed' ? 'Failed' :
+                                       att.uploadStatus === 'uploaded' ? 'Uploaded' :
+                                       att.uploadStatus === 'failed' ? `Failed${att.uploadError ? `: ${att.uploadError}` : ''}` :
                                        att.size ? (att.size >= 1024 * 1024 ? `${(att.size / 1024 / 1024).toFixed(1)} MB` : `${(att.size / 1024).toFixed(0)} KB`) : ''}
                                     </p>
                                   </div>
                                 </div>
                               )}
-                              {att.uploadStatus === 'uploading' && (
+                              {(att.uploadStatus === 'uploading' || att.uploadStatus === 'processing') && (
                                 <div className="absolute bottom-0 left-0 right-0 h-1 bg-white/10 rounded-b-xl overflow-hidden">
-                                  <div className="h-full bg-violet-500 transition-all" style={{ width: `${att.uploadProgress || 0}%` }} />
+                                  <div className={cn('h-full transition-all', att.uploadStatus === 'processing' ? 'bg-amber-400' : 'bg-violet-500')} style={{ width: `${att.uploadProgress || 0}%` }} />
                                 </div>
                               )}
                               <button
@@ -1669,7 +1672,7 @@ Rules:
                           onKeyDown={(e) => {
                             if (e.key === 'Enter' && !e.shiftKey) {
                               e.preventDefault()
-                              const hasActiveHeroUpload = heroAttachments.some(a => a.uploadStatus === 'uploading' || a.uploadStatus === 'compressing')
+                              const hasActiveHeroUpload = heroAttachments.some(a => a.uploadStatus === 'pending' || a.uploadStatus === 'uploading' || a.uploadStatus === 'processing' || a.uploadStatus === 'compressing')
                               if ((heroInput.trim() || heroAttachments.length > 0) && !isRequestInProgress && !hasActiveHeroUpload) {
                                 const readyAttachments = heroAttachments.filter(a => a.uploadStatus !== 'failed')
                                 const content = heroInput.trim() || (readyAttachments.length > 0 ? 'Please analyze the attached file.' : '')
@@ -1689,7 +1692,7 @@ Rules:
                         <button
                           type="button"
                           onClick={() => {
-                            const hasActiveHeroUpload = heroAttachments.some(a => a.uploadStatus === 'uploading' || a.uploadStatus === 'compressing')
+                            const hasActiveHeroUpload = heroAttachments.some(a => a.uploadStatus === 'pending' || a.uploadStatus === 'uploading' || a.uploadStatus === 'processing' || a.uploadStatus === 'compressing')
                             if ((heroInput.trim() || heroAttachments.length > 0) && !isRequestInProgress && !hasActiveHeroUpload) {
                               const readyAttachments = heroAttachments.filter(a => a.uploadStatus !== 'failed')
                               const content = heroInput.trim() || (readyAttachments.length > 0 ? 'Please analyze the attached file.' : '')
@@ -1699,10 +1702,10 @@ Rules:
                               if (heroTextareaRef.current) heroTextareaRef.current.style.height = 'auto'
                             }
                           }}
-                          disabled={(!heroInput.trim() && heroAttachments.length === 0) || isRequestInProgress || heroAttachments.some(a => a.uploadStatus === 'uploading' || a.uploadStatus === 'compressing')}
+                          disabled={(!heroInput.trim() && heroAttachments.length === 0) || isRequestInProgress || heroAttachments.some(a => a.uploadStatus === 'pending' || a.uploadStatus === 'uploading' || a.uploadStatus === 'processing' || a.uploadStatus === 'compressing')}
                           className="bg-violet-600 hover:bg-violet-500 h-8 w-8 md:h-9 md:w-9 rounded-xl shrink-0 flex items-center justify-center transition-all disabled:opacity-30 disabled:cursor-not-allowed mb-0.5"
                         >
-                          {isRequestInProgress || heroAttachments.some(a => a.uploadStatus === 'uploading') ? (
+                          {isRequestInProgress || heroAttachments.some(a => a.uploadStatus === 'pending' || a.uploadStatus === 'uploading' || a.uploadStatus === 'processing') ? (
                             <Loader2 className="h-3.5 w-3.5 md:h-4 md:w-4 text-white animate-spin" />
                           ) : (
                             <Send className="h-3.5 w-3.5 md:h-4 md:w-4 text-white" />

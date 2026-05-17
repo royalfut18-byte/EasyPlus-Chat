@@ -54,7 +54,8 @@ export interface ChatAttachment {
   pageCount?: number
   ocrPagesProcessed?: number[]
   uploadProgress?: number
-  uploadStatus?: 'compressing' | 'uploading' | 'uploaded' | 'failed'
+  uploadStatus?: 'pending' | 'compressing' | 'uploading' | 'processing' | 'uploaded' | 'failed'
+  uploadError?: string
 }
 
 export interface ChatMessage {

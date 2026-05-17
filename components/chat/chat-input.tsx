@@ -78,7 +78,12 @@ export function ChatInput({ onSend, disabled, isLoading, conversationId }: ChatI
   const fileInputRef = useRef<HTMLInputElement>(null)
   const { uploadToR2, maxUploadMB } = useR2Upload()
 
-  const hasActiveUpload = attachments.some(a => a.uploadStatus === 'uploading' || a.uploadStatus === 'compressing')
+  const hasActiveUpload = attachments.some(a =>
+    a.uploadStatus === 'pending' ||
+    a.uploadStatus === 'compressing' ||
+    a.uploadStatus === 'uploading' ||
+    a.uploadStatus === 'processing'
+  )
 
   const handleSubmit = () => {
     if (hasActiveUpload) return
@@ -147,7 +152,7 @@ export function ChatInput({ onSend, disabled, isLoading, conversationId }: ChatI
       name: file.name,
       mimeType: mime,
       size: file.size,
-      uploadStatus: 'uploading',
+      uploadStatus: 'pending',
       uploadProgress: 0,
     }
 
@@ -245,9 +250,11 @@ export function ChatInput({ onSend, disabled, isLoading, conversationId }: ChatI
                         alt={attachment.name}
                         className="h-full w-full object-cover"
                       />
-                      {attachment.uploadStatus === 'uploading' && (
+                      {(attachment.uploadStatus === 'uploading' || attachment.uploadStatus === 'processing') && (
                         <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
-                          <span className="text-xs font-bold text-white">{attachment.uploadProgress || 0}%</span>
+                          <span className="text-xs font-bold text-white">
+                            {attachment.uploadStatus === 'processing' ? 'Processing' : `${attachment.uploadProgress || 0}%`}
+                          </span>
                         </div>
                       )}
                       {attachment.uploadStatus === 'compressing' && (
@@ -259,7 +266,7 @@ export function ChatInput({ onSend, disabled, isLoading, conversationId }: ChatI
                   ) : (
                     <div className="h-20 w-48 md:h-24 md:w-56 rounded-xl border-2 border-white/15 bg-white/5 backdrop-blur-sm p-2.5 md:p-3 flex flex-col justify-between">
                       <div className="flex items-start gap-2">
-                        {attachment.uploadStatus === 'uploading' ? (
+                        {attachment.uploadStatus === 'uploading' || attachment.uploadStatus === 'processing' || attachment.uploadStatus === 'pending' ? (
                           <Upload className="h-5 w-5 text-violet-400 animate-pulse shrink-0" />
                         ) : attachment.uploadStatus === 'failed' ? (
                           <AlertCircle className="h-5 w-5 text-red-400 shrink-0" />
@@ -271,9 +278,12 @@ export function ChatInput({ onSend, disabled, isLoading, conversationId }: ChatI
                         <div className="flex-1 min-w-0">
                           <p className="text-xs font-medium text-white truncate">{attachment.name}</p>
                           <p className="text-[10px] text-gray-400 mt-0.5">
-                            {attachment.uploadStatus === 'compressing' ? 'Compressing...' :
+                            {attachment.uploadStatus === 'pending' ? 'Preparing...' :
+                             attachment.uploadStatus === 'compressing' ? 'Compressing...' :
                              attachment.uploadStatus === 'uploading' ? `Uploading ${attachment.uploadProgress || 0}%` :
-                             attachment.uploadStatus === 'failed' ? 'Failed' :
+                             attachment.uploadStatus === 'processing' ? 'Processing in cloud...' :
+                             attachment.uploadStatus === 'uploaded' ? 'Uploaded' :
+                             attachment.uploadStatus === 'failed' ? `Failed${attachment.uploadError ? `: ${attachment.uploadError}` : ''}` :
                              attachment.size ? formatFileSize(attachment.size) : ''}
                           </p>
                         </div>
@@ -282,10 +292,13 @@ export function ChatInput({ onSend, disabled, isLoading, conversationId }: ChatI
                         <span className="text-[10px] px-1.5 py-0.5 rounded bg-white/10 text-gray-300 uppercase tracking-wider">
                           {attachment.name.split('.').pop()}
                         </span>
-                        {attachment.uploadStatus === 'uploading' && (
+                        {(attachment.uploadStatus === 'uploading' || attachment.uploadStatus === 'processing') && (
                           <div className="flex-1 h-1 bg-white/10 rounded-full overflow-hidden ml-2">
                             <div
-                              className="h-full bg-violet-500 rounded-full transition-all duration-300"
+                              className={cn(
+                                'h-full rounded-full transition-all duration-300',
+                                attachment.uploadStatus === 'processing' ? 'bg-amber-400' : 'bg-violet-500'
+                              )}
                               style={{ width: `${attachment.uploadProgress || 0}%` }}
                             />
                           </div>

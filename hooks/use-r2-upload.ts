@@ -76,9 +76,10 @@ function readAsDataUrl(file: File): Promise<string> {
 async function uploadViaServer(
   file: File,
   conversationId: string | null,
-  onProgress: (percent: number) => void
+  onProgress: (percent: number) => void,
+  onProcessing: () => void
 ): Promise<{ ok: boolean; data?: any; error?: string }> {
-  try {
+  return new Promise((resolve) => {
     const formData = new FormData()
     formData.append('file', file)
     if (conversationId) {
@@ -89,31 +90,56 @@ async function uploadViaServer(
       console.log('[Server Upload] Starting:', { fileName: file.name, size: file.size })
     }
 
-    const res = await fetch('/api/upload/server-upload', {
-      method: 'POST',
-      body: formData,
-    })
+    const xhr = new XMLHttpRequest()
+    let processingStarted = false
 
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ error: 'Server upload failed' }))
-      if (process.env.NODE_ENV !== 'production') {
-        console.error('[Server Upload] Failed:', res.status, err)
+    xhr.upload.onprogress = (event) => {
+      if (!event.lengthComputable || event.total <= 0) return
+      const percent = Math.min(100, Math.max(0, Math.round((event.loaded / event.total) * 100)))
+      onProgress(percent)
+      if (percent >= 100 && !processingStarted) {
+        processingStarted = true
+        onProcessing()
       }
-      return { ok: false, error: err.error || `Server upload failed (${res.status})` }
     }
 
-    const data = await res.json()
-    if (process.env.NODE_ENV !== 'production') {
-      console.log('[Server Upload] Success:', data)
+    xhr.onload = () => {
+      let data: any = null
+      try {
+        data = xhr.responseText ? JSON.parse(xhr.responseText) : null
+      } catch {
+        data = null
+      }
+
+      if (xhr.status < 200 || xhr.status >= 300) {
+        const error = data?.error || `Server upload failed (${xhr.status})`
+        if (process.env.NODE_ENV !== 'production') {
+          console.error('[Server Upload] Failed:', xhr.status, data)
+        }
+        resolve({ ok: false, error })
+        return
+      }
+
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('[Server Upload] Success:', data)
+      }
+      resolve({ ok: true, data })
     }
-    onProgress(100)
-    return { ok: true, data }
-  } catch (err: any) {
-    if (process.env.NODE_ENV !== 'production') {
-      console.error('[Server Upload] Error:', err.message)
+
+    xhr.onerror = () => {
+      if (process.env.NODE_ENV !== 'production') {
+        console.error('[Server Upload] Network error')
+      }
+      resolve({ ok: false, error: 'Server upload network error' })
     }
-    return { ok: false, error: err.message || 'Server upload error' }
-  }
+
+    xhr.onabort = () => {
+      resolve({ ok: false, error: 'Server upload was cancelled' })
+    }
+
+    xhr.open('POST', '/api/upload/server-upload')
+    xhr.send(formData)
+  })
 }
 
 export function useR2Upload() {
@@ -130,13 +156,13 @@ export function useR2Upload() {
       name: file.name,
       mimeType: file.type,
       size: file.size,
-      uploadStatus: 'uploading',
+      uploadStatus: 'pending',
       uploadProgress: 0,
     }
 
     if (file.size > MAX_UPLOAD_BYTES) {
       return {
-        attachment: { ...attachmentBase, uploadStatus: 'failed' },
+        attachment: { ...attachmentBase, uploadStatus: 'failed', uploadError: `File too large. Maximum size is ${MAX_UPLOAD_MB}MB.` },
         error: `File too large. Maximum size is ${MAX_UPLOAD_MB}MB.`,
       }
     }
@@ -180,6 +206,11 @@ export function useR2Upload() {
 
       const serverResult = await uploadViaServer(uploadFile, conversationId, (progress) => {
         attachmentBase.uploadProgress = progress
+        attachmentBase.uploadStatus = 'uploading'
+        onProgress?.({ ...attachmentBase })
+      }, () => {
+        attachmentBase.uploadProgress = 100
+        attachmentBase.uploadStatus = 'processing'
         onProgress?.({ ...attachmentBase })
       })
 
@@ -208,6 +239,9 @@ export function useR2Upload() {
       if (process.env.NODE_ENV !== 'production') {
         console.warn('[R2 Upload] Server upload failed, falling back to presigned:', serverResult.error)
       }
+      attachmentBase.uploadStatus = 'uploading'
+      attachmentBase.uploadProgress = 0
+      onProgress?.({ ...attachmentBase })
     }
 
     // Fall back to presigned URL (for files > 20MB or if server upload failed)
@@ -233,7 +267,7 @@ export function useR2Upload() {
           console.error('[R2 Upload] Presign failed:', presignRes.status, err)
         }
         return {
-          attachment: { ...attachmentBase, uploadStatus: 'failed' },
+          attachment: { ...attachmentBase, uploadStatus: 'failed', uploadError: err.error || `Presign failed (${presignRes.status})` },
           error: err.error || `Presign failed (${presignRes.status})`,
         }
       }
@@ -267,7 +301,7 @@ export function useR2Upload() {
           console.error('[R2 Upload] PUT failed:', { status: uploadResult.status, statusText: uploadResult.statusText, errorType: uploadResult.errorType, responseText: uploadResult.responseText })
         }
         return {
-          attachment: { ...attachmentBase, uploadStatus: 'failed' },
+          attachment: { ...attachmentBase, uploadStatus: 'failed', uploadError: detail },
           error: detail,
         }
       }
@@ -293,7 +327,7 @@ export function useR2Upload() {
       }
     } catch (err: any) {
       return {
-        attachment: { ...attachmentBase, uploadStatus: 'failed' },
+        attachment: { ...attachmentBase, uploadStatus: 'failed', uploadError: err.message || 'Upload failed' },
         error: err.message || 'Upload failed',
       }
     }
