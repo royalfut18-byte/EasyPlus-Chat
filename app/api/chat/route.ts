@@ -721,7 +721,10 @@ RULES FOR USING THESE RESULTS:
     const encoder = new TextEncoder()
     let fullResponse = ''
     let lastSaveTime = Date.now()
+    let lastSavedLength = 0
     let contentStarted = false
+    let streamFinished = false
+    let pendingPartialSave: Promise<void> | null = null
 
     const responseStream = new ReadableStream({
       async start(controller) {
@@ -763,80 +766,60 @@ RULES FOR USING THESE RESULTS:
             // Always forward to client (including keepalive spaces)
             controller.enqueue(value)
 
-            // Periodically save partial content for recovery
-            // SAFETY: Only save if new content is LONGER than what's already saved
-            // This prevents race conditions where a partial save overwrites more complete content
-            if (contentStarted && conversationId && assistantMessageId && Date.now() - lastSaveTime > 2000) {
+            // Periodically save partial content for recovery (every 800ms)
+            // Each save is awaited sequentially to prevent race conditions
+            if (contentStarted && conversationId && assistantMessageId && Date.now() - lastSaveTime > 800) {
               lastSaveTime = Date.now()
               const partialContent = fullResponse
-              db.from('messages')
-                .select('content')
-                .eq('id', assistantMessageId)
-                .single()
-                .then(({ data: existing }: any) => {
-                  const existingLen = existing?.content?.length || 0
-                  if (partialContent.length >= existingLen) {
-                    return db.from('messages')
-                      .update({ content: partialContent, updated_at: new Date().toISOString() })
-                      .eq('id', assistantMessageId)
-                  }
-                  console.warn('[Chat API] BLOCKED partial save: new content shorter than existing', { existingLen, newLen: partialContent.length })
-                  return { error: null }
-                })
-                .then(({ error: partialErr }: any) => {
-                  if (partialErr) console.error('[Chat API] Partial save failed:', partialErr.message)
-                })
-                .catch((e: any) => console.error('[Chat API] Partial save exception:', e.message))
+              if (partialContent.length > lastSavedLength) {
+                // Await the previous partial save before starting a new one
+                if (pendingPartialSave) {
+                  await pendingPartialSave
+                }
+                lastSavedLength = partialContent.length
+                pendingPartialSave = db.from('messages')
+                  .update({ content: partialContent, updated_at: new Date().toISOString() })
+                  .eq('id', assistantMessageId)
+                  .then(({ error: partialErr }: any) => {
+                    if (partialErr) console.error('[Chat API] Partial save failed:', partialErr.message)
+                  })
+                  .catch((e: any) => console.error('[Chat API] Partial save exception:', e.message))
+              }
             }
           }
 
-          // Save completed response — must succeed or recovery will see stale generating
-          // SAFETY: Never overwrite existing completed content with shorter content
+          // Mark stream as done so no more partial saves can race
+          streamFinished = true
+
+          // Wait for any in-flight partial save to complete before final save
+          if (pendingPartialSave) {
+            await pendingPartialSave
+            pendingPartialSave = null
+          }
+
+          // Save completed response — this is the authoritative final content
           if (conversationId && assistantMessageId) {
             const finalContent = fullResponse || '[Empty response]'
             const finalPayload = { content: finalContent, status: 'completed', updated_at: new Date().toISOString() }
 
             try {
-              // Check existing content before overwriting
-              const { data: existingMsg } = await db.from('messages')
-                .select('content, status')
+              const { error: saveErr } = await db.from('messages')
+                .update(finalPayload)
                 .eq('id', assistantMessageId)
-                .single()
 
-              const existingContent = existingMsg?.content || ''
-              const existingIsReal = existingContent.length > 20 &&
-                !['__ARTIFACT_LOADING__', '__ASSISTANT_LOADING__', '__LONG_TASK_LOADING__', '__RECOVERY_POLLING__', '...', ''].includes(existingContent.trim())
-
-              // CORRUPTION GUARD: If existing content is longer and already completed, do NOT overwrite
-              if (existingIsReal && existingMsg?.status === 'completed' && existingContent.length > finalContent.length) {
-                console.error('[Chat API] CORRUPTION GUARD: Blocked final save that would shorten completed content', {
-                  assistantMessageId,
-                  requestId,
-                  existingLength: existingContent.length,
-                  newLength: finalContent.length,
-                })
-              } else {
-                // Safe to save: new content is longer or existing is not completed
-                const { error: saveErr, data: saveData } = await db.from('messages')
+              if (saveErr) {
+                console.error('[Chat API] CRITICAL: Final save failed:', saveErr.message, { assistantMessageId, requestId, contentLength: finalContent.length })
+                // Retry once
+                const { error: retryErr } = await db.from('messages')
                   .update(finalPayload)
                   .eq('id', assistantMessageId)
-                  .select('id, content, status')
-
-                if (saveErr) {
-                  console.error('[Chat API] CRITICAL: Final save failed:', saveErr.message, { assistantMessageId, requestId, contentLength: finalContent.length })
-                  // Retry once
-                  const { error: retryErr } = await db.from('messages')
-                    .update(finalPayload)
-                    .eq('id', assistantMessageId)
-                  if (retryErr) {
-                    console.error('[Chat API] CRITICAL: Final save retry also failed:', retryErr.message)
-                  } else {
-                    console.log('[Chat API] Final save retry succeeded')
-                  }
+                if (retryErr) {
+                  console.error('[Chat API] CRITICAL: Final save retry also failed:', retryErr.message)
                 } else {
-                  const savedLen = saveData?.[0]?.content?.length || 0
-                  console.log('[Chat API] Assistant message saved:', { assistantMessageId, requestId, contentLength: finalContent.length, savedContentLength: savedLen, status: saveData?.[0]?.status })
+                  console.log('[Chat API] Final save retry succeeded')
                 }
+              } else {
+                console.log('[Chat API] Assistant message saved:', { assistantMessageId, requestId, contentLength: finalContent.length })
               }
 
               await db.from('conversations')
@@ -844,21 +827,17 @@ RULES FOR USING THESE RESULTS:
                 .eq('id', conversationId)
 
               // Background: update conversation summary and save attachment memories
-              // Fire-and-forget to not block response delivery
               ;(async () => {
                 try {
-                  // Update rolling summary if enough messages have accumulated
                   const needsSummary = await shouldUpdateSummary(db, conversationId!, user.id)
                   if (needsSummary) {
                     await updateConversationSummary(db, conversationId!, user.id, finalContent)
                   }
 
-                  // Chunk long user messages for future retrieval
                   if (latestUserMessage.content.length > 1500 && savedUserMessageId) {
                     await chunkLongMessage(db, user.id, conversationId!, savedUserMessageId, latestUserMessage.content, 'message')
                   }
 
-                  // Save attachment context for future retrieval
                   if (userMessage.attachments && userMessage.attachments.length > 0 && savedUserMessageId) {
                     for (const att of userMessage.attachments) {
                       await saveAttachmentMemory(db, user.id, conversationId!, savedUserMessageId, {
@@ -882,7 +861,6 @@ RULES FOR USING THESE RESULTS:
               })()
             } catch (saveError: any) {
               console.error('[Chat API] CRITICAL: Final save exception:', saveError.message, { assistantMessageId, requestId, contentLength: finalContent.length })
-              // Last resort retry
               try {
                 await db.from('messages')
                   .update(finalPayload)
@@ -896,26 +874,21 @@ RULES FOR USING THESE RESULTS:
           controller.close()
         } catch (err: any) {
           console.error('[Chat API] Stream error:', err.message)
+          streamFinished = true
 
-          // Save error status so recovery polling knows to stop
-          // SAFETY: Never shorten existing completed content on error
+          // Save whatever content we have so far
           if (conversationId && assistantMessageId) {
+            if (pendingPartialSave) {
+              await pendingPartialSave.catch(() => {})
+            }
             const errorContent = fullResponse || `[Error: ${err.message}]`
             const errorStatus = fullResponse ? 'completed' : 'error'
             try {
-              const { data: existingErr } = await db.from('messages')
-                .select('content, status')
+              await db.from('messages')
+                .update({ content: errorContent, status: errorStatus, updated_at: new Date().toISOString() })
                 .eq('id', assistantMessageId)
-                .single()
-              const existingErrContent = existingErr?.content || ''
-              if (existingErr?.status === 'completed' && existingErrContent.length > errorContent.length && existingErrContent.length > 20) {
-                console.warn('[Chat API] CORRUPTION GUARD (error handler): Preserving longer existing content')
-              } else {
-                await db.from('messages')
-                  .update({ content: errorContent, status: errorStatus })
-                  .eq('id', assistantMessageId)
-              }
             } catch {
+              // Last resort
               await db.from('messages')
                 .update({ content: errorContent, status: errorStatus })
                 .eq('id', assistantMessageId)
