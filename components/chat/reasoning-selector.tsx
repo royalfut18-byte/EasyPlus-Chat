@@ -1,6 +1,7 @@
 'use client'
 
 import { motion } from 'framer-motion'
+import { Zap, Brain, Rocket } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { REASONING_PROFILES, type ReasoningMode } from '@/lib/ai/reasoning-profiles'
 
@@ -10,12 +11,16 @@ interface ReasoningSelectorProps {
   disabled?: boolean
 }
 
-const MODES: ReasoningMode[] = ['instant', 'thinking', 'extended']
+const MODE_CONFIG: { mode: ReasoningMode; icon: typeof Zap; activeColor: string }[] = [
+  { mode: 'instant', icon: Zap, activeColor: 'text-amber-400' },
+  { mode: 'thinking', icon: Brain, activeColor: 'text-violet-400' },
+  { mode: 'extended', icon: Rocket, activeColor: 'text-cyan-400' },
+]
 
 export function ReasoningSelector({ selectedMode, onSelectMode, disabled = false }: ReasoningSelectorProps) {
   return (
-    <div className="flex items-center gap-1 md:gap-1.5 bg-white/[0.02] border border-white/[0.06] rounded-full px-1 py-0.5 md:px-1.5 md:py-1">
-      {MODES.map((mode) => {
+    <div className="flex items-center gap-0.5 bg-white/[0.03] border border-white/[0.08] rounded-xl px-1 py-0.5">
+      {MODE_CONFIG.map(({ mode, icon: Icon, activeColor }) => {
         const profile = REASONING_PROFILES[mode]
         const isSelected = selectedMode === mode
         return (
@@ -23,26 +28,24 @@ export function ReasoningSelector({ selectedMode, onSelectMode, disabled = false
             key={mode}
             onClick={() => !disabled && onSelectMode(mode)}
             disabled={disabled}
-            title={disabled ? 'Start a new chat to change mode' : profile.description}
+            title={`${profile.label}: ${profile.description}`}
             className={cn(
-              'relative px-2 md:px-3 py-1 md:py-1.5 rounded-full text-[10px] md:text-xs font-medium transition-all duration-200',
+              'relative px-2 md:px-2.5 py-1.5 rounded-lg text-[10px] md:text-xs font-medium transition-all duration-200',
               'flex items-center gap-1 md:gap-1.5 whitespace-nowrap',
-              isSelected
-                ? 'text-white'
-                : 'text-gray-400 hover:text-gray-200',
-              disabled && 'opacity-50 cursor-not-allowed'
+              isSelected ? 'text-white' : 'text-gray-500 hover:text-gray-300',
+              disabled && 'opacity-40 cursor-not-allowed'
             )}
-            whileHover={disabled ? {} : { scale: 1.03 }}
-            whileTap={disabled ? {} : { scale: 0.97 }}
+            whileHover={disabled ? {} : { scale: 1.05 }}
+            whileTap={disabled ? {} : { scale: 0.95 }}
           >
             {isSelected && (
               <motion.div
-                className="absolute inset-0 rounded-full bg-white/[0.08] border border-white/[0.12]"
-                layoutId="reasoning-indicator"
-                transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+                className="absolute inset-0 rounded-lg bg-white/[0.06] border border-white/[0.1]"
+                layoutId="reasoning-pill"
+                transition={{ type: 'spring', stiffness: 400, damping: 28 }}
               />
             )}
-            <span className="relative z-10">{profile.emoji}</span>
+            <Icon className={cn('relative z-10 h-3 w-3 md:h-3.5 md:w-3.5', isSelected && activeColor)} />
             <span className="relative z-10 hidden sm:inline">{profile.label}</span>
           </motion.button>
         )

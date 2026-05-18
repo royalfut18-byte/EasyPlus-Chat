@@ -42,18 +42,50 @@ export async function POST(request: NextRequest) {
 
     const { title, model, reasoningMode } = await request.json()
 
-    const { data: conversation, error } = await db
+    // Try with reasoning_mode first, fall back without it if column doesn't exist
+    let conversation: any = null
+    let error: any = null
+
+    const insertPayload: any = {
+      user_id: user.id,
+      title: title || 'New Conversation',
+      model_used: model,
+    }
+
+    if (reasoningMode) {
+      insertPayload.reasoning_mode = reasoningMode
+    }
+
+    const result = await db
       .from('conversations')
-      .insert({
-        user_id: user.id,
-        title: title || 'New Conversation',
-        model_used: model,
-        ...(reasoningMode ? { reasoning_mode: reasoningMode } : {}),
-      })
+      .insert(insertPayload)
       .select()
       .single()
 
+    if (result.error && result.error.message?.includes('reasoning_mode')) {
+      // Column doesn't exist yet — retry without it
+      const fallback = await db
+        .from('conversations')
+        .insert({
+          user_id: user.id,
+          title: title || 'New Conversation',
+          model_used: model,
+        })
+        .select()
+        .single()
+      conversation = fallback.data
+      error = fallback.error
+    } else {
+      conversation = result.data
+      error = result.error
+    }
+
     if (error) throw error
+
+    // Attach reasoning mode to the response even if not stored in DB
+    if (reasoningMode && conversation && !conversation.reasoning_mode) {
+      conversation.reasoning_mode = reasoningMode
+    }
 
     return NextResponse.json(conversation)
   } catch (error: any) {

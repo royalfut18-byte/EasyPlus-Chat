@@ -20,7 +20,7 @@ export interface ReasoningProfile {
 export const REASONING_PROFILES: Record<ReasoningMode, ReasoningProfile> = {
   instant: {
     label: 'Instant',
-    emoji: '⚡',
+    emoji: '',
     description: 'Fastest responses with lighter reasoning',
     maxTokens: 2500,
     retrievalDepth: 'low',
@@ -36,7 +36,7 @@ export const REASONING_PROFILES: Record<ReasoningMode, ReasoningProfile> = {
   },
   thinking: {
     label: 'Thinking',
-    emoji: '🧠',
+    emoji: '',
     description: 'Balanced speed and reasoning',
     maxTokens: 8000,
     retrievalDepth: 'medium',
@@ -51,8 +51,8 @@ export const REASONING_PROFILES: Record<ReasoningMode, ReasoningProfile> = {
     systemPromptStyle: 'balanced',
   },
   extended: {
-    label: 'Extended Thinking',
-    emoji: '🚀',
+    label: 'Extended',
+    emoji: '',
     description: 'Deepest reasoning and strongest context usage',
     maxTokens: 16384,
     retrievalDepth: 'high',

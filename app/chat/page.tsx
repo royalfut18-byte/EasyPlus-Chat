@@ -773,10 +773,10 @@ export default function ChatPage() {
           : isLongTask
             ? 'Working through a larger task...'
             : requestReasoningMode === 'extended'
-              ? '🚀 Deep reasoning...'
+              ? 'Deep reasoning...'
               : requestReasoningMode === 'instant'
-                ? '⚡ Responding...'
-                : '🧠 Thinking...'
+                ? 'Responding...'
+                : 'Thinking...'
 
     const assistantPlaceholder: Message = {
       id: clientAssistantMessageId,
@@ -1570,17 +1570,12 @@ Rules:
         <main className="flex min-w-0 flex-1 flex-col overflow-hidden h-full">
         <div className="border-b border-white/[0.06] bg-[#08070d]/90 backdrop-blur-sm md:backdrop-blur-xl">
           <div className="flex items-center gap-2 overflow-x-auto px-3 py-3 md:px-4">
-            <div className="flex-1 min-w-0 flex items-center gap-2 md:gap-3">
+            <div className="flex-1 min-w-0">
               <ModelSelector
                 selectedModel={selectedModel}
                 onSelectModel={setSelectedModel}
                 disabled={currentConversation !== null}
                 disabledReason="Start a new chat to switch models"
-              />
-              <ReasoningSelector
-                selectedMode={reasoningMode}
-                onSelectMode={setReasoningMode}
-                disabled={currentConversation !== null}
               />
             </div>
             <div className="flex items-center gap-2 shrink-0">
@@ -1824,6 +1819,14 @@ Rules:
                           )}
                         </button>
                       </div>
+                      {/* Reasoning selector in hero input */}
+                      <div className="flex items-center mt-2.5 pt-2 border-t border-white/[0.05]">
+                        <ReasoningSelector
+                          selectedMode={reasoningMode}
+                          onSelectMode={setReasoningMode}
+                          disabled={isRequestInProgress}
+                        />
+                      </div>
                     </div>
                   </motion.div>
 
@@ -1901,6 +1904,8 @@ Rules:
             disabled={isRequestInProgress}
             isLoading={isLoading || isCreatingConversation}
             conversationId={currentConversation?.id || null}
+            reasoningMode={reasoningMode}
+            onReasoningModeChange={setReasoningMode}
           />
         )}
         </main>

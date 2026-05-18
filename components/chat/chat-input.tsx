@@ -4,15 +4,18 @@ import { useState, useRef, KeyboardEvent } from 'react'
 import { Send, Loader2, Image as ImageIcon, X, Paperclip, FileText, FileSpreadsheet, FileJson, File, Upload, CheckCircle2, AlertCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
-import { ChatAttachment } from '@/types/models'
+import { ChatAttachment, ReasoningMode } from '@/types/models'
 import { toast } from '@/components/ui/use-toast'
 import { useR2Upload } from '@/hooks/use-r2-upload'
+import { ReasoningSelector } from '@/components/chat/reasoning-selector'
 
 interface ChatInputProps {
   onSend: (message: string, attachments?: ChatAttachment[]) => void
   disabled?: boolean
   isLoading?: boolean
   conversationId?: string | null
+  reasoningMode?: ReasoningMode
+  onReasoningModeChange?: (mode: ReasoningMode) => void
 }
 
 const IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp']
@@ -79,7 +82,7 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
-export function ChatInput({ onSend, disabled, isLoading, conversationId }: ChatInputProps) {
+export function ChatInput({ onSend, disabled, isLoading, conversationId, reasoningMode, onReasoningModeChange }: ChatInputProps) {
   const [message, setMessage] = useState('')
   const [attachments, setAttachments] = useState<ChatAttachment[]>([])
   const [isDragging, setIsDragging] = useState(false)
@@ -443,6 +446,15 @@ export function ChatInput({ onSend, disabled, isLoading, conversationId }: ChatI
               )}
             </Button>
           </div>
+          {reasoningMode && onReasoningModeChange && (
+            <div className="flex items-center justify-between mt-2 pt-2 border-t border-white/[0.05]">
+              <ReasoningSelector
+                selectedMode={reasoningMode}
+                onSelectMode={onReasoningModeChange}
+                disabled={disabled || isLoading}
+              />
+            </div>
+          )}
         </div>
         <p className="text-xs text-gray-600 text-center mt-2 md:mt-2.5 hidden sm:block">
           Press <kbd className="px-1.5 py-0.5 bg-white/[0.05] rounded text-gray-500">Enter</kbd> to send, <kbd className="px-1.5 py-0.5 bg-white/[0.05] rounded text-gray-500">Shift+Enter</kbd> for new line
