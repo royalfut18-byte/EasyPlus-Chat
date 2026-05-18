@@ -9,6 +9,7 @@ import { parsePageRangeRequest, parseQuestionNumberRequest } from '@/lib/ai/docu
 import { compactPreview, extractQuestionNumberExcerpt } from '@/lib/ai/document-question-retrieval'
 import { ocrAttachmentPages, findLatestPdfAttachmentForOcr } from '@/lib/ai/pdf-ocr'
 import { sanitizeAttachmentsForStorage } from '@/lib/ai/sanitize-attachments'
+import { hydrateImageAttachmentsForModel } from '@/lib/ai/image-attachments'
 import {
   getUserMemories,
   formatMemoriesForPrompt,
@@ -546,8 +547,21 @@ RULES FOR USING THESE RESULTS:
     const queryType = detectQueryType(latestUserMessage.content)
     const temperature = queryType === 'creative' ? 0.7 : queryType === 'factual' ? 0.3 : 0.4
 
+    // Resolve cloud-stored images into data URLs only for the provider call.
+    stage = 'image-attachment-hydration'
+    let hydratedMessagesForModel: ChatMessage[]
+    try {
+      hydratedMessagesForModel = await hydrateImageAttachmentsForModel(messagesToSend as ChatMessage[], user.id)
+    } catch (imageErr: any) {
+      console.error('[Chat API] Image hydration failed:', imageErr.message)
+      return NextResponse.json(
+        { error: imageErr.message || 'Image upload could not be prepared for the model.' },
+        { status: 400 }
+      )
+    }
+
     // Strip document dataUrls from messages before sending to model
-    const messagesForModel = messagesToSend.map((m) => {
+    const messagesForModel = hydratedMessagesForModel.map((m) => {
       if (!m.attachments) return m
       const imageOnly = m.attachments.filter((a) => a.type === 'image')
       return {

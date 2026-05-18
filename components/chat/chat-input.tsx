@@ -162,6 +162,7 @@ export function ChatInput({ onSend, disabled, isLoading, conversationId }: ChatI
       name: file.name,
       mimeType: mime,
       size: file.size,
+      clientUploadId: fileKey,
       uploadStatus: 'pending',
       uploadProgress: 0,
     }
@@ -178,7 +179,7 @@ export function ChatInput({ onSend, disabled, isLoading, conversationId }: ChatI
       }
       // Update attachment by matching file key to avoid index mismatch
       setAttachments((prev) => prev.map((a) => 
-        a.name === file.name && a.size === file.size ? { ...a, ...updated } : a
+        a.clientUploadId === fileKey ? { ...a, ...updated, clientUploadId: fileKey } : a
       ))
     })
 
@@ -197,8 +198,9 @@ export function ChatInput({ onSend, disabled, isLoading, conversationId }: ChatI
       }
     }
 
+    const finalAttachment = { ...result.attachment, clientUploadId: fileKey }
     setAttachments((prev) => prev.map((a) => 
-      a.name === file.name && a.size === file.size ? result.attachment : a
+      a.clientUploadId === fileKey ? finalAttachment : a
     ))
   }
 
@@ -214,7 +216,7 @@ export function ChatInput({ onSend, disabled, isLoading, conversationId }: ChatI
     }
 
     const uniqueFiles = deduplicateFiles(attachments, Array.from(files))
-    
+
     if (process.env.NODE_ENV !== 'production') {
       console.log('[Chat Input] After dedup:', {
         uniqueCount: uniqueFiles.length,
@@ -222,20 +224,21 @@ export function ChatInput({ onSend, disabled, isLoading, conversationId }: ChatI
       })
     }
 
-    for (let i = 0; i < uniqueFiles.length; i++) {
-      if (attachments.length + i >= MAX_FILES) {
-        toast({
-          title: 'Attachment limit reached',
-          description: `Maximum ${MAX_FILES} files per message`,
-          variant: 'destructive',
-        })
-        break
-      }
-      await processFile(uniqueFiles[i])
+    const remaining = MAX_FILES - attachments.length
+    const filesToProcess = uniqueFiles.slice(0, remaining)
+
+    if (filesToProcess.length < uniqueFiles.length) {
+      toast({
+        title: 'Attachment limit reached',
+        description: `Maximum ${MAX_FILES} files per message`,
+        variant: 'destructive',
+      })
     }
-    
+
+    await Promise.all(filesToProcess.map(file => processFile(file)))
+
     if (process.env.NODE_ENV !== 'production') {
-      console.log('[Chat Input] File selection complete, new attachment count:', attachments.length)
+      console.log('[Chat Input] File selection complete')
     }
 
     if (fileInputRef.current) {

@@ -2,6 +2,9 @@ export const MAX_UPLOAD_MB = Number(process.env.NEXT_PUBLIC_MAX_UPLOAD_MB || 512
 export const MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024
 
 export const FALLBACK_UPLOAD_MB = 50
+// Keep inline base64 payloads below Vercel's function request body limits.
+// Larger files should go through R2 and be fetched server-side when needed.
+export const INLINE_UPLOAD_MAX_BYTES = 2.5 * 1024 * 1024
 
 export function getMaxUploadMB(): number {
   return MAX_UPLOAD_MB

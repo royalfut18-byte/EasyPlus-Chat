@@ -17,6 +17,7 @@ import { cn } from '@/lib/utils'
 import { parseArtifactFromResponse } from '@/lib/artifact-parser'
 import { sortMessagesChronologically, dedupeMessages, processMessages, processLoadedMessages, getStoredArtifact } from '@/lib/chat/message-utils'
 import { useR2Upload } from '@/hooks/use-r2-upload'
+import { INLINE_UPLOAD_MAX_BYTES } from '@/lib/upload-limits'
 import { parsePageRangeRequest } from '@/lib/ai/document-requests'
 import type { Conversation, Message, ChatAttachment, Artifact } from '@/types/models'
 
@@ -1232,7 +1233,7 @@ Rules:
   const HERO_ALLOWED_EXTENSIONS = ['.pdf', '.txt', '.md', '.csv', '.json', '.docx', '.png', '.jpg', '.jpeg', '.webp']
   const HERO_MAX_FILE_SIZE = heroMaxUploadMB * 1024 * 1024
   const HERO_MAX_FILES = 10
-  const HERO_INLINE_THRESHOLD = 4 * 1024 * 1024
+  const HERO_INLINE_THRESHOLD = INLINE_UPLOAD_MAX_BYTES
 
   function getHeroFileKey(file: File | ChatAttachment): string {
     return `${file.name}|${file.size}`
@@ -1252,6 +1253,7 @@ Rules:
       '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp',
     }
     const mime = mimeMap[ext] || file.type
+    const sourceFile = file.type === mime ? file : new File([file], file.name, { type: mime, lastModified: file.lastModified })
 
     if (!HERO_ALLOWED_EXTENSIONS.includes(ext)) {
       toast({ title: 'Unsupported file type', description: `Supported: ${HERO_ALLOWED_EXTENSIONS.join(', ')}`, variant: 'destructive' })
@@ -1290,6 +1292,7 @@ Rules:
             mimeType: mime,
             size: file.size,
             dataUrl,
+            clientUploadId: fileKey,
             uploadStatus: 'uploaded',
             uploadProgress: 100,
             storageProvider: 'supabase',
@@ -1299,7 +1302,7 @@ Rules:
       reader.onerror = () => {
         toast({ title: 'Error reading file', description: 'Failed to process file', variant: 'destructive' })
       }
-      reader.readAsDataURL(file)
+      reader.readAsDataURL(sourceFile)
       return
     }
 
@@ -1312,6 +1315,7 @@ Rules:
       name: file.name,
       mimeType: mime,
       size: file.size,
+      clientUploadId: fileKey,
       uploadStatus: 'pending',
       uploadProgress: 0,
     }
@@ -1330,13 +1334,13 @@ Rules:
     })
     setHeroUploading(true)
 
-    const result = await uploadToR2(file, null, (updated) => {
+    const result = await uploadToR2(sourceFile, null, (updated) => {
       if (process.env.NODE_ENV !== 'production') {
         console.log('[Hero Upload] Progress update:', { name: file.name, status: updated.uploadStatus, progress: updated.uploadProgress })
       }
       // Use file key matching instead of index to avoid race conditions
       setHeroAttachments((prev) => prev.map((a) => 
-        a.name === file.name && a.size === file.size ? { ...a, ...updated } : a
+        a.clientUploadId === fileKey ? { ...a, ...updated, clientUploadId: fileKey } : a
       ))
     })
 
@@ -1354,8 +1358,9 @@ Rules:
       })
     }
 
+    const finalAttachment = { ...result.attachment, clientUploadId: fileKey }
     setHeroAttachments((prev) => prev.map((a) => 
-      a.name === file.name && a.size === file.size ? result.attachment : a
+      a.clientUploadId === fileKey ? finalAttachment : a
     ))
     setHeroUploading(false)
   }
@@ -1384,22 +1389,22 @@ Rules:
         names: uniqueFiles.map(f => f.name),
       })
     }
-    for (let i = 0; i < uniqueFiles.length; i++) {
-      if (heroAttachments.length + i >= HERO_MAX_FILES) {
-        toast({
-          title: 'Attachment limit reached',
-          description: `Maximum ${HERO_MAX_FILES} files per chat`,
-          variant: 'destructive',
-        })
-        break
-      }
-      if (process.env.NODE_ENV !== 'production') {
-        console.log('[Hero Upload] Processing file', i + 1, 'of', uniqueFiles.length, ':', uniqueFiles[i].name)
-      }
-      await heroProcessFile(uniqueFiles[i])
+
+    const remaining = HERO_MAX_FILES - heroAttachments.length
+    const filesToProcess = uniqueFiles.slice(0, remaining)
+
+    if (filesToProcess.length < uniqueFiles.length) {
+      toast({
+        title: 'Attachment limit reached',
+        description: `Maximum ${HERO_MAX_FILES} files per chat`,
+        variant: 'destructive',
+      })
     }
+
+    await Promise.all(filesToProcess.map(file => heroProcessFile(file)))
+
     if (process.env.NODE_ENV !== 'production') {
-      console.log('[Hero Upload] File selection complete, new attachment count:', heroAttachments.length)
+      console.log('[Hero Upload] File selection complete')
     }
     if (heroFileInputRef.current) {
       heroFileInputRef.current.value = ''
@@ -1743,6 +1748,23 @@ Rules:
                             setHeroInput(e.target.value)
                             e.target.style.height = 'auto'
                             e.target.style.height = `${Math.min(e.target.scrollHeight, 160)}px`
+                          }}
+                          onPaste={async (e) => {
+                            const items = e.clipboardData?.items
+                            if (!items) return
+                            const imageFiles: File[] = []
+                            for (const item of Array.from(items)) {
+                              if (item.type.startsWith('image/')) {
+                                const file = item.getAsFile()
+                                if (file) imageFiles.push(file)
+                              }
+                            }
+                            if (imageFiles.length > 0) {
+                              e.preventDefault()
+                              const remaining = HERO_MAX_FILES - heroAttachments.length
+                              const filesToProcess = imageFiles.slice(0, remaining)
+                              await Promise.all(filesToProcess.map(file => heroProcessFile(file)))
+                            }
                           }}
                           onKeyDown={(e) => {
                             if (e.key === 'Enter' && !e.shiftKey) {

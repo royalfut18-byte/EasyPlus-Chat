@@ -2,9 +2,11 @@
 
 import { useState, useCallback } from 'react'
 import { ChatAttachment } from '@/types/models'
+import { INLINE_UPLOAD_MAX_BYTES } from '@/lib/upload-limits'
 
 const MAX_UPLOAD_MB = parseInt(process.env.NEXT_PUBLIC_MAX_UPLOAD_MB || '512', 10)
 const MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024
+const MODEL_IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/jpg', 'image/webp'])
 
 function parseR2ErrorFromResponse(xml: string): { code?: string; message?: string } | undefined {
   const codeMatch = xml.match(/<Code>(.*?)<\/Code>/)
@@ -13,7 +15,7 @@ function parseR2ErrorFromResponse(xml: string): { code?: string; message?: strin
   return { code: codeMatch[1], message: msgMatch?.[1] }
 }
 
-const SMALL_FILE_THRESHOLD = 4.5 * 1024 * 1024
+const INLINE_DATA_URL_THRESHOLD = INLINE_UPLOAD_MAX_BYTES
 const SERVER_UPLOAD_THRESHOLD = 20 * 1024 * 1024 // 20MB: use server upload if file is smaller
 
 interface UploadResult {
@@ -21,8 +23,39 @@ interface UploadResult {
   error?: string
 }
 
-async function compressImage(file: File, maxSizeMB = 4): Promise<File> {
-  if (file.size <= maxSizeMB * 1024 * 1024) return file
+function inferMimeType(file: File): string {
+  if (file.type) {
+    return file.type.toLowerCase() === 'image/jpg' ? 'image/jpeg' : file.type
+  }
+
+  const ext = file.name.toLowerCase().split('.').pop()
+  const map: Record<string, string> = {
+    png: 'image/png',
+    jpg: 'image/jpeg',
+    jpeg: 'image/jpeg',
+    webp: 'image/webp',
+    gif: 'image/gif',
+    pdf: 'application/pdf',
+    txt: 'text/plain',
+    md: 'text/markdown',
+    csv: 'text/csv',
+    json: 'application/json',
+    docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  }
+
+  return map[ext || ''] || 'application/octet-stream'
+}
+
+function withInferredMimeType(file: File): File {
+  const mimeType = inferMimeType(file)
+  if (file.type === mimeType) return file
+  return new File([file], file.name, { type: mimeType, lastModified: file.lastModified })
+}
+
+async function compressImage(file: File, force = false): Promise<File> {
+  if (!force && file.size <= INLINE_DATA_URL_THRESHOLD) return file
 
   return new Promise((resolve) => {
     const img = new Image()
@@ -47,7 +80,8 @@ async function compressImage(file: File, maxSizeMB = 4): Promise<File> {
       canvas.toBlob(
         (blob) => {
           if (blob) {
-            resolve(new File([blob], file.name, { type: 'image/jpeg' }))
+            const outputName = file.name.replace(/\.[^.]+$/, '') || 'image'
+            resolve(new File([blob], `${outputName}.jpg`, { type: 'image/jpeg' }))
           } else {
             resolve(file)
           }
@@ -150,34 +184,47 @@ export function useR2Upload() {
     conversationId: string | null,
     onProgress?: (attachment: ChatAttachment) => void
   ): Promise<UploadResult> => {
-    const isImage = file.type.startsWith('image/')
+    let uploadFile = withInferredMimeType(file)
+    const isImage = uploadFile.type.startsWith('image/')
     const attachmentBase: ChatAttachment = {
       type: isImage ? 'image' : 'document',
-      name: file.name,
-      mimeType: file.type,
-      size: file.size,
+      name: uploadFile.name,
+      mimeType: uploadFile.type,
+      size: uploadFile.size,
       uploadStatus: 'pending',
       uploadProgress: 0,
     }
 
-    if (file.size > MAX_UPLOAD_BYTES) {
+    if (uploadFile.size > MAX_UPLOAD_BYTES) {
       return {
         attachment: { ...attachmentBase, uploadStatus: 'failed', uploadError: `File too large. Maximum size is ${MAX_UPLOAD_MB}MB.` },
         error: `File too large. Maximum size is ${MAX_UPLOAD_MB}MB.`,
       }
     }
 
-    let uploadFile = file
+    const imageNeedsConversion = isImage && !MODEL_IMAGE_TYPES.has(uploadFile.type.toLowerCase())
 
-    if (isImage && file.size > SMALL_FILE_THRESHOLD) {
+    if (isImage && (file.size > INLINE_DATA_URL_THRESHOLD || imageNeedsConversion)) {
       attachmentBase.uploadStatus = 'compressing'
       onProgress?.({ ...attachmentBase })
-      uploadFile = await compressImage(file)
+      uploadFile = await compressImage(file, imageNeedsConversion)
       attachmentBase.size = uploadFile.size
       attachmentBase.mimeType = uploadFile.type
+      attachmentBase.name = uploadFile.name
     }
 
-    if (uploadFile.size <= SMALL_FILE_THRESHOLD) {
+    if (isImage && !MODEL_IMAGE_TYPES.has(uploadFile.type.toLowerCase())) {
+      return {
+        attachment: {
+          ...attachmentBase,
+          uploadStatus: 'failed',
+          uploadError: 'Unsupported image type. Please upload PNG, JPEG, or WebP.',
+        },
+        error: 'Unsupported image type. Please upload PNG, JPEG, or WebP.',
+      }
+    }
+
+    if (uploadFile.size <= INLINE_DATA_URL_THRESHOLD) {
       try {
         const dataUrl = await readAsDataUrl(uploadFile)
         return {

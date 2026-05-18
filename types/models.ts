@@ -53,6 +53,7 @@ export interface ChatAttachment {
   ocrStatus?: string
   pageCount?: number
   ocrPagesProcessed?: number[]
+  clientUploadId?: string
   uploadProgress?: number
   uploadStatus?: 'pending' | 'compressing' | 'uploading' | 'processing' | 'uploaded' | 'failed'
   uploadError?: string
