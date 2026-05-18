@@ -825,7 +825,12 @@ export default function ChatPage() {
         attachments: idx === arr.length - 1
           ? m.attachments
           : (m.attachments && m.attachments.length > 0
-            ? m.attachments.map(a => ({ type: a.type, name: a.name, mimeType: a.mimeType, textContent: a.textContent }))
+            ? m.attachments.map(a => {
+              if (a.type === 'image') {
+                return { type: a.type, name: a.name, mimeType: a.mimeType, storageProvider: a.storageProvider, storageKey: a.storageKey, storagePath: a.storagePath, bucket: a.bucket }
+              }
+              return { type: a.type, name: a.name, mimeType: a.mimeType, textContent: a.textContent }
+            })
             : undefined),
       }))
 
@@ -934,6 +939,10 @@ Rules:
       let streamingStatusSet = false
       let contentStarted = false
 
+      const stripThinkingTags = (text: string): string => {
+        return text.replace(/<thinking>[\s\S]*?<\/thinking>\s*/g, '').replace(/<thinking>[\s\S]*$/g, '')
+      }
+
       while (reader) {
         const { done, value } = await reader.read()
         if (done) break
@@ -959,12 +968,15 @@ Rules:
           }
         }
 
+        // Strip <thinking> tags before displaying to user
+        const displayContent = stripThinkingTags(assistantContent)
+
         // Update by ID only - clear statusLabel so real content shows
-        if (contentStarted && selectedConversationIdRef.current === sendConversationId) {
+        if (contentStarted && displayContent && selectedConversationIdRef.current === sendConversationId) {
           setMessages((prev) =>
             processMessages(
               prev.map((m) =>
-                m.id === clientAssistantMessageId ? { ...m, content: assistantContent, statusLabel: null } : m
+                m.id === clientAssistantMessageId ? { ...m, content: displayContent, statusLabel: null } : m
               ),
               sendConversationId
             )
@@ -976,7 +988,10 @@ Rules:
         console.log('[Chat] Stream complete, content length:', assistantContent.length)
       }
 
-      if (!assistantContent || assistantContent.trim() === '') {
+      // Strip thinking tags from final content
+      const finalAssistantContent = stripThinkingTags(assistantContent).trim()
+
+      if (!finalAssistantContent) {
         console.error('[Chat] Empty response from API')
         if (selectedConversationIdRef.current === sendConversationId) {
           setMessages((prev) =>
@@ -999,7 +1014,7 @@ Rules:
       // 10. Parse artifact if enabled and update final message
       if (requestArtifactMode) {
         const { artifact, cleanContent } = parseArtifactFromResponse(
-          assistantContent,
+          finalAssistantContent,
           requestArtifactMode,
           lastUserPromptRef.current
         )
@@ -1046,7 +1061,7 @@ Rules:
               processMessages(
                 prev.map((m) =>
                   m.id === clientAssistantMessageId
-                    ? { ...m, content: assistantContent || 'I could not create an artifact from this response.', status: 'completed' as const, statusLabel: null }
+                    ? { ...m, content: finalAssistantContent || 'I could not create an artifact from this response.', status: 'completed' as const, statusLabel: null }
                     : m
                 ),
                 sendConversationId
@@ -1062,7 +1077,7 @@ Rules:
             processMessages(
               prev.map((m) =>
                 m.id === clientAssistantMessageId
-                  ? { ...m, content: assistantContent || 'I received an empty response.', status: 'completed' as const, statusLabel: null }
+                  ? { ...m, content: finalAssistantContent || 'I received an empty response.', status: 'completed' as const, statusLabel: null }
                   : m
               ),
               sendConversationId

@@ -1,6 +1,10 @@
 import type { Message, Artifact } from '@/types/models'
 import { parseArtifactFromResponse } from '../artifact-parser'
 
+function stripThinkingTags(text: string): string {
+  return text.replace(/<thinking>[\s\S]*?<\/thinking>\s*/g, '').replace(/<thinking>[\s\S]*$/g, '')
+}
+
 export const LOADING_MARKERS = new Set([
   '__ARTIFACT_LOADING__',
   '__ASSISTANT_LOADING__',
@@ -330,6 +334,13 @@ export function processLoadedMessages(
 
   // Remove stale markers and generating ghosts
   const cleaned = removeStaleMarkers(sorted)
+
+  // Strip <thinking> tags from assistant messages saved in DB
+  for (const msg of cleaned) {
+    if (msg.role === 'assistant' && msg.content && msg.content.includes('<thinking>')) {
+      msg.content = stripThinkingTags(msg.content)
+    }
+  }
 
   if (process.env.NODE_ENV !== 'production') {
     const conversationId = options?.conversationId || 'unknown'

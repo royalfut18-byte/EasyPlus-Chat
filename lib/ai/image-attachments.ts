@@ -83,7 +83,16 @@ export async function hydrateImageAttachmentsForModel(
 
       const isCurrentMessage = idx === lastIndex && message.role === 'user'
       const attachments = await Promise.all(
-        message.attachments.map((attachment) => hydrateImageAttachment(attachment, userId, isCurrentMessage))
+        message.attachments.map(async (attachment) => {
+          try {
+            return await hydrateImageAttachment(attachment, userId, isCurrentMessage)
+          } catch (err: any) {
+            if (isCurrentMessage) throw err
+            // Non-critical: historical image failed to load, skip it
+            console.warn('[Image Hydration] Skipping historical image:', attachment.name, err.message)
+            return attachment
+          }
+        })
       )
 
       return {
