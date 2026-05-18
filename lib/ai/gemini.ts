@@ -8,7 +8,8 @@ export async function streamGeminiResponse(
   modelId: string,
   messages: ChatMessage[],
   systemPromptText?: string,
-  temperature: number = 0.7
+  temperature: number = 0.7,
+  maxTokens: number = 16384
 ): Promise<ReadableStream> {
   const model = AI_MODELS.find((m) => m.id === modelId)
 
@@ -147,7 +148,7 @@ export async function streamGeminiResponse(
         ],
       },
       generationConfig: {
-        maxOutputTokens: 16384,
+        maxOutputTokens: maxTokens,
         temperature,
       },
     })

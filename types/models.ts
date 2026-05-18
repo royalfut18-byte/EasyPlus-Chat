@@ -65,11 +65,14 @@ export interface ChatMessage {
   attachments?: ChatAttachment[]
 }
 
+export type ReasoningMode = 'instant' | 'thinking' | 'extended'
+
 export interface Conversation {
   id: string
   user_id: string
   title: string
   model_used: string
+  reasoning_mode?: ReasoningMode
   created_at: string
   updated_at: string
 }

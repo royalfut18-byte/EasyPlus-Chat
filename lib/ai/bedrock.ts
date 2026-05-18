@@ -52,7 +52,8 @@ export async function streamBedrockResponse(
   modelId: string,
   messages: ChatMessage[],
   systemPromptText?: string,
-  temperature: number = 0.7
+  temperature: number = 0.7,
+  maxTokens: number = 16384
 ): Promise<ReadableStream> {
   const model = AI_MODELS.find((m) => m.id === modelId)
 
@@ -150,7 +151,7 @@ export async function streamBedrockResponse(
             messages: bedrockMessages,
             system: systemPrompt,
             inferenceConfig: {
-              maxTokens: 16384,
+              maxTokens,
               temperature,
             },
           }),

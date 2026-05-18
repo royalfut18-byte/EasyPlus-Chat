@@ -40,7 +40,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { title, model } = await request.json()
+    const { title, model, reasoningMode } = await request.json()
 
     const { data: conversation, error } = await db
       .from('conversations')
@@ -48,6 +48,7 @@ export async function POST(request: NextRequest) {
         user_id: user.id,
         title: title || 'New Conversation',
         model_used: model,
+        ...(reasoningMode ? { reasoning_mode: reasoningMode } : {}),
       })
       .select()
       .single()

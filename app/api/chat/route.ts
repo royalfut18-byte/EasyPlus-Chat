@@ -23,7 +23,8 @@ import { buildContext, formatContextForPrompt, searchCrossConversationContext } 
 import { shouldUpdateSummary, updateConversationSummary, chunkLongMessage, saveAttachmentMemory } from '@/lib/ai/conversation-summary'
 import { isLongTaskRequest, LONG_TASK_SYSTEM_ADDENDUM } from '@/lib/ai/long-task'
 import { AI_MODELS } from '@/types/models'
-import type { ChatMessage } from '@/types/models'
+import type { ChatMessage, ReasoningMode } from '@/types/models'
+import { getReasoningProfile, getReasoningSystemAddendum, type ReasoningProfile } from '@/lib/ai/reasoning-profiles'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
@@ -79,7 +80,9 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const { model, messages, conversationId, artifactMode, webSearchEnabled, requestId, clientMessageId } = body
+    const { model, messages, conversationId, artifactMode, webSearchEnabled, reasoningMode: rawReasoningMode, requestId, clientMessageId } = body
+    const reasoningMode: ReasoningMode = ['instant', 'thinking', 'extended'].includes(rawReasoningMode) ? rawReasoningMode : 'thinking'
+    const reasoningProfile = getReasoningProfile(reasoningMode)
 
     if (!model || !messages || !Array.isArray(messages) || messages.length === 0) {
       console.error('[Chat API] Invalid request params:', { model: !!model, messages: Array.isArray(messages), len: messages?.length })
@@ -92,6 +95,8 @@ export async function POST(request: NextRequest) {
       conversationId: conversationId || 'new',
       artifactMode: !!artifactMode,
       webSearchEnabled: !!webSearchEnabled,
+      reasoningMode,
+      maxTokens: reasoningProfile.maxTokens,
       requestId: requestId || 'none',
       userId: user.id.substring(0, 8) + '...',
     })
@@ -222,10 +227,11 @@ export async function POST(request: NextRequest) {
       return content === '__ARTIFACT_LOADING__' || content === '__ASSISTANT_LOADING__' || content === '__LONG_TASK_LOADING__' || content === '__RECOVERY_POLLING__'
     }
 
+    const messageHistoryLimit = reasoningMode === 'instant' ? 8 : reasoningMode === 'extended' ? 30 : 20
     let cleanedMessages = messages
       .filter((m: ChatMessage) => m.role === 'user' || m.role === 'assistant')
       .filter((m: ChatMessage) => m.content && !isLoadingMarker(m.content))
-      .slice(-20)
+      .slice(-messageHistoryLimit)
 
     if (cleanedMessages.length === 0) {
       return NextResponse.json({ error: 'No valid messages to process' }, { status: 400 })
@@ -235,10 +241,10 @@ export async function POST(request: NextRequest) {
     let messagesToSend = cleanedMessages as ChatMessage[]
     const detectedQuestionNumber = parseQuestionNumberRequest(latestUserMessage.content)
 
-    // Stage: Web search
+    // Stage: Web search (respect reasoning profile)
     stage = 'web-search'
-    const shouldSearch = webSearchEnabled === true ||
-      (isTimeSensitiveQuery(latestUserMessage.content) && !!process.env.TAVILY_API_KEY)
+    const shouldSearch = (webSearchEnabled === true && reasoningProfile.enableWebSearch !== false) ||
+      (reasoningProfile.enableWebSearch && isTimeSensitiveQuery(latestUserMessage.content) && !!process.env.TAVILY_API_KEY)
 
     let webSearchPerformed = false
     let webSearchFailed = false
@@ -418,7 +424,7 @@ RULES FOR USING THESE RESULTS:
           conversationId,
           latestUserMessage: latestUserMessage.content,
           modelProvider: modelData?.provider || 'anthropic',
-          maxTokenBudget: 24000,
+          maxTokenBudget: reasoningProfile.contextBudget,
           currentMessages: cleanedMessages,
           includeUserMemories: true,
         })
@@ -545,7 +551,11 @@ RULES FOR USING THESE RESULTS:
     }
 
     const queryType = detectQueryType(latestUserMessage.content)
-    const temperature = queryType === 'creative' ? 0.7 : queryType === 'factual' ? 0.3 : 0.4
+    const baseTemp = queryType === 'creative' ? 0.7 : queryType === 'factual' ? 0.3 : 0.4
+    const temperature = reasoningMode === 'instant' ? Math.min(baseTemp + 0.1, 0.8) : reasoningMode === 'extended' ? Math.max(baseTemp - 0.1, 0.2) : baseTemp
+
+    // Add reasoning mode addendum to system prompt
+    systemPrompt += getReasoningSystemAddendum(reasoningMode)
 
     // Resolve cloud-stored images into data URLs only for the provider call.
     stage = 'image-attachment-hydration'
@@ -729,13 +739,14 @@ RULES FOR USING THESE RESULTS:
     const responseStream = new ReadableStream({
       async start(controller) {
         try {
-          // Call AI provider
+          // Call AI provider with reasoning-adjusted maxTokens
           let providerStream: ReadableStream
+          const maxTokens = reasoningProfile.maxTokens
 
           if (selectedModel.provider === 'google') {
-            providerStream = await streamGeminiResponse(validatedModel, messagesForModel, systemPrompt, temperature)
+            providerStream = await streamGeminiResponse(validatedModel, messagesForModel, systemPrompt, temperature, maxTokens)
           } else if (selectedModel.provider === 'anthropic') {
-            providerStream = await streamBedrockResponse(validatedModel, messagesForModel, systemPrompt, temperature)
+            providerStream = await streamBedrockResponse(validatedModel, messagesForModel, systemPrompt, temperature, maxTokens)
           } else {
             controller.enqueue(encoder.encode('Error: Unsupported provider'))
             controller.close()

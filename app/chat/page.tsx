@@ -7,6 +7,7 @@ import { Sparkles, Box, PanelRightOpen, Globe, Paperclip, Send, Loader2, X, File
 import { createClient } from '@/lib/supabase/client'
 import { ensureProfile } from '@/lib/supabase/ensure-profile'
 import { ModelSelector } from '@/components/chat/model-selector'
+import { ReasoningSelector } from '@/components/chat/reasoning-selector'
 import { MessageBubble } from '@/components/chat/message-bubble'
 import { ChatInput } from '@/components/chat/chat-input'
 import { Sidebar } from '@/components/chat/sidebar'
@@ -19,7 +20,7 @@ import { sortMessagesChronologically, dedupeMessages, processMessages, processLo
 import { useR2Upload } from '@/hooks/use-r2-upload'
 import { INLINE_UPLOAD_MAX_BYTES } from '@/lib/upload-limits'
 import { parsePageRangeRequest } from '@/lib/ai/document-requests'
-import type { Conversation, Message, ChatAttachment, Artifact } from '@/types/models'
+import type { Conversation, Message, ChatAttachment, Artifact, ReasoningMode } from '@/types/models'
 
 const DEFAULT_PANEL_WIDTH = 560
 const PANEL_WIDTH_KEY = 'easyplus-artifact-panel-width'
@@ -182,6 +183,7 @@ type PendingResponse = {
 
 export default function ChatPage() {
   const [selectedModel, setSelectedModel] = useState(AI_MODELS[0].id)
+  const [reasoningMode, setReasoningMode] = useState<ReasoningMode>('thinking')
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [currentConversation, setCurrentConversation] = useState<Conversation | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
@@ -529,6 +531,7 @@ export default function ChatPage() {
     // IMMEDIATELY update UI
     setCurrentConversation(conv)
     setSelectedModel(conv.model_used)
+    setReasoningMode(conv.reasoning_mode || 'thinking')
     setIsArtifactOpen(false)
     setActiveArtifact(null)
     setArtifactMessageId(null)
@@ -654,6 +657,7 @@ export default function ChatPage() {
     const requestId = crypto.randomUUID()
     const requestArtifactMode = artifactMode
     const requestWebSearchEnabled = webSearchEnabled
+    const requestReasoningMode = reasoningMode
 
     const sentAt = new Date()
     const userCreatedAt = sentAt.toISOString()
@@ -698,6 +702,7 @@ export default function ChatPage() {
           body: JSON.stringify({
             title,
             model: modelToUse,
+            reasoningMode: requestReasoningMode,
           }),
         })
 
@@ -758,7 +763,7 @@ export default function ChatPage() {
         ? LONG_TASK_LOADING_MARKER
         : ASSISTANT_LOADING_MARKER
 
-    // Determine initial status label
+    // Determine initial status label based on reasoning mode
     const initialStatusLabel = requestArtifactMode
       ? 'Creating artifact...'
       : hasAttachments
@@ -767,7 +772,11 @@ export default function ChatPage() {
           ? 'Searching the web...'
           : isLongTask
             ? 'Working through a larger task...'
-            : 'Thinking...'
+            : requestReasoningMode === 'extended'
+              ? '🚀 Deep reasoning...'
+              : requestReasoningMode === 'instant'
+                ? '⚡ Responding...'
+                : '🧠 Thinking...'
 
     const assistantPlaceholder: Message = {
       id: clientAssistantMessageId,
@@ -853,6 +862,7 @@ Rules:
           conversationId: conversation.id,
           artifactMode: requestArtifactMode,
           webSearchEnabled: requestWebSearchEnabled,
+          reasoningMode: requestReasoningMode,
           requestId,
           clientMessageId: clientUserMessageId,
         }),
@@ -1560,12 +1570,17 @@ Rules:
         <main className="flex min-w-0 flex-1 flex-col overflow-hidden h-full">
         <div className="border-b border-white/[0.06] bg-[#08070d]/90 backdrop-blur-sm md:backdrop-blur-xl">
           <div className="flex items-center gap-2 overflow-x-auto px-3 py-3 md:px-4">
-            <div className="flex-1 min-w-0">
+            <div className="flex-1 min-w-0 flex items-center gap-2 md:gap-3">
               <ModelSelector
                 selectedModel={selectedModel}
                 onSelectModel={setSelectedModel}
                 disabled={currentConversation !== null}
                 disabledReason="Start a new chat to switch models"
+              />
+              <ReasoningSelector
+                selectedMode={reasoningMode}
+                onSelectMode={setReasoningMode}
+                disabled={currentConversation !== null}
               />
             </div>
             <div className="flex items-center gap-2 shrink-0">
