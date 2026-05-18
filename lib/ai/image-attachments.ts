@@ -19,7 +19,8 @@ function formatMB(bytes: number): string {
 
 async function hydrateImageAttachment(
   attachment: ChatAttachment,
-  userId: string
+  userId: string,
+  isCurrentMessage: boolean
 ): Promise<ChatAttachment> {
   if (attachment.type !== 'image' || attachment.dataUrl) {
     return attachment
@@ -27,11 +28,14 @@ async function hydrateImageAttachment(
 
   const mimeType = normalizeImageMimeType(attachment.mimeType)
   if (!MODEL_IMAGE_MIME_TYPES.has(mimeType)) {
+    if (!isCurrentMessage) return attachment
     throw new Error(`Unsupported image type for "${attachment.name}". Please upload PNG, JPEG, or WebP.`)
   }
 
   const storageKey = getStorageKey(attachment)
   if (!storageKey) {
+    // Historical messages may lack storage keys — skip silently
+    if (!isCurrentMessage) return attachment
     throw new Error(`Image "${attachment.name}" did not finish uploading. Remove it and upload it again.`)
   }
 
@@ -70,14 +74,16 @@ export async function hydrateImageAttachmentsForModel(
   messages: ChatMessage[],
   userId: string
 ): Promise<ChatMessage[]> {
+  const lastIndex = messages.length - 1
   return Promise.all(
-    messages.map(async (message) => {
+    messages.map(async (message, idx) => {
       if (!message.attachments || message.attachments.length === 0) {
         return message
       }
 
+      const isCurrentMessage = idx === lastIndex && message.role === 'user'
       const attachments = await Promise.all(
-        message.attachments.map((attachment) => hydrateImageAttachment(attachment, userId))
+        message.attachments.map((attachment) => hydrateImageAttachment(attachment, userId, isCurrentMessage))
       )
 
       return {
