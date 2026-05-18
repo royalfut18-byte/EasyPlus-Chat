@@ -25,7 +25,16 @@ const DOCUMENT_TYPES = [
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
 ]
 const ALLOWED_EXTENSIONS = ['.pdf', '.txt', '.md', '.csv', '.json', '.docx', '.png', '.jpg', '.jpeg', '.webp', '.mp4', '.webm', '.mp3', '.wav', '.zip', '.tar', '.gz', '.xlsx', '.pptx']
-const MAX_FILES = 5
+const MAX_FILES = 10
+
+function getFileKey(file: File): string {
+  return `${file.name}|${file.size}|${file.lastModified}`
+}
+
+function deduplicateFiles(newFiles: ChatAttachment[], incomingFiles: File[]): File[] {
+  const existingKeys = new Set(newFiles.map(a => `${a.name}|${a.size}`))
+  return Array.from(incomingFiles).filter(f => !existingKeys.has(`${f.name}|${f.size}`))
+}
 
 function getMimeFromExtension(filename: string): string | null {
   const ext = filename.toLowerCase().split('.').pop()
@@ -176,9 +185,20 @@ export function ChatInput({ onSend, disabled, isLoading, conversationId }: ChatI
   const handleFileSelect = async (files: FileList | null) => {
     if (!files || files.length === 0) return
 
-    for (let i = 0; i < files.length; i++) {
-      if (attachments.length + i >= MAX_FILES) break
-      await processFile(files[i])
+    const uniqueFiles = deduplicateFiles(attachments, Array.from(files))
+    for (let i = 0; i < uniqueFiles.length; i++) {
+      if (attachments.length + i >= MAX_FILES) {
+        toast({
+          title: 'Attachment limit reached',
+          description: `Maximum ${MAX_FILES} files per message`,
+          variant: 'destructive',
+        })
+        break
+      }
+      await processFile(uniqueFiles[i])
+    }
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''
     }
   }
 
@@ -240,6 +260,10 @@ export function ChatInput({ onSend, disabled, isLoading, conversationId }: ChatI
       <div className="max-w-4xl mx-auto">
         <div className="bg-white/[0.03] border border-white/[0.08] rounded-2xl md:rounded-3xl p-2.5 md:p-3 transition-colors hover:border-white/[0.12]">
           {attachments.length > 0 && (
+            <>
+            <div className="text-xs text-gray-400 mb-2 px-1">
+              {attachments.length} / {MAX_FILES} attachments
+            </div>
             <div className="flex gap-2 mb-2 md:mb-3 pb-2 md:pb-3 border-b border-white/10 overflow-x-auto">
               {attachments.map((attachment, index) => (
                 <div key={index} className="relative group shrink-0">
@@ -320,15 +344,16 @@ export function ChatInput({ onSend, disabled, isLoading, conversationId }: ChatI
                   </button>
                 </div>
               ))}
-            </div>
-          )}
+            </div>            </>          )}
           <div className="flex items-end gap-2 md:gap-3">
             <input
               ref={fileInputRef}
               type="file"
               accept=".pdf,.txt,.md,.csv,.json,.docx,.xlsx,.pptx,.png,.jpg,.jpeg,.webp,.gif,.mp4,.webm,.mp3,.wav,.zip,.tar,.gz"
               multiple
-              onChange={(e) => handleFileSelect(e.target.files)}
+              onChange={(e) => {
+                handleFileSelect(e.target.files)
+              }}
               className="hidden"
             />
             <Button

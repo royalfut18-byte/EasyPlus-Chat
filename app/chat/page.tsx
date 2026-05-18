@@ -1231,8 +1231,17 @@ Rules:
   const HERO_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp']
   const HERO_ALLOWED_EXTENSIONS = ['.pdf', '.txt', '.md', '.csv', '.json', '.docx', '.png', '.jpg', '.jpeg', '.webp']
   const HERO_MAX_FILE_SIZE = heroMaxUploadMB * 1024 * 1024
-  const HERO_MAX_FILES = 3
+  const HERO_MAX_FILES = 10
   const HERO_INLINE_THRESHOLD = 4 * 1024 * 1024
+
+  function getHeroFileKey(file: File | ChatAttachment): string {
+    return `${file.name}|${file.size}`
+  }
+
+  function deduplicateHeroFiles(existing: ChatAttachment[], incoming: File[]): File[] {
+    const existingKeys = new Set(existing.map(a => getHeroFileKey(a)))
+    return Array.from(incoming).filter(f => !existingKeys.has(getHeroFileKey(f)))
+  }
 
   const heroProcessFile = async (file: File): Promise<void> => {
     const ext = '.' + (file.name.split('.').pop()?.toLowerCase() || '')
@@ -1330,9 +1339,28 @@ Rules:
     if (process.env.NODE_ENV !== 'production') {
       console.log('[Hero Upload] Files selected:', files.length)
     }
-    for (let i = 0; i < files.length; i++) {
-      if (heroAttachments.length + i >= HERO_MAX_FILES) break
-      await heroProcessFile(files[i])
+    const uniqueFiles = deduplicateHeroFiles(heroAttachments, Array.from(files))
+    if (uniqueFiles.length === 0) {
+      toast({
+        title: 'Duplicate files',
+        description: 'All selected files are already attached',
+        variant: 'destructive',
+      })
+      return
+    }
+    for (let i = 0; i < uniqueFiles.length; i++) {
+      if (heroAttachments.length + i >= HERO_MAX_FILES) {
+        toast({
+          title: 'Attachment limit reached',
+          description: `Maximum ${HERO_MAX_FILES} files per chat`,
+          variant: 'destructive',
+        })
+        break
+      }
+      await heroProcessFile(uniqueFiles[i])
+    }
+    if (heroFileInputRef.current) {
+      heroFileInputRef.current.value = ''
     }
   }
 
@@ -1605,6 +1633,11 @@ Rules:
                         }}
                         className="hidden"
                       />
+                      {heroAttachments.length > 0 && (
+                        <div className="text-xs text-gray-400 mb-2 px-1">
+                          {heroAttachments.length} / {HERO_MAX_FILES} attachments
+                        </div>
+                      )}
                       {heroAttachments.length > 0 && (
                         <div className="flex gap-2 mb-3 pb-3 border-b border-white/10 overflow-x-auto">
                           {heroAttachments.map((att, idx) => (
