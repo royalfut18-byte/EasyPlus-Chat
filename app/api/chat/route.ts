@@ -342,16 +342,18 @@ RULES FOR USING THESE RESULTS:
       }
     }
 
-    // Reconstruct context from historical messages that had attachments
+    // Reconstruct context from historical messages that had attachments (skip in instant mode)
     let historicalAttachmentContext = ''
-    const priorMessages = messagesToSend.slice(0, -1)
-    for (const msg of priorMessages) {
-      if (msg.role === 'user' && msg.attachments && msg.attachments.length > 0) {
-        for (const att of msg.attachments) {
-          if (att.type === 'document' && att.textContent) {
-            historicalAttachmentContext += `[Previously attached document: ${att.name}]\n${att.textContent.substring(0, 4000)}\n[/Previously attached document]\n\n`
-          } else if (att.type === 'image') {
-            historicalAttachmentContext += `[Previously attached image: ${att.name}] (image was shared earlier in this conversation)\n\n`
+    if (reasoningMode !== 'instant') {
+      const priorMessages = messagesToSend.slice(0, -1)
+      for (const msg of priorMessages) {
+        if (msg.role === 'user' && msg.attachments && msg.attachments.length > 0) {
+          for (const att of msg.attachments) {
+            if (att.type === 'document' && att.textContent) {
+              historicalAttachmentContext += `[Previously attached document: ${att.name}]\n${att.textContent.substring(0, 4000)}\n[/Previously attached document]\n\n`
+            } else if (att.type === 'image') {
+              historicalAttachmentContext += `[Previously attached image: ${att.name}] (image was shared earlier in this conversation)\n\n`
+            }
           }
         }
       }
@@ -379,7 +381,7 @@ RULES FOR USING THESE RESULTS:
 
     // If the user supplied a page range for a previously uploaded scanned PDF,
     // OCR only those pages before context building so the answer can use saved OCR text.
-    if (conversationId && !documentContext) {
+    if (conversationId && !documentContext && reasoningMode !== 'instant') {
       const requestedPages = parsePageRangeRequest(latestUserMessage.content)
       if (requestedPages) {
         try {
@@ -408,6 +410,7 @@ RULES FOR USING THESE RESULTS:
     }
 
     // Stage: Memory & Context Building
+    // In Instant mode, skip heavy DB queries (memories, cross-conversation, chunks)
     stage = 'memory'
     let memoryContext = ''
     let fullContextPrompt = ''
@@ -416,8 +419,10 @@ RULES FOR USING THESE RESULTS:
     let memorySaveResult: { saved: boolean; memoryText?: string } | null = null
 
     try {
-      // Build comprehensive context from conversation history, memories, and attachments
-      if (conversationId) {
+      if (reasoningMode === 'instant') {
+        // INSTANT: Skip all memory/context DB queries for minimum latency
+        console.log('[Chat API] Instant mode — skipping memory/context loading')
+      } else if (conversationId) {
         const modelData = AI_MODELS.find(m => m.id === validatedModel)
         const builtContext = await buildContext(db, {
           userId: user.id,
@@ -426,7 +431,7 @@ RULES FOR USING THESE RESULTS:
           modelProvider: modelData?.provider || 'anthropic',
           maxTokenBudget: reasoningProfile.contextBudget,
           currentMessages: cleanedMessages,
-          includeUserMemories: true,
+          includeUserMemories: reasoningMode === 'extended',
         })
         fullContextPrompt = formatContextForPrompt(builtContext)
         contextDebugInfo = builtContext.debugInfo
@@ -444,19 +449,20 @@ RULES FOR USING THESE RESULTS:
         const memories = await getUserMemories(db, user.id, latestUserMessage.content)
         memoryContext = formatMemoriesForPrompt(memories)
 
-        // Cross-conversation search for relevant context
-        const crossContext = await searchCrossConversationContext(db, user.id, latestUserMessage.content)
-        if (crossContext) {
-          memoryContext = memoryContext
-            ? `${memoryContext}\n\n${crossContext}`
-            : crossContext
+        // Cross-conversation search only for extended mode
+        if (reasoningMode === 'extended') {
+          const crossContext = await searchCrossConversationContext(db, user.id, latestUserMessage.content)
+          if (crossContext) {
+            memoryContext = memoryContext
+              ? `${memoryContext}\n\n${crossContext}`
+              : crossContext
+          }
         }
 
         console.log('[Chat API] New chat context:', {
           userId: user.id.substring(0, 8),
           latestMessage: latestUserMessage.content.substring(0, 80),
           userMemoriesLoaded: memories.length,
-          crossContextLength: crossContext?.length || 0,
           totalContextLength: memoryContext.length,
         })
       }
@@ -468,6 +474,7 @@ RULES FOR USING THESE RESULTS:
         ].filter(Boolean)
         console.log('[Chat API] Document context debug:', {
           conversationId: conversationId || 'new',
+          reasoningMode,
           latestUserMessage: latestUserMessage.content.substring(0, 160),
           currentMessageAttachmentsCount,
           historicalAttachmentsLoadedCount: contextDebugInfo?.historicalAttachmentsLoadedCount || 0,
@@ -485,22 +492,24 @@ RULES FOR USING THESE RESULTS:
         documentDebugLogged = true
       }
 
-      // Defer memory save/delete - fire-and-forget after getting context
-      if (shouldExtractMemory(latestUserMessage.content)) {
-        const memText = extractMemoryText(latestUserMessage.content)
-        if (memText) {
-          memorySaveResult = { saved: true, memoryText: memText }
-          saveMemory(db, user.id, memText, conversationId).catch((err: any) => {
-            console.warn('[Chat API] Deferred memory save failed:', err.message)
+      // Defer memory save/delete (skip in instant mode)
+      if (reasoningMode !== 'instant') {
+        if (shouldExtractMemory(latestUserMessage.content)) {
+          const memText = extractMemoryText(latestUserMessage.content)
+          if (memText) {
+            memorySaveResult = { saved: true, memoryText: memText }
+            saveMemory(db, user.id, memText, conversationId).catch((err: any) => {
+              console.warn('[Chat API] Deferred memory save failed:', err.message)
+            })
+          }
+        } else if (isForgetRequest(latestUserMessage.content)) {
+          const forgetText = latestUserMessage.content
+            .replace(/^(forget|delete|remove)\s+(that|about|my)?\s*/i, '')
+            .trim()
+          deleteMemoryByContent(db, user.id, forgetText).catch((err: any) => {
+            console.warn('[Chat API] Deferred memory delete failed:', err.message)
           })
         }
-      } else if (isForgetRequest(latestUserMessage.content)) {
-        const forgetText = latestUserMessage.content
-          .replace(/^(forget|delete|remove)\s+(that|about|my)?\s*/i, '')
-          .trim()
-        deleteMemoryByContent(db, user.id, forgetText).catch((err: any) => {
-          console.warn('[Chat API] Deferred memory delete failed:', err.message)
-        })
       }
     } catch (memErr: any) {
       console.warn('[Chat API] Memory/context non-fatal error:', memErr.message)
@@ -530,8 +539,8 @@ RULES FOR USING THESE RESULTS:
       )
     }
 
-    // Detect long tasks for optimized handling
-    const longTask = isLongTaskRequest(latestUserMessage.content, userMessage.attachments)
+    // Detect long tasks for optimized handling (skip in instant mode)
+    const longTask = reasoningMode !== 'instant' && isLongTaskRequest(latestUserMessage.content, userMessage.attachments)
     if (longTask) {
       console.log('[Chat API] Long task detected')
     }
