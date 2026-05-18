@@ -1264,6 +1264,8 @@ Rules:
 
     const isImage = HERO_IMAGE_TYPES.includes(mime)
     const useInline = isImage && file.size <= HERO_INLINE_THRESHOLD
+    // Use file key instead of index to avoid race conditions with multiple files
+    const fileKey = `${file.name}|${file.size}|${file.lastModified}`
 
     if (useInline) {
       if (process.env.NODE_ENV !== 'production') {
@@ -1273,7 +1275,15 @@ Rules:
       reader.onload = (e) => {
         const dataUrl = e.target?.result as string
         setHeroAttachments((prev) => {
-          if (prev.length >= HERO_MAX_FILES) return prev
+          if (prev.length >= HERO_MAX_FILES) {
+            if (process.env.NODE_ENV !== 'production') {
+              console.warn('[Hero Upload] Max files reached in setHeroAttachments', { current: prev.length, max: HERO_MAX_FILES })
+            }
+            return prev
+          }
+          if (process.env.NODE_ENV !== 'production') {
+            console.log('[Hero Upload] Adding inline image to attachments:', { name: file.name, count: prev.length + 1 })
+          }
           return [...prev, {
             type: 'image',
             name: file.name,
@@ -1297,7 +1307,6 @@ Rules:
       console.log('[Hero Upload] Using R2 upload for:', file.name, `${(file.size / 1024 / 1024).toFixed(1)}MB`)
     }
 
-    const placeholderIndex = heroAttachments.length
     const placeholder: ChatAttachment = {
       type: isImage ? 'image' : 'document',
       name: file.name,
@@ -1306,20 +1315,35 @@ Rules:
       uploadStatus: 'pending',
       uploadProgress: 0,
     }
+    
     setHeroAttachments((prev) => {
-      if (prev.length >= HERO_MAX_FILES) return prev
+      if (prev.length >= HERO_MAX_FILES) {
+        if (process.env.NODE_ENV !== 'production') {
+          console.warn('[Hero Upload] Max files reached when adding placeholder', { current: prev.length, max: HERO_MAX_FILES })
+        }
+        return prev
+      }
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('[Hero Upload] Adding placeholder:', { name: file.name, count: prev.length + 1 })
+      }
       return [...prev, placeholder]
     })
     setHeroUploading(true)
 
     const result = await uploadToR2(file, null, (updated) => {
-      setHeroAttachments((prev) => prev.map((a, i) => i === placeholderIndex ? { ...a, ...updated } : a))
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('[Hero Upload] Progress update:', { name: file.name, status: updated.uploadStatus, progress: updated.uploadProgress })
+      }
+      // Use file key matching instead of index to avoid race conditions
+      setHeroAttachments((prev) => prev.map((a) => 
+        a.name === file.name && a.size === file.size ? { ...a, ...updated } : a
+      ))
     })
 
     if (result.error) {
       toast({ title: 'Upload failed', description: result.error, variant: 'destructive' })
       if (process.env.NODE_ENV !== 'production') {
-        console.error('[Hero Upload] R2 upload failed:', result.error)
+        console.error('[Hero Upload] R2 upload failed:', { name: file.name, error: result.error })
       }
     } else if (process.env.NODE_ENV !== 'production') {
       console.log('[Hero Upload] R2 upload success:', {
@@ -1330,14 +1354,20 @@ Rules:
       })
     }
 
-    setHeroAttachments((prev) => prev.map((a, i) => i === placeholderIndex ? result.attachment : a))
+    setHeroAttachments((prev) => prev.map((a) => 
+      a.name === file.name && a.size === file.size ? result.attachment : a
+    ))
     setHeroUploading(false)
   }
 
   const handleHeroFileSelect = async (files: FileList | null) => {
     if (!files || files.length === 0) return
     if (process.env.NODE_ENV !== 'production') {
-      console.log('[Hero Upload] Files selected:', files.length)
+      console.log('[Hero Upload] Files selected:', {
+        count: files.length,
+        names: Array.from(files).map(f => f.name),
+        currentAttachments: heroAttachments.length,
+      })
     }
     const uniqueFiles = deduplicateHeroFiles(heroAttachments, Array.from(files))
     if (uniqueFiles.length === 0) {
@@ -1348,6 +1378,12 @@ Rules:
       })
       return
     }
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('[Hero Upload] After dedup:', {
+        uniqueCount: uniqueFiles.length,
+        names: uniqueFiles.map(f => f.name),
+      })
+    }
     for (let i = 0; i < uniqueFiles.length; i++) {
       if (heroAttachments.length + i >= HERO_MAX_FILES) {
         toast({
@@ -1357,7 +1393,13 @@ Rules:
         })
         break
       }
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('[Hero Upload] Processing file', i + 1, 'of', uniqueFiles.length, ':', uniqueFiles[i].name)
+      }
       await heroProcessFile(uniqueFiles[i])
+    }
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('[Hero Upload] File selection complete, new attachment count:', heroAttachments.length)
     }
     if (heroFileInputRef.current) {
       heroFileInputRef.current.value = ''

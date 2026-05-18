@@ -154,7 +154,8 @@ export function ChatInput({ onSend, disabled, isLoading, conversationId }: ChatI
     }
 
     const isImage = IMAGE_TYPES.includes(mime)
-    const placeholderIndex = attachments.length
+    // Use unique file key instead of index to avoid race conditions with multiple files
+    const fileKey = getFileKey(file)
 
     const placeholder: ChatAttachment = {
       type: isImage ? 'image' : 'document',
@@ -167,8 +168,18 @@ export function ChatInput({ onSend, disabled, isLoading, conversationId }: ChatI
 
     setAttachments((prev) => [...prev, placeholder])
 
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('[Chat Input] File processing started:', { name: file.name, key: fileKey })
+    }
+
     const result = await uploadToR2(file, conversationId || null, (updated) => {
-      setAttachments((prev) => prev.map((a, i) => i === placeholderIndex ? { ...a, ...updated } : a))
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('[Chat Input] Upload progress:', { name: file.name, status: updated.uploadStatus, progress: updated.uploadProgress })
+      }
+      // Update attachment by matching file key to avoid index mismatch
+      setAttachments((prev) => prev.map((a) => 
+        a.name === file.name && a.size === file.size ? { ...a, ...updated } : a
+      ))
     })
 
     if (result.error) {
@@ -177,15 +188,40 @@ export function ChatInput({ onSend, disabled, isLoading, conversationId }: ChatI
         description: result.error,
         variant: 'destructive',
       })
+      if (process.env.NODE_ENV !== 'production') {
+        console.error('[Chat Input] Upload failed:', { name: file.name, error: result.error })
+      }
+    } else {
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('[Chat Input] File upload complete:', { name: file.name, status: result.attachment.uploadStatus })
+      }
     }
 
-    setAttachments((prev) => prev.map((a, i) => i === placeholderIndex ? result.attachment : a))
+    setAttachments((prev) => prev.map((a) => 
+      a.name === file.name && a.size === file.size ? result.attachment : a
+    ))
   }
 
   const handleFileSelect = async (files: FileList | null) => {
     if (!files || files.length === 0) return
 
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('[Chat Input] Files selected:', {
+        count: files.length,
+        names: Array.from(files).map(f => f.name),
+        currentAttachments: attachments.length,
+      })
+    }
+
     const uniqueFiles = deduplicateFiles(attachments, Array.from(files))
+    
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('[Chat Input] After dedup:', {
+        uniqueCount: uniqueFiles.length,
+        names: uniqueFiles.map(f => f.name),
+      })
+    }
+
     for (let i = 0; i < uniqueFiles.length; i++) {
       if (attachments.length + i >= MAX_FILES) {
         toast({
@@ -197,6 +233,11 @@ export function ChatInput({ onSend, disabled, isLoading, conversationId }: ChatI
       }
       await processFile(uniqueFiles[i])
     }
+    
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('[Chat Input] File selection complete, new attachment count:', attachments.length)
+    }
+
     if (fileInputRef.current) {
       fileInputRef.current.value = ''
     }
