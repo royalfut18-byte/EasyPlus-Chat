@@ -28,7 +28,7 @@ const DOCUMENT_TYPES = [
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
 ]
 const ALLOWED_EXTENSIONS = ['.pdf', '.txt', '.md', '.csv', '.json', '.docx', '.png', '.jpg', '.jpeg', '.webp', '.mp4', '.webm', '.mp3', '.wav', '.zip', '.tar', '.gz', '.xlsx', '.pptx']
-const MAX_FILES = 10
+const MAX_FILES = 30
 
 function getFileKey(file: File): string {
   return `${file.name}|${file.size}|${file.lastModified}`

@@ -1312,7 +1312,7 @@ Rules:
   const HERO_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp']
   const HERO_ALLOWED_EXTENSIONS = ['.pdf', '.txt', '.md', '.csv', '.json', '.docx', '.png', '.jpg', '.jpeg', '.webp']
   const HERO_MAX_FILE_SIZE = heroMaxUploadMB * 1024 * 1024
-  const HERO_MAX_FILES = 10
+  const HERO_MAX_FILES = 30
   const HERO_INLINE_THRESHOLD = INLINE_UPLOAD_MAX_BYTES
 
   function getHeroFileKey(file: File | ChatAttachment): string {
