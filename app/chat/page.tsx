@@ -1070,19 +1070,74 @@ Rules:
           }
         }
       } else {
-        // Normal mode (not artifact mode) - ensure content is updated
-        // This handles case where artifact mode was toggled off
-        if (selectedConversationIdRef.current === sendConversationId) {
-          setMessages((prev) =>
-            processMessages(
-              prev.map((m) =>
-                m.id === clientAssistantMessageId
-                  ? { ...m, content: finalAssistantContent || 'I received an empty response.', status: 'completed' as const, statusLabel: null }
-                  : m
-              ),
-              sendConversationId
-            )
+        // Normal mode (not artifact mode) - attempt a best-effort artifact parse
+        // Some models output artifact/code blocks even when artifactMode wasn't toggled.
+        // Try to parse artifact metadata and attach it so the UI can offer "Open Artifact".
+        try {
+          const { artifact, cleanContent } = parseArtifactFromResponse(
+            finalAssistantContent,
+            true,
+            lastUserPromptRef.current
           )
+
+          if (artifact) {
+            if (process.env.NODE_ENV !== 'production') {
+              console.log('[Chat] Artifact auto-detected (fallback):', artifact.title)
+            }
+
+            let finalContent = cleanContent.trim()
+            if (!finalContent) {
+              finalContent = `I created an artifact for you: **${artifact.title}**.`
+            }
+
+            if (selectedConversationIdRef.current === sendConversationId) {
+              setMessages((prev) =>
+                processMessages(
+                  prev.map((m) =>
+                    m.id === clientAssistantMessageId
+                      ? { ...m, content: finalContent, artifact, status: 'completed' as const, statusLabel: null }
+                      : m
+                  ),
+                  sendConversationId
+                )
+              )
+
+              setActiveArtifact(artifact)
+              setIsArtifactOpen(true)
+              setArtifactMessageId(clientAssistantMessageId)
+            }
+
+            // Save artifact to localStorage for persistence
+            saveArtifact(artifact, sendConversationId)
+          } else {
+            // No artifact found - update with normal response
+            if (selectedConversationIdRef.current === sendConversationId) {
+              setMessages((prev) =>
+                processMessages(
+                  prev.map((m) =>
+                    m.id === clientAssistantMessageId
+                      ? { ...m, content: finalAssistantContent || 'I received an empty response.', status: 'completed' as const, statusLabel: null }
+                      : m
+                  ),
+                  sendConversationId
+                )
+              )
+            }
+          }
+        } catch (e) {
+          console.error('[Chat] Artifact fallback parse failed:', e)
+          if (selectedConversationIdRef.current === sendConversationId) {
+            setMessages((prev) =>
+              processMessages(
+                prev.map((m) =>
+                  m.id === clientAssistantMessageId
+                    ? { ...m, content: finalAssistantContent || 'I received an empty response.', status: 'completed' as const, statusLabel: null }
+                    : m
+                ),
+                sendConversationId
+              )
+            )
+          }
         }
       }
 
