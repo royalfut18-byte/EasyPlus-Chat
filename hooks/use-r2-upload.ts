@@ -23,6 +23,11 @@ interface UploadResult {
   error?: string
 }
 
+interface UploadOptions {
+  forceCloud?: boolean
+  includePreviewDataUrl?: boolean
+}
+
 function inferMimeType(file: File): string {
   if (file.type) {
     return file.type.toLowerCase() === 'image/jpg' ? 'image/jpeg' : file.type
@@ -182,7 +187,8 @@ export function useR2Upload() {
   const uploadToR2 = useCallback(async (
     file: File,
     conversationId: string | null,
-    onProgress?: (attachment: ChatAttachment) => void
+    onProgress?: (attachment: ChatAttachment) => void,
+    options: UploadOptions = { forceCloud: true }
   ): Promise<UploadResult> => {
     let uploadFile = withInferredMimeType(file)
     const isImage = uploadFile.type.startsWith('image/')
@@ -224,7 +230,7 @@ export function useR2Upload() {
       }
     }
 
-    if (uploadFile.size <= INLINE_DATA_URL_THRESHOLD) {
+    if (!options.forceCloud && uploadFile.size <= INLINE_DATA_URL_THRESHOLD) {
       try {
         const dataUrl = await readAsDataUrl(uploadFile)
         return {
@@ -263,7 +269,7 @@ export function useR2Upload() {
 
       if (serverResult.ok && serverResult.data) {
         let previewDataUrl: string | undefined
-        if (isImage && uploadFile.size <= 2 * 1024 * 1024) {
+        if (options.includePreviewDataUrl && isImage && uploadFile.size <= 2 * 1024 * 1024) {
           try {
             previewDataUrl = await readAsDataUrl(uploadFile)
           } catch { /* no preview */ }
@@ -354,7 +360,7 @@ export function useR2Upload() {
       }
 
       let previewDataUrl: string | undefined
-      if (isImage && uploadFile.size <= 2 * 1024 * 1024) {
+      if (options.includePreviewDataUrl && isImage && uploadFile.size <= 2 * 1024 * 1024) {
         try {
           previewDataUrl = await readAsDataUrl(uploadFile)
         } catch { /* no preview */ }

@@ -184,7 +184,7 @@ export function ChatInput({ onSend, disabled, isLoading, conversationId, reasoni
       setAttachments((prev) => prev.map((a) => 
         a.clientUploadId === fileKey ? { ...a, ...updated, clientUploadId: fileKey } : a
       ))
-    })
+    }, { forceCloud: true })
 
     if (result.error) {
       toast({

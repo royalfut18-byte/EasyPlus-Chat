@@ -18,7 +18,6 @@ import { cn } from '@/lib/utils'
 import { parseArtifactFromResponse } from '@/lib/artifact-parser'
 import { sortMessagesChronologically, dedupeMessages, processMessages, processLoadedMessages, getStoredArtifact } from '@/lib/chat/message-utils'
 import { useR2Upload } from '@/hooks/use-r2-upload'
-import { INLINE_UPLOAD_MAX_BYTES } from '@/lib/upload-limits'
 import { parsePageRangeRequest } from '@/lib/ai/document-requests'
 import type { Conversation, Message, ChatAttachment, Artifact, ReasoningMode } from '@/types/models'
 
@@ -36,6 +35,22 @@ function isLongTaskClient(message: string, attachments?: ChatAttachment[]): bool
   if (hasDocOrImage && hasLongKeyword) return true
   if (hasLongKeyword && lower.length > 100) return true
   return false
+}
+
+function attachmentHasCloudStorage(attachment: ChatAttachment): boolean {
+  return attachment.storageProvider === 'r2' || !!(attachment.storageKey || attachment.storagePath)
+}
+
+function stripCloudPreviewData(attachment: ChatAttachment): ChatAttachment {
+  if (!attachmentHasCloudStorage(attachment)) return attachment
+  const { dataUrl, ...safeAttachment } = attachment
+  return safeAttachment
+}
+
+async function dataUrlToFile(dataUrl: string, filename: string, mimeType: string): Promise<File> {
+  const response = await fetch(dataUrl)
+  const blob = await response.blob()
+  return new File([blob], filename, { type: mimeType || blob.type })
 }
 
 // Artifact persistence keys
@@ -651,6 +666,43 @@ export default function ChatPage() {
       return
     }
 
+    let safeAttachments: ChatAttachment[] | undefined
+    if (attachments && attachments.length > 0) {
+      try {
+        safeAttachments = await Promise.all(attachments.map(async (attachment) => {
+          if (attachmentHasCloudStorage(attachment)) {
+            return stripCloudPreviewData(attachment)
+          }
+
+          if (!attachment.dataUrl) {
+            return attachment
+          }
+
+          const file = await dataUrlToFile(attachment.dataUrl, attachment.name, attachment.mimeType)
+          const result = await uploadToR2(file, currentConversation?.id || null, undefined, { forceCloud: true })
+          if (result.error) {
+            throw new Error(result.error)
+          }
+          return stripCloudPreviewData({
+            ...result.attachment,
+            type: attachment.type,
+            name: attachment.name,
+            mimeType: result.attachment.mimeType || attachment.mimeType,
+            size: result.attachment.size || attachment.size,
+            clientUploadId: attachment.clientUploadId,
+          })
+        }))
+      } catch (error: any) {
+        toast({
+          title: 'Upload failed',
+          description: error.message || 'Could not move this attachment to cloud storage. Try attaching it again.',
+          variant: 'destructive',
+        })
+        isSendingRef.current = false
+        return
+      }
+    }
+
     // 3. Create stable IDs and timestamps - user MUST be before assistant
     const clientUserMessageId = crypto.randomUUID()
     const clientAssistantMessageId = crypto.randomUUID()
@@ -677,7 +729,7 @@ export default function ChatPage() {
       content: trimmedContent,
       model: modelToUse,
       created_at: userCreatedAt,
-      attachments,
+      attachments: safeAttachments,
       client_message_id: clientUserMessageId,
       request_id: requestId,
     }
@@ -755,8 +807,8 @@ export default function ChatPage() {
     const sendConversationId = conversation.id
 
     // 6. Add assistant placeholder exactly once with correct timestamp
-    const isLongTask = isLongTaskClient(trimmedContent, attachments)
-    const hasAttachments = attachments && attachments.length > 0
+    const isLongTask = isLongTaskClient(trimmedContent, safeAttachments)
+    const hasAttachments = safeAttachments && safeAttachments.length > 0
     const loadingMarker = requestArtifactMode
       ? ARTIFACT_LOADING_MARKER
       : isLongTask
@@ -1313,7 +1365,6 @@ Rules:
   const HERO_ALLOWED_EXTENSIONS = ['.pdf', '.txt', '.md', '.csv', '.json', '.docx', '.png', '.jpg', '.jpeg', '.webp']
   const HERO_MAX_FILE_SIZE = heroMaxUploadMB * 1024 * 1024
   const HERO_MAX_FILES = 30
-  const HERO_INLINE_THRESHOLD = INLINE_UPLOAD_MAX_BYTES
 
   function getHeroFileKey(file: File | ChatAttachment): string {
     return `${file.name}|${file.size}`
@@ -1345,46 +1396,8 @@ Rules:
     }
 
     const isImage = HERO_IMAGE_TYPES.includes(mime)
-    const useInline = isImage && file.size <= HERO_INLINE_THRESHOLD
     // Use file key instead of index to avoid race conditions with multiple files
     const fileKey = `${file.name}|${file.size}|${file.lastModified}`
-
-    if (useInline) {
-      if (process.env.NODE_ENV !== 'production') {
-        console.log('[Hero Upload] Using inline dataUrl for small image:', file.name, `${(file.size / 1024 / 1024).toFixed(1)}MB`)
-      }
-      const reader = new FileReader()
-      reader.onload = (e) => {
-        const dataUrl = e.target?.result as string
-        setHeroAttachments((prev) => {
-          if (prev.length >= HERO_MAX_FILES) {
-            if (process.env.NODE_ENV !== 'production') {
-              console.warn('[Hero Upload] Max files reached in setHeroAttachments', { current: prev.length, max: HERO_MAX_FILES })
-            }
-            return prev
-          }
-          if (process.env.NODE_ENV !== 'production') {
-            console.log('[Hero Upload] Adding inline image to attachments:', { name: file.name, count: prev.length + 1 })
-          }
-          return [...prev, {
-            type: 'image',
-            name: file.name,
-            mimeType: mime,
-            size: file.size,
-            dataUrl,
-            clientUploadId: fileKey,
-            uploadStatus: 'uploaded',
-            uploadProgress: 100,
-            storageProvider: 'supabase',
-          }]
-        })
-      }
-      reader.onerror = () => {
-        toast({ title: 'Error reading file', description: 'Failed to process file', variant: 'destructive' })
-      }
-      reader.readAsDataURL(sourceFile)
-      return
-    }
 
     if (process.env.NODE_ENV !== 'production') {
       console.log('[Hero Upload] Using R2 upload for:', file.name, `${(file.size / 1024 / 1024).toFixed(1)}MB`)
@@ -1422,7 +1435,7 @@ Rules:
       setHeroAttachments((prev) => prev.map((a) => 
         a.clientUploadId === fileKey ? { ...a, ...updated, clientUploadId: fileKey } : a
       ))
-    })
+    }, { forceCloud: true })
 
     if (result.error) {
       toast({ title: 'Upload failed', description: result.error, variant: 'destructive' })
