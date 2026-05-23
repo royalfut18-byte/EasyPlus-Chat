@@ -104,7 +104,7 @@ export function MessageBubble({ role, content, model, onRegenerate, attachments,
         className={cn(
           'rounded-3xl relative group',
           isUser
-            ? 'max-w-[85%] md:max-w-[70%] bg-gradient-to-br from-indigo-600/80 to-violet-700/70 backdrop-blur-sm text-white shadow-md shadow-indigo-500/10'
+            ? 'max-w-[85%] md:max-w-[70%] mb-6 bg-gradient-to-br from-indigo-600/80 to-violet-700/70 backdrop-blur-sm text-white shadow-md shadow-indigo-500/10'
             : 'w-full bg-white/[0.03] border border-white/[0.06] p-3 md:p-4 lg:p-6'
         )}
       >
@@ -437,14 +437,17 @@ export function MessageBubble({ role, content, model, onRegenerate, attachments,
 
         <div
           className={cn(
-            'mt-2 flex gap-1 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100',
-            isUser ? 'justify-end px-3 pb-2 md:px-4 md:pb-3' : 'justify-start'
+            'flex gap-1 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100',
+            isUser ? 'absolute -bottom-6 right-1' : 'mt-2 justify-start'
           )}
         >
           <Button
             size="icon"
             variant="ghost"
-            className="h-7 w-7 hover:bg-white/10"
+            className={cn(
+              'h-7 w-7',
+              isUser ? 'text-white/90 hover:bg-transparent hover:text-white' : 'hover:bg-white/10'
+            )}
             onClick={copyToClipboard}
           >
             <Copy className="h-3 w-3" />
