@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, KeyboardEvent } from 'react'
+import { useCallback, useEffect, useState, useRef, KeyboardEvent } from 'react'
 import { Send, Loader2, Image as ImageIcon, X, Paperclip, FileText, FileSpreadsheet, FileJson, File, Upload, CheckCircle2, AlertCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -88,7 +88,35 @@ export function ChatInput({ onSend, disabled, isLoading, conversationId, reasoni
   const [isDragging, setIsDragging] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const wasUnavailableRef = useRef(false)
   const { uploadToR2, maxUploadMB } = useR2Upload()
+
+  const isComposerUnavailable = !!disabled || !!isLoading
+
+  const focusComposer = useCallback(() => {
+    const textarea = textareaRef.current
+    if (!textarea || textarea.disabled) return
+
+    const shouldAutoFocus =
+      typeof window === 'undefined' ||
+      window.matchMedia('(hover: hover) and (pointer: fine)').matches
+
+    if (shouldAutoFocus) {
+      textarea.focus({ preventScroll: true })
+    }
+  }, [])
+
+  useEffect(() => {
+    if (isComposerUnavailable) {
+      wasUnavailableRef.current = true
+      return
+    }
+
+    if (wasUnavailableRef.current) {
+      wasUnavailableRef.current = false
+      requestAnimationFrame(focusComposer)
+    }
+  }, [focusComposer, isComposerUnavailable])
 
   const hasActiveUpload = attachments.some(a =>
     a.uploadStatus === 'pending' ||
@@ -108,6 +136,7 @@ export function ChatInput({ onSend, disabled, isLoading, conversationId, reasoni
       if (textareaRef.current) {
         textareaRef.current.style.height = 'auto'
       }
+      requestAnimationFrame(focusComposer)
     }
   }
 
@@ -421,7 +450,7 @@ export function ChatInput({ onSend, disabled, isLoading, conversationId, reasoni
               onKeyDown={handleKeyDown}
               onPaste={handlePaste}
               placeholder="Ask anything..."
-              disabled={disabled || isLoading}
+              disabled={isComposerUnavailable}
               className={cn(
                 'flex-1 bg-transparent border-none outline-none resize-none text-white placeholder:text-gray-400 text-sm md:text-base',
                 'min-h-[40px] md:min-h-[44px] max-h-[160px] md:max-h-[200px] py-2.5 md:py-3 px-1 md:px-2',
@@ -433,7 +462,8 @@ export function ChatInput({ onSend, disabled, isLoading, conversationId, reasoni
             />
             <Button
               onClick={handleSubmit}
-              disabled={(!message.trim() && attachments.length === 0) || disabled || isLoading || hasActiveUpload}
+              onMouseDown={(event) => event.preventDefault()}
+              disabled={(!message.trim() && attachments.length === 0) || isComposerUnavailable || hasActiveUpload}
               size="icon"
               className="bg-violet-600 hover:bg-violet-500 h-9 w-9 md:h-10 md:w-10 rounded-xl shrink-0 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
             >

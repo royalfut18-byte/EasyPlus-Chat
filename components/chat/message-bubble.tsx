@@ -437,8 +437,8 @@ export function MessageBubble({ role, content, model, onRegenerate, attachments,
 
         <div
           className={cn(
-            'absolute bottom-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity',
-            isUser ? 'right-2' : 'left-2'
+            'mt-2 flex gap-1 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100',
+            isUser ? 'justify-end px-3 pb-2 md:px-4 md:pb-3' : 'justify-start'
           )}
         >
           <Button

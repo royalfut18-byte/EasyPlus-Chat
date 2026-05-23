@@ -9,6 +9,7 @@ import { parsePageRangeRequest, parseQuestionNumberRequest } from '@/lib/ai/docu
 import { compactPreview, extractQuestionNumberExcerpt } from '@/lib/ai/document-question-retrieval'
 import { ocrAttachmentPages, findLatestPdfAttachmentForOcr } from '@/lib/ai/pdf-ocr'
 import { sanitizeAttachmentsForStorage } from '@/lib/ai/sanitize-attachments'
+import { sanitizeDatabaseText } from '@/lib/supabase/sanitize-db-text'
 import { hydrateImageAttachmentsForModel } from '@/lib/ai/image-attachments'
 import {
   getUserMemories,
@@ -180,13 +181,18 @@ export async function POST(request: NextRequest) {
 
     // Stage: Prepare messages
     stage = 'prepare-messages'
-    const userMessage = messages[messages.length - 1]
+    const normalizedMessages = messages.map((message: ChatMessage) => ({
+      ...message,
+      content: sanitizeDatabaseText(message.content),
+    }))
+    const userMessage = normalizedMessages[normalizedMessages.length - 1]
     const currentMessageAttachmentsCount = userMessage.attachments?.length || 0
 
     // Validate inline attachment sizes (R2 metadata attachments bypass this check)
     if (userMessage.attachments && userMessage.attachments.length > 0) {
       for (const att of userMessage.attachments) {
-        const isR2 = att.storageProvider === 'r2' || att.storage_provider === 'r2' || att.storageKey || att.storage_key || att.storagePath
+        const legacyAtt = att as any
+        const isR2 = att.storageProvider === 'r2' || legacyAtt.storage_provider === 'r2' || att.storageKey || legacyAtt.storage_key || att.storagePath
         if (!isR2 && att.dataUrl && att.dataUrl.length > 7 * 1024 * 1024) {
           return NextResponse.json(
             { error: 'Inline attachment too large. For large files, upload through R2 direct upload.' },
@@ -228,7 +234,7 @@ export async function POST(request: NextRequest) {
     }
 
     const messageHistoryLimit = reasoningMode === 'instant' ? 8 : reasoningMode === 'extended' ? 30 : 20
-    let cleanedMessages = messages
+    let cleanedMessages = normalizedMessages
       .filter((m: ChatMessage) => m.role === 'user' || m.role === 'assistant')
       .filter((m: ChatMessage) => m.content && !isLoadingMarker(m.content))
       .slice(-messageHistoryLimit)
@@ -654,7 +660,7 @@ RULES FOR USING THESE RESULTS:
           const { data: insertedMsg, error: userInsertError } = await db.from('messages').insert({
             conversation_id: conversationId,
             role: 'user',
-            content: userMessage.content,
+            content: sanitizeDatabaseText(userMessage.content),
             model: validatedModel,
             order_index: userMessageOrderIndex,
             client_message_id: clientMessageId || null,
@@ -681,11 +687,11 @@ RULES FOR USING THESE RESULTS:
               name: att.name || 'unknown',
               type: att.type || 'document',
               mimeType: att.mimeType,
-              textContent: att.textContent || extractedDocTexts.get(att.name) || undefined,
+              textContent: sanitizeDatabaseText(att.textContent || extractedDocTexts.get(att.name) || undefined),
               processingStatus: attachmentProcessingStatuses.get(att.name),
               ocrStatus: attachmentProcessingStatuses.get(att.name) === 'needs_ocr' ? 'needs_ocr' : undefined,
-              storageProvider: att.storageProvider || att.storage_provider,
-              storageKey: att.storageKey || att.storage_key,
+              storageProvider: att.storageProvider || (att as any).storage_provider,
+              storageKey: att.storageKey || (att as any).storage_key,
               storagePath: att.storagePath,
               bucket: att.bucket,
               url: att.url,
@@ -790,7 +796,7 @@ RULES FOR USING THESE RESULTS:
             // Each save is awaited sequentially to prevent race conditions
             if (contentStarted && conversationId && assistantMessageId && Date.now() - lastSaveTime > 800) {
               lastSaveTime = Date.now()
-              const partialContent = fullResponse
+              const partialContent = sanitizeDatabaseText(fullResponse)
               if (partialContent.length > lastSavedLength) {
                 // Await the previous partial save before starting a new one
                 if (pendingPartialSave) {
@@ -819,7 +825,7 @@ RULES FOR USING THESE RESULTS:
 
           // Save completed response — this is the authoritative final content
           if (conversationId && assistantMessageId) {
-            const finalContent = fullResponse || '[Empty response]'
+            const finalContent = sanitizeDatabaseText(fullResponse) || '[Empty response]'
             const finalPayload = { content: finalContent, status: 'completed', updated_at: new Date().toISOString() }
 
             try {
@@ -855,7 +861,7 @@ RULES FOR USING THESE RESULTS:
                   }
 
                   if (latestUserMessage.content.length > 1500 && savedUserMessageId) {
-                    await chunkLongMessage(db, user.id, conversationId!, savedUserMessageId, latestUserMessage.content, 'message')
+                    await chunkLongMessage(db, user.id, conversationId!, savedUserMessageId, sanitizeDatabaseText(latestUserMessage.content), 'message')
                   }
 
                   if (userMessage.attachments && userMessage.attachments.length > 0 && savedUserMessageId) {
@@ -864,11 +870,11 @@ RULES FOR USING THESE RESULTS:
                         name: att.name || 'unknown',
                         type: att.type || 'document',
                         mimeType: att.mimeType,
-                        textContent: att.textContent || extractedDocTexts.get(att.name) || undefined,
+                        textContent: sanitizeDatabaseText(att.textContent || extractedDocTexts.get(att.name) || undefined),
                         processingStatus: attachmentProcessingStatuses.get(att.name),
                         ocrStatus: attachmentProcessingStatuses.get(att.name) === 'needs_ocr' ? 'needs_ocr' : undefined,
-                        storageProvider: att.storageProvider || att.storage_provider,
-                        storageKey: att.storageKey || att.storage_key,
+                        storageProvider: att.storageProvider || (att as any).storage_provider,
+                        storageKey: att.storageKey || (att as any).storage_key,
                         storagePath: att.storagePath,
                         bucket: att.bucket,
                         url: att.url,
@@ -901,7 +907,7 @@ RULES FOR USING THESE RESULTS:
             if (pendingPartialSave) {
               await pendingPartialSave.catch(() => {})
             }
-            const errorContent = fullResponse || `[Error: ${err.message}]`
+            const errorContent = sanitizeDatabaseText(fullResponse || `[Error: ${err.message}]`)
             const errorStatus = fullResponse ? 'completed' : 'error'
             try {
               await db.from('messages')
