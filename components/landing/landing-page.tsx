@@ -155,8 +155,8 @@ export function LandingPage() {
           {[
             {
               icon: <Sparkles className="h-6 w-6" />,
-              title: 'Claude-Powered Chat',
-              description: 'Advanced Claude Opus 4.6 model for intelligent responses',
+              title: 'Top AI Models',
+              description: 'Switch between leading models like Claude, ChatGPT, and Gemini for every workflow',
               color: 'from-purple-500 to-violet-600',
               delay: 0,
             },
@@ -190,8 +190,8 @@ export function LandingPage() {
             },
             {
               icon: <Crown className="h-6 w-6" />,
-              title: 'Credit System',
-              description: 'Usage-based credits with flexible allocation',
+              title: 'Unlimited Credits',
+              description: 'Keep working without usage caps or credit limits getting in the way',
               color: 'from-yellow-500 to-orange-500',
               delay: 0.5,
             },
