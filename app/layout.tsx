@@ -11,8 +11,8 @@ export const metadata: Metadata = {
   description: "Premium multi-model AI chat platform aggregating Claude, Gemini, and ChatGPT",
   keywords: "AI, ChatGPT, Claude, Gemini, AI Chat, Multi-model AI",
   icons: {
-    icon: "/logo.png",
-    apple: "/logo.png",
+    icon: "/newlogo.png",
+    apple: "/newlogo.png",
   },
 }
 
