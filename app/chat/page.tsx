@@ -898,9 +898,13 @@ CODE_HERE
 \`\`\`
 
 Rules:
-- Use language values: html, tsx, jsx, javascript, css, python, markdown, text, docx.
+- Use language values: html, tsx, jsx, javascript, css, python, markdown, text, docx, xlsx, pptx, gdoc, gsheet, gslides, canva.
 - For complete webpages/previews, prefer a full single-file HTML document with inline CSS and JS.
 - For Microsoft Word documents, use artifact:docx:Title and put clean markdown/plain text inside. The app will convert it into a downloadable .docx file.
+- For Excel or Google Sheets, use artifact:xlsx:Title or artifact:gsheet:Title and put CSV/markdown-table content inside. The app will convert it into a downloadable .xlsx file.
+- For PowerPoint or Google Slides, use artifact:pptx:Title or artifact:gslides:Title and separate slides with --- lines. The app will convert it into a downloadable .pptx file.
+- For Google Docs, use artifact:gdoc:Title and put clean markdown/plain text inside. The app will convert it into a downloadable .docx file.
+- For Canva-style designs, use artifact:canva:Title and put complete HTML/CSS inside. The app previews and downloads it as .html because Canva has no open native file format.
 - Do NOT output raw HTML outside the artifact block.
 - Do NOT include secrets, API keys, or env vars.
 - If no artifact is needed, answer normally.

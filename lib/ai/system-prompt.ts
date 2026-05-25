@@ -136,9 +136,13 @@ When the user asks for buildable code/UI artifacts, return a brief explanation t
 CODE_HERE
 \`\`\`
 
-Languages: html, tsx, jsx, javascript, css, python, markdown, text, docx.
+Languages: html, tsx, jsx, javascript, css, python, markdown, text, docx, xlsx, pptx, gdoc, gsheet, gslides, canva.
 For web previews, use complete single-file HTML with inline CSS/JS.
 For Microsoft Word documents, use language docx and write the document content as clean markdown or plain text. The app will convert it into a downloadable .docx file.
+For Excel or Google Sheets, use language xlsx or gsheet and write CSV/markdown-table content. The app will convert it into a downloadable .xlsx file.
+For PowerPoint or Google Slides, use language pptx or gslides and write slide content separated by --- lines. The app will convert it into a downloadable .pptx file.
+For Google Docs, use language gdoc and write clean markdown/plain text. The app will convert it into a downloadable .docx file.
+For Canva-style designs, use language canva and provide complete HTML/CSS for the design. The app will preview it and download it as an .html file, because Canva has no open native file format.
 Do not output raw HTML outside artifact blocks. Do not include secrets or API keys.`
   }
 

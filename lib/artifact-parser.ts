@@ -5,17 +5,22 @@ const BUILDABLE_KEYWORDS = [
   'html', 'css', 'react', 'component', 'game', 'dashboard', 'bracket',
   'calculator', 'app', 'ui', 'mockup', 'page', 'tool', 'generator',
   'form', 'chart', 'graph', 'animation', 'navigation', 'navbar', 'footer',
-  'hero', 'section', 'layout', 'word', 'docx', 'document'
+  'hero', 'section', 'layout', 'word', 'docx', 'document', 'excel', 'xlsx',
+  'spreadsheet', 'sheet', 'sheets', 'powerpoint', 'ppt', 'pptx', 'slides',
+  'presentation', 'google doc', 'google docs', 'google sheet', 'google sheets',
+  'google slides', 'canva', 'deck'
 ]
 
 const SUPPORTED_LANGUAGES = new Set([
-  'html', 'tsx', 'jsx', 'javascript', 'css', 'python', 'markdown', 'text', 'docx'
+  'html', 'tsx', 'jsx', 'javascript', 'css', 'python', 'markdown', 'text',
+  'docx', 'xlsx', 'pptx', 'gdoc', 'gsheet', 'gslides', 'canva'
 ])
 
 function normalizeLanguage(language?: string): Artifact['language'] | null {
   if (!language) return null
 
   const normalized = language.toLowerCase().trim()
+  const aliasKey = normalized.replace(/[\s-]+/g, '_')
   const aliases: Record<string, Artifact['language']> = {
     htm: 'html',
     js: 'javascript',
@@ -28,9 +33,26 @@ function normalizeLanguage(language?: string): Artifact['language'] | null {
     doc: 'docx',
     word: 'docx',
     document: 'docx',
+    docs: 'gdoc',
+    google_doc: 'gdoc',
+    google_docs: 'gdoc',
+    excel: 'xlsx',
+    spreadsheet: 'xlsx',
+    sheet: 'gsheet',
+    sheets: 'gsheet',
+    google_sheet: 'gsheet',
+    google_sheets: 'gsheet',
+    powerpoint: 'pptx',
+    ppt: 'pptx',
+    presentation: 'pptx',
+    slide: 'pptx',
+    slides: 'gslides',
+    google_slides: 'gslides',
+    deck: 'pptx',
+    design: 'canva',
   }
 
-  const languageName = aliases[normalized] || normalized
+  const languageName = aliases[aliasKey] || aliases[normalized] || normalized
   return SUPPORTED_LANGUAGES.has(languageName)
     ? languageName as Artifact['language']
     : null

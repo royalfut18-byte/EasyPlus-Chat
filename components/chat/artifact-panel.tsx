@@ -21,6 +21,8 @@ interface ArtifactPanelProps {
 const MIN_WIDTH = 380
 const MAX_WIDTH_PERCENT = 0.75
 const DOCX_MIME_TYPE = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+const XLSX_MIME_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+const PPTX_MIME_TYPE = 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
 
 function escapeXml(value: string): string {
   return value
@@ -71,7 +73,7 @@ function encodeText(value: string): Uint8Array {
   return new TextEncoder().encode(value)
 }
 
-function createZip(files: Array<{ name: string; content: string }>): Blob {
+function createZip(files: Array<{ name: string; content: string }>, mimeType: string): Blob {
   const output: number[] = []
   const centralDirectory: number[] = []
 
@@ -127,7 +129,7 @@ function createZip(files: Array<{ name: string; content: string }>): Blob {
   writeUint32(output, centralDirectoryOffset)
   writeUint16(output, 0)
 
-  return new Blob([new Uint8Array(output)], { type: DOCX_MIME_TYPE })
+  return new Blob([new Uint8Array(output)], { type: mimeType })
 }
 
 function paragraphXml(line: string): string {
@@ -142,6 +144,208 @@ function paragraphXml(line: string): string {
   const prefix = bulletMatch ? '- ' : ''
 
   return `<w:p><w:r><w:rPr>${bold}${size}</w:rPr><w:t xml:space="preserve">${escapeXml(prefix + text)}</w:t></w:r></w:p>`
+}
+
+function parseDelimitedRows(content: string): string[][] {
+  const trimmed = content.trim()
+  const lines = trimmed.split(/\r?\n/).map(line => line.trim()).filter(Boolean)
+  const tableLines = lines.filter(line => line.includes('|'))
+
+  if (tableLines.length >= 2) {
+    return tableLines
+      .filter(line => !/^\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?$/.test(line))
+      .map(line => line.replace(/^\|/, '').replace(/\|$/, '').split('|').map(cell => cell.trim()))
+      .filter(row => row.length > 0)
+  }
+
+  return lines.map(line => {
+    const delimiter = line.includes('\t') ? '\t' : ','
+    return line.split(delimiter).map(cell => cell.trim())
+  })
+}
+
+function columnName(index: number): string {
+  let name = ''
+  let current = index + 1
+  while (current > 0) {
+    const remainder = (current - 1) % 26
+    name = String.fromCharCode(65 + remainder) + name
+    current = Math.floor((current - 1) / 26)
+  }
+  return name
+}
+
+function createXlsxBlob(title: string, content: string): Blob {
+  const rows = parseDelimitedRows(content)
+  const safeRows = rows.length > 0 ? rows : [[title], [content]]
+  const sheetData = safeRows.map((row, rowIndex) => {
+    const cells = row.map((cell, cellIndex) => {
+      const ref = `${columnName(cellIndex)}${rowIndex + 1}`
+      return `<c r="${ref}" t="inlineStr"><is><t>${escapeXml(cell)}</t></is></c>`
+    }).join('')
+    return `<row r="${rowIndex + 1}">${cells}</row>`
+  }).join('')
+
+  return createZip([
+    {
+      name: '[Content_Types].xml',
+      content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+</Types>`,
+    },
+    {
+      name: '_rels/.rels',
+      content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`,
+    },
+    {
+      name: 'xl/workbook.xml',
+      content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="${escapeXml(title.substring(0, 31) || 'Sheet1')}" sheetId="1" r:id="rId1"/></sheets>
+</workbook>`,
+    },
+    {
+      name: 'xl/_rels/workbook.xml.rels',
+      content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+</Relationships>`,
+    },
+    {
+      name: 'xl/worksheets/sheet1.xml',
+      content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData>${sheetData}</sheetData>
+</worksheet>`,
+    },
+  ], XLSX_MIME_TYPE)
+}
+
+function slideXml(title: string, body: string): string {
+  const bodyText = body.split(/\r?\n/).map(line => line.trim()).filter(Boolean).join('\n')
+
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">
+  <p:cSld>
+    <p:spTree>
+      <p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr>
+      <p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr>
+      <p:sp>
+        <p:nvSpPr><p:cNvPr id="2" name="Title"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr>
+        <p:spPr><a:xfrm><a:off x="685800" y="457200"/><a:ext cx="7772400" cy="914400"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr>
+        <p:txBody><a:bodyPr/><a:lstStyle/><a:p><a:r><a:rPr lang="en-US" sz="3200" b="1"/><a:t>${escapeXml(title)}</a:t></a:r></a:p></p:txBody>
+      </p:sp>
+      <p:sp>
+        <p:nvSpPr><p:cNvPr id="3" name="Body"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr>
+        <p:spPr><a:xfrm><a:off x="685800" y="1600200"/><a:ext cx="7772400" cy="4267200"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr>
+        <p:txBody><a:bodyPr wrap="square"/><a:lstStyle/><a:p><a:r><a:rPr lang="en-US" sz="1800"/><a:t>${escapeXml(bodyText)}</a:t></a:r></a:p></p:txBody>
+      </p:sp>
+    </p:spTree>
+  </p:cSld>
+  <p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr>
+</p:sld>`
+}
+
+function parseSlides(title: string, content: string): Array<{ title: string; body: string }> {
+  const parts = content.split(/\n\s*---\s*\n/g).map(part => part.trim()).filter(Boolean)
+  const slides = parts.length > 0 ? parts : [content]
+
+  return slides.map((part, index) => {
+    const lines = part.split(/\r?\n/)
+    const first = lines.find(line => line.trim()) || `${title} ${index + 1}`
+    const heading = first.replace(/^#+\s*/, '').trim()
+    const body = lines.slice(lines.indexOf(first) + 1).join('\n').trim() || part
+    return {
+      title: heading || `${title} ${index + 1}`,
+      body,
+    }
+  })
+}
+
+function createPptxBlob(title: string, content: string): Blob {
+  const slides = parseSlides(title, content)
+  const slideOverrides = slides.map((_, index) =>
+    `<Override PartName="/ppt/slides/slide${index + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>`
+  ).join('')
+  const slideIds = slides.map((_, index) =>
+    `<p:sldId id="${256 + index}" r:id="rId${index + 1}"/>`
+  ).join('')
+  const slideRelationships = slides.map((_, index) =>
+    `<Relationship Id="rId${index + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide${index + 1}.xml"/>`
+  ).join('')
+
+  return createZip([
+    {
+      name: '[Content_Types].xml',
+      content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/>
+  ${slideOverrides}
+</Types>`,
+    },
+    {
+      name: '_rels/.rels',
+      content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="ppt/presentation.xml"/>
+</Relationships>`,
+    },
+    {
+      name: 'ppt/presentation.xml',
+      content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<p:presentation xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <p:sldIdLst>${slideIds}</p:sldIdLst>
+  <p:sldSz cx="9144000" cy="5143500" type="screen16x9"/>
+  <p:notesSz cx="6858000" cy="9144000"/>
+</p:presentation>`,
+    },
+    {
+      name: 'ppt/_rels/presentation.xml.rels',
+      content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  ${slideRelationships}
+</Relationships>`,
+    },
+    ...slides.map((slide, index) => ({
+      name: `ppt/slides/slide${index + 1}.xml`,
+      content: slideXml(slide.title, slide.body),
+    })),
+  ], PPTX_MIME_TYPE)
+}
+
+function createCanvaHtml(title: string, content: string): string {
+  const trimmed = content.trim()
+  if (/^<!DOCTYPE\s+html/i.test(trimmed) || /<html[\s>]/i.test(trimmed)) return trimmed
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>${escapeXml(title)}</title>
+  <style>
+    body { margin: 0; min-height: 100vh; font-family: Arial, sans-serif; background: #111827; color: white; display: grid; place-items: center; }
+    main { width: min(900px, calc(100vw - 48px)); background: linear-gradient(135deg, #2563eb, #7c3aed); border-radius: 24px; padding: 48px; box-shadow: 0 24px 80px rgba(0,0,0,.35); }
+    h1 { font-size: clamp(36px, 6vw, 72px); margin: 0 0 24px; }
+    pre { white-space: pre-wrap; font: inherit; line-height: 1.6; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>${escapeXml(title)}</h1>
+    <pre>${escapeXml(content)}</pre>
+  </main>
+</body>
+</html>`
 }
 
 function createDocxBlob(title: string, content: string): Blob {
@@ -181,7 +385,7 @@ function createDocxBlob(title: string, content: string): Blob {
       name: 'word/document.xml',
       content: documentXml,
     },
-  ])
+  ], DOCX_MIME_TYPE)
 }
 
 export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthChange }: ArtifactPanelProps) {
@@ -267,7 +471,7 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
     })
   }
 
-  const canPreview = artifact?.language === 'html'
+  const canPreview = artifact?.language === 'html' || artifact?.language === 'canva'
   const isReact = artifact?.language === 'tsx' || artifact?.language === 'jsx'
   const currentTab = canPreview || isReact ? activeTab : 'code'
 
@@ -299,6 +503,12 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
     if (lang === 'css') return 'CSS'
     if (lang === 'markdown') return 'Markdown'
     if (lang === 'docx') return 'Microsoft Word'
+    if (lang === 'gdoc') return 'Google Docs'
+    if (lang === 'xlsx') return 'Excel'
+    if (lang === 'gsheet') return 'Google Sheets'
+    if (lang === 'pptx') return 'PowerPoint'
+    if (lang === 'gslides') return 'Google Slides'
+    if (lang === 'canva') return 'Canva-style HTML'
 
     return lang.toUpperCase()
   }
@@ -462,7 +672,7 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
                 <iframe
                   ref={iframeRef}
                   key={refreshKey}
-                  srcDoc={artifact.code}
+                  srcDoc={artifact.language === 'canva' ? createCanvaHtml(artifact.title, artifact.code) : artifact.code}
                   title={artifact.title}
                   sandbox="allow-scripts allow-forms allow-modals allow-popups allow-pointer-lock"
                   className="w-full h-full border-0 bg-white pointer-events-auto"
@@ -497,7 +707,7 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
                 </div>
                 <h4 className="text-lg font-semibold text-white">Preview Not Available</h4>
                 <p className="text-sm text-gray-400">
-                  Preview is only available for HTML artifacts. Switch to the Code tab to view the {artifact.language} code.
+                  Preview is only available for HTML and Canva-style artifacts. Switch to the Code tab to view the {artifact.language} content.
                 </p>
               </div>
             </div>
@@ -510,8 +720,10 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
                   ? 'tsx'
                   : artifact.language === 'javascript'
                     ? 'javascript'
-                    : artifact.language === 'docx'
+                    : ['docx', 'gdoc', 'xlsx', 'gsheet', 'pptx', 'gslides'].includes(artifact.language)
                       ? 'text'
+                      : artifact.language === 'canva'
+                        ? 'html'
                       : artifact.language
               }
               style={vscDarkPlus}
@@ -539,7 +751,7 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
             variant="ghost"
           >
             <Copy className="h-4 w-4 mr-2" />
-            {artifact.language === 'docx' ? 'Copy Content' : 'Copy Code'}
+            {['docx', 'gdoc', 'xlsx', 'gsheet', 'pptx', 'gslides'].includes(artifact.language) ? 'Copy Content' : 'Copy Code'}
           </Button>
           <Button
             onClick={handleDownload}
@@ -575,14 +787,26 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
       markdown: 'md',
       text: 'txt',
       docx: 'docx',
+      gdoc: 'docx',
+      xlsx: 'xlsx',
+      gsheet: 'xlsx',
+      pptx: 'pptx',
+      gslides: 'pptx',
+      canva: 'html',
     }
 
     const extension = extensions[artifact.language] || 'txt'
     const filename = `${artifact.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.${extension}`
 
-    const blob = artifact.language === 'docx'
+    const blob = artifact.language === 'docx' || artifact.language === 'gdoc'
       ? createDocxBlob(artifact.title, artifact.code)
-      : new Blob([artifact.code], { type: 'text/plain' })
+      : artifact.language === 'xlsx' || artifact.language === 'gsheet'
+        ? createXlsxBlob(artifact.title, artifact.code)
+        : artifact.language === 'pptx' || artifact.language === 'gslides'
+          ? createPptxBlob(artifact.title, artifact.code)
+          : artifact.language === 'canva'
+            ? new Blob([createCanvaHtml(artifact.title, artifact.code)], { type: 'text/html' })
+            : new Blob([artifact.code], { type: 'text/plain' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
