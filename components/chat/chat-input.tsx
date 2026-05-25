@@ -88,6 +88,7 @@ export function ChatInput({ onSend, disabled, isLoading, conversationId, reasoni
   const [isDragging, setIsDragging] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const dragDepthRef = useRef(0)
   const wasUnavailableRef = useRef(false)
   const { uploadToR2, maxUploadMB } = useR2Upload()
 
@@ -293,25 +294,115 @@ export function ChatInput({ onSend, disabled, isLoading, conversationId, reasoni
     }
   }
 
-  const handleDragOver = (e: React.DragEvent) => {
+  const hasDraggedFiles = (dataTransfer: DataTransfer | null): boolean => {
+    if (!dataTransfer) return false
+    return Array.from(dataTransfer.types || []).includes('Files')
+  }
+
+  const handleDragEnter = (e: React.DragEvent) => {
+    if (!hasDraggedFiles(e.dataTransfer)) return
     e.preventDefault()
+    e.stopPropagation()
+    dragDepthRef.current += 1
+    setIsDragging(true)
+  }
+
+  const handleDragOver = (e: React.DragEvent) => {
+    if (!hasDraggedFiles(e.dataTransfer)) return
+    e.preventDefault()
+    e.stopPropagation()
+    e.dataTransfer.dropEffect = 'copy'
     setIsDragging(true)
   }
 
   const handleDragLeave = (e: React.DragEvent) => {
+    if (!hasDraggedFiles(e.dataTransfer)) return
     e.preventDefault()
-    setIsDragging(false)
+    e.stopPropagation()
+    dragDepthRef.current = Math.max(0, dragDepthRef.current - 1)
+    if (dragDepthRef.current === 0) {
+      setIsDragging(false)
+    }
   }
 
   const handleDrop = async (e: React.DragEvent) => {
+    if (!hasDraggedFiles(e.dataTransfer)) return
     e.preventDefault()
+    e.stopPropagation()
+    dragDepthRef.current = 0
     setIsDragging(false)
+
+    if (isComposerUnavailable) {
+      toast({
+        title: 'Upload unavailable',
+        description: 'Wait for the current response to finish before adding files.',
+        variant: 'destructive',
+      })
+      return
+    }
 
     const files = e.dataTransfer?.files
     if (files && files.length > 0) {
       await handleFileSelect(files)
     }
   }
+
+  useEffect(() => {
+    const handleWindowDragEnter = (event: DragEvent) => {
+      if (!hasDraggedFiles(event.dataTransfer)) return
+      event.preventDefault()
+      dragDepthRef.current += 1
+      setIsDragging(true)
+    }
+
+    const handleWindowDragOver = (event: DragEvent) => {
+      if (!hasDraggedFiles(event.dataTransfer)) return
+      event.preventDefault()
+      if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy'
+      setIsDragging(true)
+    }
+
+    const handleWindowDragLeave = (event: DragEvent) => {
+      if (!hasDraggedFiles(event.dataTransfer)) return
+      event.preventDefault()
+      dragDepthRef.current = Math.max(0, dragDepthRef.current - 1)
+      if (dragDepthRef.current === 0) {
+        setIsDragging(false)
+      }
+    }
+
+    const handleWindowDrop = async (event: DragEvent) => {
+      if (!hasDraggedFiles(event.dataTransfer)) return
+      event.preventDefault()
+      dragDepthRef.current = 0
+      setIsDragging(false)
+
+      if (isComposerUnavailable) {
+        toast({
+          title: 'Upload unavailable',
+          description: 'Wait for the current response to finish before adding files.',
+          variant: 'destructive',
+        })
+        return
+      }
+
+      if (event.dataTransfer?.files?.length) {
+        await handleFileSelect(event.dataTransfer.files)
+      }
+    }
+
+    window.addEventListener('dragenter', handleWindowDragEnter)
+    window.addEventListener('dragover', handleWindowDragOver)
+    window.addEventListener('dragleave', handleWindowDragLeave)
+    window.addEventListener('drop', handleWindowDrop)
+
+    return () => {
+      window.removeEventListener('dragenter', handleWindowDragEnter)
+      window.removeEventListener('dragover', handleWindowDragOver)
+      window.removeEventListener('dragleave', handleWindowDragLeave)
+      window.removeEventListener('drop', handleWindowDrop)
+    }
+  })
 
   const removeAttachment = (index: number) => {
     setAttachments((prev) => prev.filter((_, i) => i !== index))
@@ -320,16 +411,22 @@ export function ChatInput({ onSend, disabled, isLoading, conversationId, reasoni
   return (
     <div
       className="sticky bottom-0 border-t border-white/[0.06] bg-[#08070d]/90 backdrop-blur-sm md:backdrop-blur-xl p-3 md:p-4"
+      onDragEnter={handleDragEnter}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
       {isDragging && (
-        <div className="absolute inset-0 bg-violet-500/5 backdrop-blur-md z-[60] flex items-center justify-center border-2 border-dashed border-violet-500/30 rounded-2xl m-3 md:m-4 pointer-events-none">
-          <div className="text-center">
-            <Paperclip className="h-12 w-12 text-violet-400 mx-auto mb-2" />
-            <p className="text-white font-medium">Drop files here</p>
-            <p className="text-gray-400 text-sm mt-1">Images, PDFs, TXT, CSV, JSON, MD</p>
+        <div className="fixed inset-0 z-[80] bg-violet-500/10 backdrop-blur-md flex items-center justify-center p-4 pointer-events-none">
+          <div className="w-full max-w-lg rounded-3xl border-2 border-dashed border-violet-400/60 bg-[#0b0a12]/95 p-8 text-center shadow-2xl shadow-violet-950/40">
+            <Paperclip className="h-12 w-12 text-violet-300 mx-auto mb-3" />
+            <p className="text-lg font-semibold text-white">Drop files to attach</p>
+            <p className="text-gray-400 text-sm mt-1">
+              PDFs, images, Word, Excel, PowerPoint, text, CSV, JSON, ZIP, audio, and video
+            </p>
+            <p className="text-xs text-gray-500 mt-3">
+              Up to {MAX_FILES} files, {maxUploadMB}MB each
+            </p>
           </div>
         </div>
       )}
