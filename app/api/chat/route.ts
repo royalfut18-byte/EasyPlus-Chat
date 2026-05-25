@@ -4,7 +4,7 @@ import { streamBedrockResponse, getModelCost } from '@/lib/ai/bedrock'
 import { streamGeminiResponse } from '@/lib/ai/gemini'
 import { searchWeb, buildWebSearchQuery } from '@/lib/ai/web-search'
 import { buildSystemPrompt, isTimeSensitiveQuery, detectQueryType } from '@/lib/ai/system-prompt'
-import { buildDocumentContext } from '@/lib/ai/document-extract'
+import { buildDocumentContext, isComprehensiveDocumentRequest } from '@/lib/ai/document-extract'
 import { parsePageRangeRequest, parseQuestionNumberRequest } from '@/lib/ai/document-requests'
 import { compactPreview, extractQuestionNumberExcerpt } from '@/lib/ai/document-question-retrieval'
 import { ocrAttachmentPages, findLatestPdfAttachmentForOcr } from '@/lib/ai/pdf-ocr'
@@ -303,12 +303,15 @@ RULES FOR USING THESE RESULTS:
     const attachmentProcessingStatuses = new Map<string, string>()
     const currentDocumentFileNames: string[] = []
     const currentDocumentQuestionMatches: string[] = []
+    const comprehensiveDocumentRequest = isComprehensiveDocumentRequest(latestUserMessage.content)
 
     if (userMessage.attachments && userMessage.attachments.length > 0) {
       const docAttachments = userMessage.attachments.filter((a: any) => a.type === 'document')
       if (docAttachments.length > 0) {
         try {
-          const result = await buildDocumentContext(docAttachments)
+          const result = await buildDocumentContext(docAttachments, {
+            comprehensive: comprehensiveDocumentRequest,
+          })
           documentContext = result.context
           for (const [name, text] of result.extractedTexts) {
             extractedDocTexts.set(name, text)
@@ -335,6 +338,7 @@ RULES FOR USING THESE RESULTS:
           currentDocumentFileNames.push(...docAttachments.map((att: any) => att.name).filter(Boolean))
           console.log('[Chat API] Document context extracted:', {
             length: documentContext.length,
+            comprehensiveDocumentRequest,
             detectedQuestionNumber,
             targetedMatches: currentDocumentQuestionMatches.map((match) => compactPreview(match)),
           })
@@ -374,7 +378,9 @@ RULES FOR USING THESE RESULTS:
 3. For multiple choice questions, restate ALL options from the document before answering.
 4. Your final answer MUST match exactly one of the listed options.
 5. If the document does not contain enough information, say so. Do not invent details.
-6. If values seem unclear or corrupted, re-check the source before calculating.`,
+6. If values seem unclear or corrupted, re-check the source before calculating.
+7. If any attached document says extraction failed, OCR is needed, or content was truncated, do NOT claim you extracted every item from that file. State the limitation.
+8. For "extract all/every" requests, only include items actually present in the supplied document text. Never fill gaps from memory or likely past exam patterns.`,
       }
       messagesToSend = [...messagesToSend.slice(0, -1), docInstruction, latestUserMessage] as ChatMessage[]
     } else if (historicalAttachmentContext) {

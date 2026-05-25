@@ -1,6 +1,8 @@
 import type { ChatAttachment } from '@/types/models'
 import { sanitizeDatabaseText, sanitizeJsonForDatabase } from '@/lib/supabase/sanitize-db-text'
 
+const MAX_ATTACHMENT_JSON_TEXT_CHARS = 20000
+
 export function sanitizeAttachmentsForStorage(
   attachments?: ChatAttachment[],
   extractedTexts?: Map<string, string>,
@@ -21,9 +23,9 @@ export function sanitizeAttachmentsForStorage(
     if (a.storageProvider) safe.storageProvider = sanitizeDatabaseText(a.storageProvider) as ChatAttachment['storageProvider']
     if (a.storageKey) safe.storageKey = sanitizeDatabaseText(a.storageKey)
     // Persist extracted text so context survives across messages
-    if (a.textContent) safe.textContent = sanitizeDatabaseText(a.textContent)
+    if (a.textContent) safe.textContent = sanitizeDatabaseText(a.textContent).substring(0, MAX_ATTACHMENT_JSON_TEXT_CHARS)
     if (extractedTexts && extractedTexts.has(a.name)) {
-      safe.textContent = sanitizeDatabaseText(extractedTexts.get(a.name))
+      safe.textContent = sanitizeDatabaseText(extractedTexts.get(a.name)).substring(0, MAX_ATTACHMENT_JSON_TEXT_CHARS)
     }
     if (processingStatuses && processingStatuses.has(a.name)) {
       safe.processingStatus = sanitizeDatabaseText(processingStatuses.get(a.name))

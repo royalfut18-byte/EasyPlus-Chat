@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { ChatMessage } from '@/types/models'
 import type { ChatAttachment } from '@/types/models'
-import { extractTextFromAttachment } from '@/lib/ai/document-extract'
+import { extractTextFromAttachment, isComprehensiveDocumentRequest } from '@/lib/ai/document-extract'
 import { chunkLongMessage, MAX_ATTACHMENT_EXTRACTED_TEXT_CHARS, MEMORY_CHUNK_SIZE, saveAttachmentMemory } from '@/lib/ai/conversation-summary'
 import { isDocumentFollowUpRequest, parsePageRangeRequest, parseQuestionNumberRequest } from '@/lib/ai/document-requests'
 import { compactPreview, containsQuestionNumber, extractQuestionNumberExcerpt } from '@/lib/ai/document-question-retrieval'
@@ -557,7 +557,8 @@ export async function buildContext(
 
   // 3. Load attachment context for this conversation, including message JSON
   // fallback so follow-ups do not depend on only the latest message payload.
-  const documentFollowUp = isDocumentFollowUpRequest(latestUserMessage)
+  const comprehensiveDocumentRequest = isComprehensiveDocumentRequest(latestUserMessage)
+  const documentFollowUp = isDocumentFollowUpRequest(latestUserMessage) || comprehensiveDocumentRequest
   const requestedQuestionNumber = questionNumberForMessage(latestUserMessage, currentMessages)
   result.debugInfo.questionNumberDetected = requestedQuestionNumber
   let historicalAttachments: HistoricalAttachment[] = []
@@ -625,9 +626,11 @@ export async function buildContext(
         if (att.visionSummary) summary += `Visual: ${att.visionSummary}\n`
         if (att.ocrText) summary += `Text found: ${att.ocrText.substring(0, 500)}\n`
         if (extractedText && !att.ocrText) {
-          const maxChars = documentFollowUp && att.fileType === 'document'
-            ? FOLLOW_UP_ATTACHMENT_CONTEXT_CHARS
-            : DEFAULT_ATTACHMENT_CONTEXT_CHARS
+          const maxChars = comprehensiveDocumentRequest && att.fileType === 'document'
+            ? FOLLOW_UP_ATTACHMENT_CONTEXT_CHARS * 2
+            : documentFollowUp && att.fileType === 'document'
+              ? FOLLOW_UP_ATTACHMENT_CONTEXT_CHARS
+              : DEFAULT_ATTACHMENT_CONTEXT_CHARS
           summary += `Content: ${extractedText.substring(0, maxChars)}\n`
         }
         if (att.importantDetails && Object.keys(att.importantDetails).length > 0) {
@@ -775,7 +778,7 @@ export async function buildContext(
         }
 
         if (documentFollowUp && chunk.source_type === 'attachment') {
-          score += 30
+          score += comprehensiveDocumentRequest ? 80 : 30
           reasons.push('attachment')
         }
 
@@ -843,6 +846,7 @@ export async function buildContext(
         }
       }
 
+      const scoredLimit = requestedQuestionNumber ? 10 : comprehensiveDocumentRequest ? 60 : 8
       const scored = Array.from(scoredMap.values())
         .sort((a, b) => {
           if (b.score !== a.score) return b.score - a.score
@@ -851,7 +855,7 @@ export async function buildContext(
           if (fileA !== fileB) return fileA.localeCompare(fileB)
           return (a.chunk.chunk_index || 0) - (b.chunk.chunk_index || 0)
         })
-        .slice(0, requestedQuestionNumber ? 10 : 8)
+        .slice(0, scoredLimit)
 
       for (const { chunk, reason } of scored) {
         if (remainingBudget < 300) break
@@ -859,7 +863,9 @@ export async function buildContext(
         const isQuestionMatch = requestedQuestionNumber && reason.includes(`question-${requestedQuestionNumber}`)
         const label = isQuestionMatch
           ? `[Exact document match for question ${requestedQuestionNumber}${fileName}]\n${chunk.content.substring(0, 1800)}`
-          : `[Relevant document chunk${fileName}]\n${(chunk.summary || chunk.content).substring(0, 1400)}`
+          : comprehensiveDocumentRequest
+            ? `[Document extraction chunk${fileName}]\n${chunk.content.substring(0, 1800)}`
+            : `[Relevant document chunk${fileName}]\n${(chunk.summary || chunk.content).substring(0, 1400)}`
         const tokens = estimateTokens(label)
         if (tokens < remainingBudget) {
           result.relevantChunks.push(label)

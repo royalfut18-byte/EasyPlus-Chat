@@ -1,7 +1,20 @@
 import type { ChatAttachment } from '@/types/models'
 import { isR2Configured, createPresignedDownloadUrl } from '@/lib/storage/r2'
+import { inflateRawSync } from 'node:zlib'
 
-const MAX_DOCUMENT_CHARS = 16000
+const DEFAULT_MAX_DOCUMENT_CHARS = 60000
+const COMPREHENSIVE_MAX_DOCUMENT_CHARS = 220000
+const PER_DOCUMENT_PREVIEW_CHARS = 90000
+
+interface DocumentContextOptions {
+  comprehensive?: boolean
+}
+
+export function isComprehensiveDocumentRequest(message: string): boolean {
+  const lower = message.toLowerCase()
+  return /\b(all|every|entire|complete|full|each|don't miss|dont miss|extract|list|go through|scan)\b/.test(lower) &&
+    /\b(pdf|document|file|paper|papers|question|questions|multiple choice|section|extract|syllabus|marketing)\b/.test(lower)
+}
 
 function decodeBase64DataUrl(dataUrl: string): string {
   const base64Match = dataUrl.match(/^data:[^;]+;base64,(.+)$/)
@@ -32,13 +45,8 @@ function extractTextFromMarkdown(dataUrl: string): string {
   return decodeBase64DataUrl(dataUrl)
 }
 
-async function extractTextFromPdf(dataUrl: string): Promise<string> {
+async function extractTextFromPdfBuffer(buffer: Buffer): Promise<string> {
   try {
-    const base64Match = dataUrl.match(/^data:[^;]+;base64,(.+)$/)
-    if (!base64Match) return '__PDF_EXTRACTION_FAILED__'
-    const buffer = Buffer.from(base64Match[1], 'base64')
-
-    // Import pdf-parse internal lib directly to avoid test-file auto-run in index.js
     const pdfParse = (await import('pdf-parse/lib/pdf-parse.js')).default
     const result = await pdfParse(buffer)
 
@@ -48,9 +56,166 @@ async function extractTextFromPdf(dataUrl: string): Promise<string> {
 
     return result.text
   } catch (err: any) {
+    console.warn('[Document Extract] pdf-parse failed, trying pdfjs:', err.message)
+  }
+
+  try {
+    const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs')
+    const loadingTask = pdfjs.getDocument({
+      data: new Uint8Array(buffer),
+      useWorkerFetch: false,
+      isEvalSupported: false,
+      disableFontFace: true,
+    })
+    const pdf = await loadingTask.promise
+    const pages: string[] = []
+
+    for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) {
+      const page = await pdf.getPage(pageNumber)
+      const textContent = await page.getTextContent()
+      const pageText = (textContent.items || [])
+        .map((item: any) => typeof item?.str === 'string' ? item.str : '')
+        .filter(Boolean)
+        .join(' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+      pages.push(`[Page ${pageNumber}]\n${pageText}`)
+    }
+
+    await pdf.destroy()
+    const text = pages.join('\n\n').trim()
+    return text ? text : '__PDF_NO_TEXT__'
+  } catch (err: any) {
     console.error('[Document Extract] PDF extraction failed:', err.message)
     return '__PDF_EXTRACTION_FAILED__'
   }
+}
+
+async function extractTextFromPdf(dataUrl: string): Promise<string> {
+  const base64Match = dataUrl.match(/^data:[^;]+;base64,(.+)$/)
+  if (!base64Match) return '__PDF_EXTRACTION_FAILED__'
+  return extractTextFromPdfBuffer(Buffer.from(base64Match[1], 'base64'))
+}
+
+function decodeXmlEntities(value: string): string {
+  return value
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+}
+
+function xmlToText(xml: string): string {
+  return decodeXmlEntities(
+    xml
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+  )
+}
+
+function readZipEntries(buffer: Buffer): Map<string, Buffer> {
+  const entries = new Map<string, Buffer>()
+  let eocdOffset = -1
+
+  for (let i = buffer.length - 22; i >= Math.max(0, buffer.length - 65558); i--) {
+    if (buffer.readUInt32LE(i) === 0x06054b50) {
+      eocdOffset = i
+      break
+    }
+  }
+
+  if (eocdOffset < 0) return entries
+
+  const entryCount = buffer.readUInt16LE(eocdOffset + 10)
+  const centralDirectoryOffset = buffer.readUInt32LE(eocdOffset + 16)
+  let offset = centralDirectoryOffset
+
+  for (let i = 0; i < entryCount; i++) {
+    if (buffer.readUInt32LE(offset) !== 0x02014b50) break
+
+    const compressionMethod = buffer.readUInt16LE(offset + 10)
+    const compressedSize = buffer.readUInt32LE(offset + 20)
+    const fileNameLength = buffer.readUInt16LE(offset + 28)
+    const extraLength = buffer.readUInt16LE(offset + 30)
+    const commentLength = buffer.readUInt16LE(offset + 32)
+    const localHeaderOffset = buffer.readUInt32LE(offset + 42)
+    const fileName = buffer.subarray(offset + 46, offset + 46 + fileNameLength).toString('utf-8')
+
+    if (buffer.readUInt32LE(localHeaderOffset) === 0x04034b50) {
+      const localFileNameLength = buffer.readUInt16LE(localHeaderOffset + 26)
+      const localExtraLength = buffer.readUInt16LE(localHeaderOffset + 28)
+      const dataStart = localHeaderOffset + 30 + localFileNameLength + localExtraLength
+      const compressed = buffer.subarray(dataStart, dataStart + compressedSize)
+
+      if (compressionMethod === 0) {
+        entries.set(fileName, compressed)
+      } else if (compressionMethod === 8) {
+        entries.set(fileName, inflateRawSync(compressed))
+      }
+    }
+
+    offset += 46 + fileNameLength + extraLength + commentLength
+  }
+
+  return entries
+}
+
+function extractDocxText(buffer: Buffer): string {
+  const entries = readZipEntries(buffer)
+  const xmlParts = [...entries.entries()]
+    .filter(([name]) => /^word\/(document|header\d+|footer\d+)\.xml$/.test(name))
+    .map(([, data]) => data.toString('utf-8'))
+
+  return xmlParts.map(xmlToText).filter(Boolean).join('\n\n')
+}
+
+function extractXlsxText(buffer: Buffer): string {
+  const entries = readZipEntries(buffer)
+  const sharedStringsXml = entries.get('xl/sharedStrings.xml')?.toString('utf-8') || ''
+  const sharedStrings = [...sharedStringsXml.matchAll(/<si[\s\S]*?<\/si>/g)]
+    .map(match => xmlToText(match[0]))
+
+  const sheets = [...entries.entries()]
+    .filter(([name]) => /^xl\/worksheets\/sheet\d+\.xml$/.test(name))
+    .sort(([a], [b]) => a.localeCompare(b))
+
+  const output: string[] = []
+  for (const [name, data] of sheets) {
+    const xml = data.toString('utf-8')
+    const rows = [...xml.matchAll(/<row[^>]*>([\s\S]*?)<\/row>/g)].map(rowMatch => {
+      const cells = [...rowMatch[1].matchAll(/<c([^>]*)>([\s\S]*?)<\/c>/g)].map(cellMatch => {
+        const attrs = cellMatch[1]
+        const body = cellMatch[2]
+        const value = body.match(/<v>([\s\S]*?)<\/v>/)?.[1] || body.match(/<t[^>]*>([\s\S]*?)<\/t>/)?.[1] || ''
+        if (/\bt="s"/.test(attrs)) {
+          return sharedStrings[Number.parseInt(value, 10)] || ''
+        }
+        return decodeXmlEntities(value)
+      })
+      return cells.join('\t').trim()
+    }).filter(Boolean)
+
+    output.push(`[${name.replace(/^xl\/worksheets\//, '')}]\n${rows.join('\n')}`)
+  }
+
+  return output.join('\n\n')
+}
+
+function extractPptxText(buffer: Buffer): string {
+  const entries = readZipEntries(buffer)
+  const slides = [...entries.entries()]
+    .filter(([name]) => /^ppt\/slides\/slide\d+\.xml$/.test(name))
+    .sort(([a], [b]) => a.localeCompare(b, undefined, { numeric: true }))
+
+  return slides.map(([name, data], index) => {
+    const text = [...data.toString('utf-8').matchAll(/<a:t>([\s\S]*?)<\/a:t>/g)]
+      .map(match => decodeXmlEntities(match[1]))
+      .join('\n')
+      .trim()
+    return `[Slide ${index + 1} - ${name}]\n${text}`
+  }).filter(Boolean).join('\n\n')
 }
 
 async function fetchR2FileAsBuffer(storageKey: string): Promise<Buffer | null> {
@@ -78,15 +243,17 @@ export async function extractTextFromAttachment(attachment: ChatAttachment): Pro
     if (!buffer) return '__MISSING_DATA__'
 
     if (mime === 'application/pdf') {
-      try {
-        const pdfParse = (await import('pdf-parse/lib/pdf-parse.js')).default
-        const result = await pdfParse(buffer)
-        if (!result.text || result.text.trim().length === 0) return '__PDF_NO_TEXT__'
-        return result.text
-      } catch (err: any) {
-        console.error('[Document Extract] R2 PDF extraction failed:', err.message)
-        return '__PDF_EXTRACTION_FAILED__'
-      }
+      return extractTextFromPdfBuffer(buffer)
+    }
+
+    if (mime === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+      return extractDocxText(buffer)
+    }
+    if (mime === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') {
+      return extractXlsxText(buffer)
+    }
+    if (mime === 'application/vnd.openxmlformats-officedocument.presentationml.presentation') {
+      return extractPptxText(buffer)
     }
 
     const textContent = buffer.toString('utf-8')
@@ -119,6 +286,18 @@ export async function extractTextFromAttachment(attachment: ChatAttachment): Pro
     return extractTextFromMarkdown(dataUrl)
   }
 
+  const base64Match = dataUrl.match(/^data:[^;]+;base64,(.+)$/)
+  const buffer = base64Match ? Buffer.from(base64Match[1], 'base64') : null
+  if (buffer && mime === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+    return extractDocxText(buffer)
+  }
+  if (buffer && mime === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') {
+    return extractXlsxText(buffer)
+  }
+  if (buffer && mime === 'application/vnd.openxmlformats-officedocument.presentationml.presentation') {
+    return extractPptxText(buffer)
+  }
+
   return ''
 }
 
@@ -129,10 +308,14 @@ export interface DocumentExtractionResult {
   error?: string
 }
 
-export async function buildDocumentContext(attachments: ChatAttachment[]): Promise<DocumentExtractionResult> {
+export async function buildDocumentContext(
+  attachments: ChatAttachment[],
+  options: DocumentContextOptions = {}
+): Promise<DocumentExtractionResult> {
   const docAttachments = attachments.filter((a) => a.type === 'document')
   if (docAttachments.length === 0) return { context: '', extractedTexts: new Map(), attachmentStatuses: new Map() }
 
+  const maxDocumentChars = options.comprehensive ? COMPREHENSIVE_MAX_DOCUMENT_CHARS : DEFAULT_MAX_DOCUMENT_CHARS
   let totalChars = 0
   const blocks: string[] = []
   const extractedTexts = new Map<string, string>()
@@ -221,7 +404,7 @@ export async function buildDocumentContext(attachments: ChatAttachment[]): Promi
     attachmentStatuses.set(attachment.name, 'ready')
     extractedTexts.set(attachment.name, text)
 
-    const remaining = MAX_DOCUMENT_CHARS - totalChars
+    const remaining = maxDocumentChars - totalChars
     if (remaining <= 0) {
       console.warn('[Document Extract] Total length limit reached')
       blocks.push(
@@ -230,14 +413,15 @@ export async function buildDocumentContext(attachments: ChatAttachment[]): Promi
       break
     }
 
+    const perDocumentLimit = options.comprehensive ? Math.min(PER_DOCUMENT_PREVIEW_CHARS, remaining) : remaining
     let finalText = text
-    if (finalText.length > remaining) {
+    if (finalText.length > perDocumentLimit) {
       console.warn('[Document Extract] Individual document truncated', {
         name: attachment.name,
         original: finalText.length,
-        truncated: remaining,
+        truncated: perDocumentLimit,
       })
-      finalText = finalText.substring(0, remaining) + '\n\n[Document truncated due to length]'
+      finalText = finalText.substring(0, perDocumentLimit) + '\n\n[Document truncated due to length. Full text was still indexed for retrieval if storage is available.]'
     }
 
     totalChars += finalText.length
@@ -247,7 +431,7 @@ export async function buildDocumentContext(attachments: ChatAttachment[]): Promi
       name: attachment.name,
       extractedLength: finalText.length,
       totalSoFar: totalChars,
-      maxAllowed: MAX_DOCUMENT_CHARS,
+      maxAllowed: maxDocumentChars,
     })
   }
 
