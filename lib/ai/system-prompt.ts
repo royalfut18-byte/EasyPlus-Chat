@@ -136,8 +136,9 @@ When the user asks for buildable code/UI artifacts, return a brief explanation t
 CODE_HERE
 \`\`\`
 
-Languages: html, tsx, jsx, javascript, css, python, markdown, text.
+Languages: html, tsx, jsx, javascript, css, python, markdown, text, docx.
 For web previews, use complete single-file HTML with inline CSS/JS.
+For Microsoft Word documents, use language docx and write the document content as clean markdown or plain text. The app will convert it into a downloadable .docx file.
 Do not output raw HTML outside artifact blocks. Do not include secrets or API keys.`
   }
 

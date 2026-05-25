@@ -5,8 +5,36 @@ const BUILDABLE_KEYWORDS = [
   'html', 'css', 'react', 'component', 'game', 'dashboard', 'bracket',
   'calculator', 'app', 'ui', 'mockup', 'page', 'tool', 'generator',
   'form', 'chart', 'graph', 'animation', 'navigation', 'navbar', 'footer',
-  'hero', 'section', 'layout'
+  'hero', 'section', 'layout', 'word', 'docx', 'document'
 ]
+
+const SUPPORTED_LANGUAGES = new Set([
+  'html', 'tsx', 'jsx', 'javascript', 'css', 'python', 'markdown', 'text', 'docx'
+])
+
+function normalizeLanguage(language?: string): Artifact['language'] | null {
+  if (!language) return null
+
+  const normalized = language.toLowerCase().trim()
+  const aliases: Record<string, Artifact['language']> = {
+    htm: 'html',
+    js: 'javascript',
+    ts: 'tsx',
+    typescript: 'tsx',
+    react: 'tsx',
+    py: 'python',
+    md: 'markdown',
+    txt: 'text',
+    doc: 'docx',
+    word: 'docx',
+    document: 'docx',
+  }
+
+  const languageName = aliases[normalized] || normalized
+  return SUPPORTED_LANGUAGES.has(languageName)
+    ? languageName as Artifact['language']
+    : null
+}
 
 function containsBuildableIntent(userPrompt: string): boolean {
   const lowerPrompt = userPrompt.toLowerCase()
@@ -14,14 +42,10 @@ function containsBuildableIntent(userPrompt: string): boolean {
 }
 
 function generateTitleFromPrompt(prompt: string): string {
-  const lowerPrompt = prompt.toLowerCase()
-
-  // Remove common command words
   let title = prompt
     .replace(/^(make me|build me|create|design|code|write|generate|show me|give me)\s+(a|an|the)?\s*/i, '')
     .trim()
 
-  // Take first 50 chars
   if (title.length > 50) {
     title = title.substring(0, 50)
     const lastSpace = title.lastIndexOf(' ')
@@ -30,13 +54,48 @@ function generateTitleFromPrompt(prompt: string): string {
     }
   }
 
-  // Capitalize
   title = title
     .split(' ')
     .map(word => word.charAt(0).toUpperCase() + word.slice(1))
     .join(' ')
 
   return title || 'Generated Artifact'
+}
+
+function inferLanguageFromCode(code: string, fallback?: string): Artifact['language'] {
+  const explicitLanguage = normalizeLanguage(fallback)
+  if (explicitLanguage) return explicitLanguage
+
+  const trimmed = code.trim()
+  if (/^<!DOCTYPE\s+html/i.test(trimmed) || /<html[\s>]/i.test(trimmed)) return 'html'
+  if (/^#\s|\n#{1,6}\s|^\s*[-*]\s+/m.test(trimmed)) return 'markdown'
+  return 'text'
+}
+
+function createArtifact(language: Artifact['language'], title: string, code: string): Artifact {
+  return {
+    id: `artifact-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+    title: title.trim() || 'Generated Artifact',
+    language,
+    code: code.trim(),
+    createdAt: new Date().toISOString(),
+  }
+}
+
+function buildCleanContent(content: string, fullMatch: string, artifact: Artifact): string {
+  const beforeArtifact = content.substring(0, content.indexOf(fullMatch)).trim()
+  const afterArtifact = content.substring(content.indexOf(fullMatch) + fullMatch.length).trim()
+
+  let cleanContent = ''
+  if (beforeArtifact) {
+    cleanContent += beforeArtifact + '\n\n'
+  }
+  cleanContent += `**Artifact created: ${artifact.title}**\n\n_The ${artifact.language} code is now available in the artifact panel on the right._`
+  if (afterArtifact) {
+    cleanContent += '\n\n' + afterArtifact
+  }
+
+  return cleanContent.trim() || `I created an artifact for you: **${artifact.title}**.`
 }
 
 export function parseArtifactFromResponse(
@@ -51,156 +110,62 @@ export function parseArtifactFromResponse(
     return { cleanContent: content, artifact: null }
   }
 
-  // CASE A1: Explicit artifact block with markdown fence
-  const artifactBlockRegex = /```artifact:(\w+):([^\n]+)\n([\s\S]*?)```/
+  // Explicit fenced format, with tolerance for model variations.
+  const artifactBlockRegex = /```\s*artifact\s*[:\-]\s*([a-z0-9+#.-]+)\s*:\s*([^\n`]+)\r?\n([\s\S]*?)```/i
   const artifactMatch = content.match(artifactBlockRegex)
 
   if (artifactMatch) {
     const [fullMatch, language, title, code] = artifactMatch
-
-    const artifact: Artifact = {
-      id: `artifact-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-      title: title.trim(),
-      language: language as any,
-      code: code.trim(),
-      createdAt: new Date().toISOString(),
-    }
-
-    // Remove artifact block and replace with clean reference
-    const beforeArtifact = content.substring(0, content.indexOf(fullMatch)).trim()
-    const afterArtifact = content.substring(content.indexOf(fullMatch) + fullMatch.length).trim()
-
-    let cleanContent = ''
-    if (beforeArtifact) {
-      cleanContent += beforeArtifact + '\n\n'
-    }
-    cleanContent += `**✨ Artifact created: ${artifact.title}**\n\n_The ${language} code is now available in the artifact panel on the right._`
-    if (afterArtifact) {
-      cleanContent += '\n\n' + afterArtifact
-    }
-
-    // Ensure cleanContent is never empty
-    if (!cleanContent.trim()) {
-      cleanContent = `I created an artifact for you: **${artifact.title}**.`
-    }
+    const artifact = createArtifact(inferLanguageFromCode(code, language), title, code)
+    const cleanContent = buildCleanContent(content, fullMatch, artifact)
 
     return { cleanContent, artifact }
   }
 
-  // CASE A2: Alternative artifact block format (ARTIFACT_BLOCK_START/END)
-  const altArtifactRegex = /ARTIFACT_BLOCK_START\s*\n\s*artifact:(\w+):([^\n]+)\n([\s\S]*?)\nARTIFACT_BLOCK_END/
+  // Alternative non-markdown wrapper.
+  const altArtifactRegex = /ARTIFACT_BLOCK_START\s*\r?\n\s*artifact\s*[:\-]\s*([a-z0-9+#.-]+)\s*:\s*([^\n]+)\r?\n([\s\S]*?)\r?\nARTIFACT_BLOCK_END/i
   const altArtifactMatch = content.match(altArtifactRegex)
 
   if (altArtifactMatch) {
     const [fullMatch, language, title, code] = altArtifactMatch
-
-    const artifact: Artifact = {
-      id: `artifact-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-      title: title.trim(),
-      language: language as any,
-      code: code.trim(),
-      createdAt: new Date().toISOString(),
-    }
-
-    // Remove artifact block and replace with clean reference
-    const beforeArtifact = content.substring(0, content.indexOf(fullMatch)).trim()
-    const afterArtifact = content.substring(content.indexOf(fullMatch) + fullMatch.length).trim()
-
-    let cleanContent = ''
-    if (beforeArtifact) {
-      cleanContent += beforeArtifact + '\n\n'
-    }
-    cleanContent += `**✨ Artifact created: ${artifact.title}**\n\n_The ${language} code is now available in the artifact panel on the right._`
-    if (afterArtifact) {
-      cleanContent += '\n\n' + afterArtifact
-    }
-
-    // Ensure cleanContent is never empty
-    if (!cleanContent.trim()) {
-      cleanContent = `I created an artifact for you: **${artifact.title}**.`
-    }
+    const artifact = createArtifact(inferLanguageFromCode(code, language), title, code)
+    const cleanContent = buildCleanContent(content, fullMatch, artifact)
 
     return { cleanContent, artifact }
   }
 
-  // CASE B: Raw full HTML document (fallback for models that don't follow instructions)
+  // Raw full HTML document fallback for models that ignore artifact fences.
   const htmlDocRegex = /<!DOCTYPE\s+html[\s\S]*?<html[\s\S]*?<\/html>/i
   const htmlMatch = content.match(htmlDocRegex)
 
   if (htmlMatch && userPrompt && containsBuildableIntent(userPrompt)) {
     const code = htmlMatch[0]
-    const title = generateTitleFromPrompt(userPrompt)
-
-    const artifact: Artifact = {
-      id: `artifact-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-      title,
-      language: 'html',
-      code: code.trim(),
-      createdAt: new Date().toISOString(),
-    }
-
-    // Remove the HTML and add reference
-    const beforeHtml = content.substring(0, content.indexOf(htmlMatch[0])).trim()
-    const afterHtml = content.substring(content.indexOf(htmlMatch[0]) + htmlMatch[0].length).trim()
-
-    let cleanContent = ''
-    if (beforeHtml) {
-      cleanContent += beforeHtml + '\n\n'
-    }
-    cleanContent += `**✨ Artifact created: ${artifact.title}**\n\n_The interactive HTML page is now available in the artifact panel on the right._`
-    if (afterHtml) {
-      cleanContent += '\n\n' + afterHtml
-    }
-
-    // Ensure cleanContent is never empty
-    if (!cleanContent.trim()) {
-      cleanContent = `I created an artifact for you: **${artifact.title}**.`
-    }
+    const artifact = createArtifact('html', generateTitleFromPrompt(userPrompt), code)
+    const cleanContent = buildCleanContent(content, htmlMatch[0], artifact)
 
     return { cleanContent, artifact }
   }
 
-  // CASE C: Normal code fence with buildable intent
+  // Normal code fence fallback. This is what prevents artifact mode from
+  // degrading into a plain Markdown code block when the model forgets the
+  // artifact: prefix.
   if (userPrompt && containsBuildableIntent(userPrompt)) {
-    const codeFenceRegex = /```(html|tsx|jsx|javascript|js|css|python|py)\n([\s\S]*?)```/
+    const codeFenceRegex = /```\s*([a-zA-Z0-9+#.-]+)?[^\n`]*\r?\n([\s\S]*?)```/
     const codeMatch = content.match(codeFenceRegex)
 
     if (codeMatch) {
       const [fullMatch, lang, code] = codeMatch
-      const language = lang === 'js' ? 'javascript' : lang === 'py' ? 'python' : lang
-      const title = generateTitleFromPrompt(userPrompt)
-
-      const artifact: Artifact = {
-        id: `artifact-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-        title,
-        language: language as any,
-        code: code.trim(),
-        createdAt: new Date().toISOString(),
-      }
-
-      // Remove code fence and add reference
-      const beforeCode = content.substring(0, content.indexOf(fullMatch)).trim()
-      const afterCode = content.substring(content.indexOf(fullMatch) + fullMatch.length).trim()
-
-      let cleanContent = ''
-      if (beforeCode) {
-        cleanContent += beforeCode + '\n\n'
-      }
-      cleanContent += `**✨ Artifact created: ${artifact.title}**\n\n_The ${language} code is now available in the artifact panel on the right._`
-      if (afterCode) {
-        cleanContent += '\n\n' + afterCode
-      }
-
-      // Ensure cleanContent is never empty
-      if (!cleanContent.trim()) {
-        cleanContent = `I created an artifact for you: **${artifact.title}**.`
-      }
+      const artifact = createArtifact(
+        inferLanguageFromCode(code, lang),
+        generateTitleFromPrompt(userPrompt),
+        code
+      )
+      const cleanContent = buildCleanContent(content, fullMatch, artifact)
 
       return { cleanContent, artifact }
     }
   }
 
-  // No artifact found
   return { cleanContent: content, artifact: null }
 }
 
@@ -211,7 +176,6 @@ export function dedupeMessages<T extends { id: string; role: string; content: st
   const result: T[] = []
 
   for (const msg of messages) {
-    // Dedupe by ID first
     if (!seen.has(msg.id)) {
       seen.add(msg.id)
       result.push(msg)

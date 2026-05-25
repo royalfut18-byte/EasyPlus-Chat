@@ -898,8 +898,9 @@ CODE_HERE
 \`\`\`
 
 Rules:
-- Use language values: html, tsx, jsx, javascript, css, python, markdown, text.
+- Use language values: html, tsx, jsx, javascript, css, python, markdown, text, docx.
 - For complete webpages/previews, prefer a full single-file HTML document with inline CSS and JS.
+- For Microsoft Word documents, use artifact:docx:Title and put clean markdown/plain text inside. The app will convert it into a downloadable .docx file.
 - Do NOT output raw HTML outside the artifact block.
 - Do NOT include secrets, API keys, or env vars.
 - If no artifact is needed, answer normally.

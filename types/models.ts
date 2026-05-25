@@ -101,7 +101,7 @@ export interface Message {
 export interface Artifact {
   id: string
   title: string
-  language: 'html' | 'tsx' | 'jsx' | 'javascript' | 'css' | 'python' | 'markdown' | 'text'
+  language: 'html' | 'tsx' | 'jsx' | 'javascript' | 'css' | 'python' | 'markdown' | 'text' | 'docx'
   code: string
   explanation?: string
   createdAt: string

@@ -20,6 +20,169 @@ interface ArtifactPanelProps {
 
 const MIN_WIDTH = 380
 const MAX_WIDTH_PERCENT = 0.75
+const DOCX_MIME_TYPE = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+
+function escapeXml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;')
+}
+
+function createCrc32Table(): number[] {
+  const table: number[] = []
+  for (let i = 0; i < 256; i++) {
+    let value = i
+    for (let j = 0; j < 8; j++) {
+      value = value & 1 ? 0xedb88320 ^ (value >>> 1) : value >>> 1
+    }
+    table[i] = value >>> 0
+  }
+  return table
+}
+
+const CRC32_TABLE = createCrc32Table()
+
+function crc32(bytes: Uint8Array): number {
+  let crc = 0xffffffff
+  for (const byte of bytes) {
+    crc = CRC32_TABLE[(crc ^ byte) & 0xff] ^ (crc >>> 8)
+  }
+  return (crc ^ 0xffffffff) >>> 0
+}
+
+function writeUint16(output: number[], value: number) {
+  output.push(value & 0xff, (value >>> 8) & 0xff)
+}
+
+function writeUint32(output: number[], value: number) {
+  output.push(value & 0xff, (value >>> 8) & 0xff, (value >>> 16) & 0xff, (value >>> 24) & 0xff)
+}
+
+function pushBytes(output: number[], bytes: Uint8Array) {
+  for (const byte of bytes) {
+    output.push(byte)
+  }
+}
+
+function encodeText(value: string): Uint8Array {
+  return new TextEncoder().encode(value)
+}
+
+function createZip(files: Array<{ name: string; content: string }>): Blob {
+  const output: number[] = []
+  const centralDirectory: number[] = []
+
+  for (const file of files) {
+    const nameBytes = encodeText(file.name)
+    const contentBytes = encodeText(file.content)
+    const checksum = crc32(contentBytes)
+    const localHeaderOffset = output.length
+
+    writeUint32(output, 0x04034b50)
+    writeUint16(output, 20)
+    writeUint16(output, 0)
+    writeUint16(output, 0)
+    writeUint16(output, 0)
+    writeUint16(output, 0)
+    writeUint32(output, checksum)
+    writeUint32(output, contentBytes.length)
+    writeUint32(output, contentBytes.length)
+    writeUint16(output, nameBytes.length)
+    writeUint16(output, 0)
+    pushBytes(output, nameBytes)
+    pushBytes(output, contentBytes)
+
+    writeUint32(centralDirectory, 0x02014b50)
+    writeUint16(centralDirectory, 20)
+    writeUint16(centralDirectory, 20)
+    writeUint16(centralDirectory, 0)
+    writeUint16(centralDirectory, 0)
+    writeUint16(centralDirectory, 0)
+    writeUint16(centralDirectory, 0)
+    writeUint32(centralDirectory, checksum)
+    writeUint32(centralDirectory, contentBytes.length)
+    writeUint32(centralDirectory, contentBytes.length)
+    writeUint16(centralDirectory, nameBytes.length)
+    writeUint16(centralDirectory, 0)
+    writeUint16(centralDirectory, 0)
+    writeUint16(centralDirectory, 0)
+    writeUint16(centralDirectory, 0)
+    writeUint32(centralDirectory, 0)
+    writeUint32(centralDirectory, localHeaderOffset)
+    pushBytes(centralDirectory, nameBytes)
+  }
+
+  const centralDirectoryOffset = output.length
+  output.push(...centralDirectory)
+
+  writeUint32(output, 0x06054b50)
+  writeUint16(output, 0)
+  writeUint16(output, 0)
+  writeUint16(output, files.length)
+  writeUint16(output, files.length)
+  writeUint32(output, centralDirectory.length)
+  writeUint32(output, centralDirectoryOffset)
+  writeUint16(output, 0)
+
+  return new Blob([new Uint8Array(output)], { type: DOCX_MIME_TYPE })
+}
+
+function paragraphXml(line: string): string {
+  const trimmed = line.trim()
+  const headingMatch = trimmed.match(/^(#{1,3})\s+(.+)$/)
+  const bulletMatch = trimmed.match(/^[-*]\s+(.+)$/)
+  const text = headingMatch?.[2] || bulletMatch?.[1] || trimmed
+  const bold = headingMatch ? '<w:b/>' : ''
+  const size = headingMatch
+    ? headingMatch[1].length === 1 ? '<w:sz w:val="32"/>' : '<w:sz w:val="28"/>'
+    : ''
+  const prefix = bulletMatch ? '- ' : ''
+
+  return `<w:p><w:r><w:rPr>${bold}${size}</w:rPr><w:t xml:space="preserve">${escapeXml(prefix + text)}</w:t></w:r></w:p>`
+}
+
+function createDocxBlob(title: string, content: string): Blob {
+  const paragraphs = content
+    .replace(/\r\n/g, '\n')
+    .split('\n')
+    .map(line => line.trim() ? paragraphXml(line) : '<w:p/>')
+    .join('')
+
+  const documentXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body>
+    ${paragraphXml(`# ${title}`)}
+    ${paragraphs}
+    <w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440"/></w:sectPr>
+  </w:body>
+</w:document>`
+
+  return createZip([
+    {
+      name: '[Content_Types].xml',
+      content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+</Types>`,
+    },
+    {
+      name: '_rels/.rels',
+      content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+</Relationships>`,
+    },
+    {
+      name: 'word/document.xml',
+      content: documentXml,
+    },
+  ])
+}
 
 export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthChange }: ArtifactPanelProps) {
   const [activeTab, setActiveTab] = useState<'preview' | 'code'>('preview')
@@ -135,6 +298,7 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
     if (lang === 'python') return 'Python'
     if (lang === 'css') return 'CSS'
     if (lang === 'markdown') return 'Markdown'
+    if (lang === 'docx') return 'Microsoft Word'
 
     return lang.toUpperCase()
   }
@@ -345,8 +509,10 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
                 artifact.language === 'tsx' || artifact.language === 'jsx'
                   ? 'tsx'
                   : artifact.language === 'javascript'
-                  ? 'javascript'
-                  : artifact.language
+                    ? 'javascript'
+                    : artifact.language === 'docx'
+                      ? 'text'
+                      : artifact.language
               }
               style={vscDarkPlus}
               customStyle={{
@@ -373,7 +539,7 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
             variant="ghost"
           >
             <Copy className="h-4 w-4 mr-2" />
-            Copy Code
+            {artifact.language === 'docx' ? 'Copy Content' : 'Copy Code'}
           </Button>
           <Button
             onClick={handleDownload}
@@ -408,12 +574,15 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
       python: 'py',
       markdown: 'md',
       text: 'txt',
+      docx: 'docx',
     }
 
     const extension = extensions[artifact.language] || 'txt'
     const filename = `${artifact.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.${extension}`
 
-    const blob = new Blob([artifact.code], { type: 'text/plain' })
+    const blob = artifact.language === 'docx'
+      ? createDocxBlob(artifact.title, artifact.code)
+      : new Blob([artifact.code], { type: 'text/plain' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
