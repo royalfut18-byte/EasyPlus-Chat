@@ -216,8 +216,10 @@ export default function ChatPage() {
   const [heroInput, setHeroInput] = useState('')
   const [heroAttachments, setHeroAttachments] = useState<ChatAttachment[]>([])
   const [heroUploading, setHeroUploading] = useState(false)
+  const [heroIsDragging, setHeroIsDragging] = useState(false)
   const heroTextareaRef = useRef<HTMLTextAreaElement>(null)
   const heroFileInputRef = useRef<HTMLInputElement>(null)
+  const heroDragDepthRef = useRef(0)
   const { uploadToR2, maxUploadMB: heroMaxUploadMB } = useR2Upload()
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const isSendingRef = useRef(false)
@@ -1367,7 +1369,7 @@ Rules:
   }
 
   const HERO_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp']
-  const HERO_ALLOWED_EXTENSIONS = ['.pdf', '.txt', '.md', '.csv', '.json', '.docx', '.png', '.jpg', '.jpeg', '.webp']
+  const HERO_ALLOWED_EXTENSIONS = ['.pdf', '.txt', '.md', '.csv', '.json', '.docx', '.xlsx', '.pptx', '.png', '.jpg', '.jpeg', '.webp', '.gif', '.mp4', '.webm', '.mp3', '.wav', '.zip', '.tar', '.gz']
   const HERO_MAX_FILE_SIZE = heroMaxUploadMB * 1024 * 1024
   const HERO_MAX_FILES = 30
 
@@ -1386,7 +1388,11 @@ Rules:
       '.pdf': 'application/pdf', '.txt': 'text/plain', '.md': 'text/markdown',
       '.csv': 'text/csv', '.json': 'application/json',
       '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp',
+      '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+      '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.gif': 'image/gif',
+      '.mp4': 'video/mp4', '.webm': 'video/webm', '.mp3': 'audio/mpeg', '.wav': 'audio/wav',
+      '.zip': 'application/zip', '.tar': 'application/x-tar', '.gz': 'application/gzip',
     }
     const mime = mimeMap[ext] || file.type
     const sourceFile = file.type === mime ? file : new File([file], file.name, { type: mime, lastModified: file.lastModified })
@@ -1506,6 +1512,58 @@ Rules:
     }
     if (heroFileInputRef.current) {
       heroFileInputRef.current.value = ''
+    }
+  }
+
+  const hasHeroDraggedFiles = (dataTransfer: DataTransfer | null): boolean => {
+    if (!dataTransfer) return false
+    return Array.from(dataTransfer.types || []).includes('Files')
+  }
+
+  const handleHeroDragEnter = (event: React.DragEvent) => {
+    if (!hasHeroDraggedFiles(event.dataTransfer)) return
+    event.preventDefault()
+    event.stopPropagation()
+    heroDragDepthRef.current += 1
+    setHeroIsDragging(true)
+  }
+
+  const handleHeroDragOver = (event: React.DragEvent) => {
+    if (!hasHeroDraggedFiles(event.dataTransfer)) return
+    event.preventDefault()
+    event.stopPropagation()
+    event.dataTransfer.dropEffect = 'copy'
+    setHeroIsDragging(true)
+  }
+
+  const handleHeroDragLeave = (event: React.DragEvent) => {
+    if (!hasHeroDraggedFiles(event.dataTransfer)) return
+    event.preventDefault()
+    event.stopPropagation()
+    heroDragDepthRef.current = Math.max(0, heroDragDepthRef.current - 1)
+    if (heroDragDepthRef.current === 0) {
+      setHeroIsDragging(false)
+    }
+  }
+
+  const handleHeroDrop = async (event: React.DragEvent) => {
+    if (!hasHeroDraggedFiles(event.dataTransfer)) return
+    event.preventDefault()
+    event.stopPropagation()
+    heroDragDepthRef.current = 0
+    setHeroIsDragging(false)
+
+    if (isRequestInProgress) {
+      toast({
+        title: 'Upload unavailable',
+        description: 'Wait for the current response to finish before adding files.',
+        variant: 'destructive',
+      })
+      return
+    }
+
+    if (event.dataTransfer.files?.length) {
+      await handleHeroFileSelect(event.dataTransfer.files)
     }
   }
 
@@ -1727,7 +1785,25 @@ Rules:
                   exit={{ opacity: 0, y: -10 }}
                   transition={{ duration: 0.4 }}
                   className="flex flex-col items-center justify-center h-full min-h-[65vh] text-center px-4 gap-7 md:gap-8 max-w-4xl mx-auto relative"
+                  onDragEnter={handleHeroDragEnter}
+                  onDragOver={handleHeroDragOver}
+                  onDragLeave={handleHeroDragLeave}
+                  onDrop={handleHeroDrop}
                 >
+                  {heroIsDragging && (
+                    <div className="fixed inset-0 z-[80] bg-violet-500/10 backdrop-blur-md flex items-center justify-center p-4 pointer-events-none">
+                      <div className="w-full max-w-lg rounded-3xl border-2 border-dashed border-violet-400/60 bg-[#0b0a12]/95 p-8 text-center shadow-2xl shadow-violet-950/40">
+                        <Paperclip className="h-12 w-12 text-violet-300 mx-auto mb-3" />
+                        <p className="text-lg font-semibold text-white">Drop files to attach</p>
+                        <p className="text-gray-400 text-sm mt-1">
+                          PDFs, images, Word, Excel, PowerPoint, text, CSV, JSON, ZIP, audio, and video
+                        </p>
+                        <p className="text-xs text-gray-500 mt-3">
+                          Up to {HERO_MAX_FILES} files, {heroMaxUploadMB}MB each
+                        </p>
+                      </div>
+                    </div>
+                  )}
                   {/* Subtle background glow */}
                   <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
                     <div className="w-[600px] h-[400px] bg-violet-600/[0.04] rounded-full blur-[120px]" />
@@ -1770,7 +1846,7 @@ Rules:
                       <input
                         ref={heroFileInputRef}
                         type="file"
-                        accept=".pdf,.txt,.md,.csv,.json,.docx,.png,.jpg,.jpeg,.webp"
+                        accept=".pdf,.txt,.md,.csv,.json,.docx,.xlsx,.pptx,.png,.jpg,.jpeg,.webp,.gif,.mp4,.webm,.mp3,.wav,.zip,.tar,.gz"
                         multiple
                         onChange={(e) => {
                           handleHeroFileSelect(e.target.files)
