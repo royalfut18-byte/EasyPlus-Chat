@@ -52,12 +52,21 @@ export async function createPresignedUploadUrl(params: {
   }
 }
 
-export async function createPresignedDownloadUrl(key: string, expiresIn = 3600): Promise<string> {
+export async function createPresignedDownloadUrl(
+  key: string,
+  expiresIn = 3600,
+  options: { fileName?: string; mimeType?: string; disposition?: 'inline' | 'attachment' } = {}
+): Promise<string> {
   const client = getR2Client()
+  const safeFileName = options.fileName?.replace(/["\r\n]/g, '_')
 
   const command = new GetObjectCommand({
     Bucket: R2_BUCKET_NAME,
     Key: key,
+    ResponseContentType: options.mimeType,
+    ResponseContentDisposition: safeFileName
+      ? `${options.disposition || 'inline'}; filename="${safeFileName}"`
+      : options.disposition,
   })
 
   return getSignedUrl(client, command, { expiresIn })

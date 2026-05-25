@@ -44,7 +44,7 @@ export async function GET(
       if (messageIds.length > 0) {
         const { data: attachmentRows } = await supabase
           .from('attachments')
-          .select('id, message_id, file_name, processing_status, ocr_status, page_count, ocr_pages_processed')
+          .select('id, message_id, file_name, mime_type, storage_path, public_url, processing_status, ocr_status, page_count, ocr_pages_processed, important_details')
           .in('message_id', messageIds)
           .eq('user_id', user.id)
 
@@ -61,6 +61,10 @@ export async function GET(
             return {
               ...att,
               attachmentId: row.id,
+              mimeType: row.mime_type || att.mimeType,
+              storagePath: row.storage_path || att.storagePath,
+              storageKey: row.important_details?.storageKey || row.storage_path || att.storageKey,
+              url: row.public_url || att.url,
               processingStatus: row.processing_status || att.processingStatus,
               ocrStatus: row.ocr_status || att.ocrStatus,
               pageCount: row.page_count || att.pageCount,

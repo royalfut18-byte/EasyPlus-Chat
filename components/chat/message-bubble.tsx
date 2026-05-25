@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { motion } from 'framer-motion'
-import { Copy, ThumbsUp, ThumbsDown, RotateCw, FileCode, Sparkles, PanelRightOpen, Sparkles as GeminiIcon, Download, FileText, FileSpreadsheet, FileJson, File as FileIcon, ImageIcon, ScanText } from 'lucide-react'
+import { Copy, ThumbsUp, ThumbsDown, RotateCw, FileCode, Sparkles, PanelRightOpen, Sparkles as GeminiIcon, Download, FileText, FileSpreadsheet, FileJson, File as FileIcon, ImageIcon, ScanText, ExternalLink } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism'
@@ -77,6 +77,29 @@ export function MessageBubble({ role, content, model, onRegenerate, attachments,
 
   const safeContent = !isUser ? cleanAssistantText(rawContent) : rawContent
 
+  const getAttachmentOpenUrl = (attachment: ChatAttachment): string | null => {
+    if (attachment.dataUrl) return attachment.dataUrl
+    if (attachment.url) return attachment.url
+
+    const storageKey = attachment.storageKey || attachment.storagePath
+    if (attachment.attachmentId) {
+      const params = new URLSearchParams({
+        attachmentId: attachment.attachmentId,
+      })
+      return `/api/attachments/file?${params.toString()}`
+    }
+    if (storageKey) {
+      const params = new URLSearchParams({
+        key: storageKey,
+        name: attachment.name || 'download',
+        mimeType: attachment.mimeType || 'application/octet-stream',
+      })
+      return `/api/attachments/file?${params.toString()}`
+    }
+
+    return null
+  }
+
   // Only show status UI if there's an explicit statusLabel (set by live local request).
   const activeStatus = (!isUser && statusLabel) ? statusLabel : null
   const isShowingStatus = !!activeStatus && !isUser
@@ -136,7 +159,9 @@ export function MessageBubble({ role, content, model, onRegenerate, attachments,
             'flex flex-wrap gap-2 md:gap-3',
             isUser ? 'px-3 pt-3 pb-2 md:px-4 md:pt-4 md:pb-3' : 'mb-3'
           )}>
-            {attachments.map((attachment, index) => (
+            {attachments.map((attachment, index) => {
+              const openUrl = getAttachmentOpenUrl(attachment)
+              return (
               <div key={index} className="relative group">
                 {attachment.type === 'image' && attachment.dataUrl ? (
                   <>
@@ -182,7 +207,23 @@ export function MessageBubble({ role, content, model, onRegenerate, attachments,
                       ? 'border-white/20 bg-white/10'
                       : 'border-white/10 bg-white/5'
                   )}>
-                    <div className="flex items-center gap-3 min-w-0">
+                    <div
+                      className={cn(
+                        'flex items-center gap-3 min-w-0 rounded-lg',
+                        openUrl && 'cursor-pointer hover:bg-white/5'
+                      )}
+                      role={openUrl ? 'button' : undefined}
+                      tabIndex={openUrl ? 0 : undefined}
+                      onClick={() => {
+                        if (openUrl) window.open(openUrl, '_blank', 'noopener,noreferrer')
+                      }}
+                      onKeyDown={(event) => {
+                        if (openUrl && (event.key === 'Enter' || event.key === ' ')) {
+                          event.preventDefault()
+                          window.open(openUrl, '_blank', 'noopener,noreferrer')
+                        }
+                      }}
+                    >
                     {attachment.type === 'image' ? (
                       <ImageIcon className="h-5 w-5 text-purple-400 shrink-0" />
                     ) : attachment.mimeType === 'application/pdf' ? (
@@ -218,6 +259,34 @@ export function MessageBubble({ role, content, model, onRegenerate, attachments,
                     </div>
                     </div>
 
+                    {openUrl && (
+                      <div className="flex flex-wrap items-center gap-2 border-t border-white/10 pt-2">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 px-2 text-xs bg-white/10 hover:bg-white/15"
+                          onClick={() => window.open(openUrl, '_blank', 'noopener,noreferrer')}
+                        >
+                          <ExternalLink className="h-3.5 w-3.5 mr-1.5" />
+                          Open file
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 px-2 text-xs bg-white/10 hover:bg-white/15"
+                          onClick={() => {
+                            const downloadUrl = openUrl.includes('?') ? `${openUrl}&download=1` : openUrl
+                            window.open(downloadUrl, '_blank', 'noopener,noreferrer')
+                          }}
+                        >
+                          <Download className="h-3.5 w-3.5 mr-1.5" />
+                          Download
+                        </Button>
+                      </div>
+                    )}
+
                     {attachment.mimeType === 'application/pdf' && onRequestOcr && attachment.attachmentId && (
                       <div className="flex flex-wrap items-center gap-2 border-t border-white/10 pt-2">
                         <Button
@@ -250,7 +319,7 @@ export function MessageBubble({ role, content, model, onRegenerate, attachments,
                   </div>
                 )}
               </div>
-            ))}
+            )})}
           </div>
         )}
 
