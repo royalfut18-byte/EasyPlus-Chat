@@ -446,11 +446,153 @@ function createPptxBlob(title: string, content: string): Blob {
   ], PPTX_MIME_TYPE)
 }
 
+const HTML_INTERACTION_FALLBACK_SCRIPT = `
+<script>
+(function () {
+  function showElement(element) {
+    if (!element) return;
+    element.style.display = '';
+    element.classList.add('active');
+  }
+
+  function hideElement(element) {
+    if (!element) return;
+    element.style.display = 'none';
+    element.classList.remove('active');
+  }
+
+  if (!window.showTab) {
+    window.showTab = function (name) {
+      document.querySelectorAll('[id$="-tab"], .tab-content, .tab-pane').forEach(hideElement);
+      showElement(document.getElementById(name + '-tab') || document.getElementById(name));
+
+      document.querySelectorAll('.tab-btn, .tab, [onclick*="showTab"]').forEach(function (button) {
+        var onclick = button.getAttribute('onclick') || '';
+        button.classList.toggle('active', onclick.indexOf("'" + name + "'") !== -1 || onclick.indexOf('"' + name + '"') !== -1);
+      });
+    };
+  }
+
+  if (!window.showSection) {
+    window.showSection = function (name) {
+      document.querySelectorAll('.section').forEach(function (section) {
+        section.classList.remove('active');
+        section.style.display = 'none';
+      });
+      showElement(document.getElementById('section-' + name) || document.getElementById(name));
+
+      document.querySelectorAll('.tab, .tab-btn, [onclick*="showSection"]').forEach(function (button) {
+        var onclick = button.getAttribute('onclick') || '';
+        button.classList.toggle('active', onclick.indexOf("'" + name + "'") !== -1 || onclick.indexOf('"' + name + '"') !== -1);
+      });
+    };
+  }
+
+  if (!window.toggleRoom) {
+    window.toggleRoom = function (room, event) {
+      if (event && event.target && event.target.closest('button')) return;
+      var target = room && room.closest ? room.closest('.room') : room;
+      if (target) target.classList.toggle('open');
+    };
+  }
+
+  if (!window.revealText) {
+    window.revealText = function (button, event) {
+      if (event) event.stopPropagation();
+      var container = button && button.closest ? button.closest('.scene, .sentence-card, .step, .card') : null;
+      var text = container && container.querySelector('.scene-text, .sentence-text, .step-content, .card-content, .answer');
+      if (!text) return;
+      var isShown = text.classList.toggle('revealed');
+      text.style.display = isShown ? 'block' : '';
+      if (button) button.textContent = isShown ? 'Hide Sentence' : 'Show Sentence';
+    };
+  }
+
+  if (!window.toggleSentence) {
+    window.toggleSentence = function (card) {
+      var text = card && card.querySelector ? card.querySelector('.sentence-text, .step-content, .content, .card-content') : card;
+      if (!text) return;
+      text.classList.toggle('hidden');
+      card.classList.toggle('hidden-text');
+      card.classList.toggle('revealed');
+    };
+  }
+
+  if (!window.toggleBlur) {
+    window.toggleBlur = function (element) {
+      if (!element) return;
+      element.classList.toggle('hidden');
+      element.style.filter = element.classList.contains('hidden') ? 'blur(8px)' : '';
+    };
+  }
+
+  if (!window.revealAll) {
+    window.revealAll = function (scope) {
+      var root = scope ? (document.getElementById('section-' + scope) || document.getElementById(scope)) : document;
+      (root || document).querySelectorAll('.hidden, .hidden-text').forEach(function (element) {
+        element.classList.remove('hidden', 'hidden-text');
+        element.style.filter = '';
+      });
+      (root || document).querySelectorAll('.scene-text, .card-content, .step-content').forEach(function (element) {
+        element.classList.add('revealed');
+        element.style.display = 'block';
+      });
+    };
+  }
+
+  if (!window.hideAll) {
+    window.hideAll = function (scope) {
+      var root = scope ? (document.getElementById('section-' + scope) || document.getElementById(scope)) : document;
+      (root || document).querySelectorAll('.sentence-text, .step-content, .card-content').forEach(function (element) {
+        element.classList.add('hidden');
+        element.classList.remove('revealed');
+      });
+      (root || document).querySelectorAll('.scene-text').forEach(function (element) {
+        element.classList.remove('revealed');
+        element.style.display = 'none';
+      });
+    };
+  }
+})();
+</script>`
+
+function injectHtmlInteractionFallback(html: string): string {
+  if (html.includes('data-easyplus-fallback-script')) return html
+
+  const fallback = HTML_INTERACTION_FALLBACK_SCRIPT.replace('<script>', '<script data-easyplus-fallback-script>')
+  if (/<\/body\s*>/i.test(html)) {
+    return html.replace(/<\/body\s*>/i, `${fallback}</body>`)
+  }
+  if (/<\/html\s*>/i.test(html)) {
+    return html.replace(/<\/html\s*>/i, `${fallback}</html>`)
+  }
+  return `${html}\n${fallback}`
+}
+
+function createPreviewHtml(title: string, content: string): string {
+  const trimmed = content.trim()
+  const html = /^<!DOCTYPE\s+html/i.test(trimmed) || /<html[\s>]/i.test(trimmed)
+    ? trimmed
+    : `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>${escapeXml(title)}</title>
+</head>
+<body>
+${content}
+</body>
+</html>`
+
+  return injectHtmlInteractionFallback(html)
+}
+
 function createCanvaHtml(title: string, content: string): string {
   const trimmed = content.trim()
-  if (/^<!DOCTYPE\s+html/i.test(trimmed) || /<html[\s>]/i.test(trimmed)) return trimmed
+  if (/^<!DOCTYPE\s+html/i.test(trimmed) || /<html[\s>]/i.test(trimmed)) return createPreviewHtml(title, trimmed)
 
-  return `<!DOCTYPE html>
+  return createPreviewHtml(title, `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
@@ -469,7 +611,7 @@ function createCanvaHtml(title: string, content: string): string {
     <pre>${escapeXml(content)}</pre>
   </main>
 </body>
-</html>`
+</html>`)
 }
 
 function createDocxBlob(title: string, content: string): Blob {
@@ -792,7 +934,7 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
                 <iframe
                   ref={iframeRef}
                   key={refreshKey}
-                  srcDoc={artifact.language === 'canva' ? createCanvaHtml(artifact.title, artifact.code) : artifact.code}
+                  srcDoc={artifact.language === 'canva' ? createCanvaHtml(artifact.title, artifact.code) : createPreviewHtml(artifact.title, artifact.code)}
                   title={artifact.title}
                   sandbox="allow-scripts allow-forms allow-modals allow-popups allow-pointer-lock"
                   className="w-full h-full border-0 bg-white pointer-events-auto"
@@ -926,7 +1068,9 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
           ? createPptxBlob(artifact.title, artifact.code)
           : artifact.language === 'canva'
             ? new Blob([createCanvaHtml(artifact.title, artifact.code)], { type: 'text/html' })
-            : new Blob([artifact.code], { type: 'text/plain' })
+            : artifact.language === 'html'
+              ? new Blob([createPreviewHtml(artifact.title, artifact.code)], { type: 'text/html' })
+              : new Blob([artifact.code], { type: 'text/plain' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
