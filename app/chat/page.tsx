@@ -58,7 +58,7 @@ const getArtifactKey = (conversationId: string) => `easyplus:artifact:${conversa
 const LAST_ARTIFACT_KEY = 'easyplus:lastArtifact'
 
 // Save artifact to localStorage
-function saveArtifact(artifact: Artifact, conversationId?: string) {
+function saveArtifact(artifact: Artifact, conversationId?: string, messageId?: string) {
   if (typeof window === 'undefined') return
 
   try {
@@ -66,6 +66,10 @@ function saveArtifact(artifact: Artifact, conversationId?: string) {
     localStorage.setItem(LAST_ARTIFACT_KEY, data)
     if (conversationId) {
       localStorage.setItem(getArtifactKey(conversationId), data)
+      localStorage.setItem(`easyplus:artifact:${conversationId}:latest`, data)
+      if (messageId) {
+        localStorage.setItem(`easyplus:artifact:${conversationId}:${messageId}`, data)
+      }
     }
   } catch (e) {
     console.error('[Artifact] Failed to save to localStorage:', e)
@@ -77,8 +81,9 @@ function loadArtifact(conversationId?: string): Artifact | null {
   if (typeof window === 'undefined') return null
 
   try {
-    const key = conversationId ? getArtifactKey(conversationId) : LAST_ARTIFACT_KEY
-    const data = localStorage.getItem(key)
+    const primaryKey = conversationId ? getArtifactKey(conversationId) : LAST_ARTIFACT_KEY
+    const latestKey = conversationId ? `easyplus:artifact:${conversationId}:latest` : LAST_ARTIFACT_KEY
+    const data = localStorage.getItem(primaryKey) || localStorage.getItem(latestKey)
     if (!data) return null
 
     const parsed = JSON.parse(data)
@@ -88,7 +93,7 @@ function loadArtifact(conversationId?: string): Artifact | null {
     }
 
     // Invalid artifact, remove it
-    localStorage.removeItem(key)
+    localStorage.removeItem(primaryKey)
     return null
   } catch (e) {
     console.error('[Artifact] Failed to load from localStorage:', e)
@@ -462,10 +467,16 @@ export default function ChatPage() {
         }
 
         // Restore artifact from messages if exists
-        const messageWithArtifact = final.find(m => m.artifact)
+        const messageWithArtifact = [...final].reverse().find(m => m.artifact)
         if (messageWithArtifact?.artifact) {
           setActiveArtifact(messageWithArtifact.artifact)
           setArtifactMessageId(messageWithArtifact.id)
+        } else {
+          const storedArtifact = loadArtifact(conversationId) || getStoredArtifact(conversationId)
+          if (storedArtifact) {
+            setActiveArtifact(storedArtifact)
+            setArtifactMessageId(null)
+          }
         }
       } else {
         setMessages([])
@@ -1109,7 +1120,7 @@ Rules:
           }
 
           // Save artifact to localStorage
-          saveArtifact(artifact, sendConversationId)
+          saveArtifact(artifact, sendConversationId, clientAssistantMessageId)
         } else {
           // No artifact found - update with normal response
           if (process.env.NODE_ENV !== 'production') {
@@ -1169,7 +1180,7 @@ Rules:
             }
 
             // Save artifact to localStorage for persistence
-            saveArtifact(artifact, sendConversationId)
+            saveArtifact(artifact, sendConversationId, clientAssistantMessageId)
           } else {
             // No artifact found - update with normal response
             if (selectedConversationIdRef.current === sendConversationId) {
@@ -2043,20 +2054,24 @@ Rules:
                 </motion.div>
               ) : (
                 <>
-                  {displayedMessages.map((message) => (
-                    <MessageBubble
-                      key={message.id}
-                      role={message.role}
-                      content={message.content}
-                      model={message.model}
-                      attachments={message.attachments}
-                      hasArtifact={artifactMessageId === message.id && !!activeArtifact}
-                      artifact={message.artifact}
-                      onOpenArtifact={message.artifact ? handleOpenArtifact : (artifactMessageId === message.id && activeArtifact ? handleOpenArtifact : undefined)}
-                      statusLabel={message.statusLabel}
-                      onRequestOcr={handleRequestOcr}
-                    />
-                  ))}
+                  {displayedMessages.map((message) => {
+                    const artifactForMessage = message.artifact || (artifactMessageId === message.id ? activeArtifact : null)
+
+                    return (
+                      <MessageBubble
+                        key={message.id}
+                        role={message.role}
+                        content={message.content}
+                        model={message.model}
+                        attachments={message.attachments}
+                        hasArtifact={!!artifactForMessage}
+                        artifact={artifactForMessage}
+                        onOpenArtifact={artifactForMessage ? handleOpenArtifact : undefined}
+                        statusLabel={message.statusLabel}
+                        onRequestOcr={handleRequestOcr}
+                      />
+                    )
+                  })}
                 </>
               )}
             </AnimatePresence>

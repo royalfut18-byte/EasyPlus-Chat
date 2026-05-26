@@ -63,6 +63,8 @@ function containsBuildableIntent(userPrompt: string): boolean {
 }
 
 function generateTitleFromPrompt(prompt: string): string {
+  if (!prompt.trim()) return 'Generated Artifact'
+
   let title = prompt
     .replace(/^(make me|build me|create|design|code|write|generate|show me|give me)\s+(a|an|the)?\s*/i, '')
     .trim()
@@ -81,6 +83,18 @@ function generateTitleFromPrompt(prompt: string): string {
     .join(' ')
 
   return title || 'Generated Artifact'
+}
+
+function generateTitleFromHtml(code: string, prompt?: string): string {
+  const promptTitle = prompt ? generateTitleFromPrompt(prompt) : ''
+  if (promptTitle && promptTitle !== 'Generated Artifact') return promptTitle
+
+  const titleMatch = code.match(/<title[^>]*>([\s\S]*?)<\/title>/i)
+  const title = titleMatch?.[1]
+    ?.replace(/\s+/g, ' ')
+    .trim()
+
+  return title || 'HTML Artifact'
 }
 
 function inferLanguageFromCode(code: string, fallback?: string): Artifact['language'] {
@@ -159,9 +173,9 @@ export function parseArtifactFromResponse(
   const htmlDocRegex = /<!DOCTYPE\s+html[\s\S]*?<html[\s\S]*?<\/html>/i
   const htmlMatch = content.match(htmlDocRegex)
 
-  if (htmlMatch && userPrompt && containsBuildableIntent(userPrompt)) {
+  if (htmlMatch) {
     const code = htmlMatch[0]
-    const artifact = createArtifact('html', generateTitleFromPrompt(userPrompt), code)
+    const artifact = createArtifact('html', generateTitleFromHtml(code, userPrompt), code)
     const cleanContent = buildCleanContent(content, htmlMatch[0], artifact)
 
     return { cleanContent, artifact }
@@ -185,6 +199,20 @@ export function parseArtifactFromResponse(
 
       return { cleanContent, artifact }
     }
+  }
+
+  // If artifact parsing has been explicitly requested, recover obvious HTML
+  // code fences even when the original user prompt is not available. This is
+  // important for older saved chats where only the assistant message remains.
+  const htmlFenceRegex = /```\s*(html|htm)?[^\n`]*\r?\n([\s\S]*?<\/html>\s*)```/i
+  const htmlFenceMatch = content.match(htmlFenceRegex)
+
+  if (htmlFenceMatch) {
+    const [fullMatch, , code] = htmlFenceMatch
+    const artifact = createArtifact('html', generateTitleFromHtml(code, userPrompt), code)
+    const cleanContent = buildCleanContent(content, fullMatch, artifact)
+
+    return { cleanContent, artifact }
   }
 
   return { cleanContent: content, artifact: null }
