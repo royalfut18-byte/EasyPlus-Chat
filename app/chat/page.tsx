@@ -2055,13 +2055,19 @@ Rules:
               ) : (
                 <>
                   {displayedMessages.map((message) => {
-                    const artifactForMessage = message.artifact || (artifactMessageId === message.id ? activeArtifact : null)
+                    const parsedArtifactResponse = message.role === 'assistant' && message.content && !message.artifact
+                      ? parseArtifactFromResponse(message.content, true, '')
+                      : null
+                    const artifactForMessage = message.artifact || parsedArtifactResponse?.artifact || (artifactMessageId === message.id ? activeArtifact : null)
+                    const contentForMessage = parsedArtifactResponse?.artifact
+                      ? parsedArtifactResponse.cleanContent
+                      : message.content
 
                     return (
                       <MessageBubble
                         key={message.id}
                         role={message.role}
-                        content={message.content}
+                        content={contentForMessage}
                         model={message.model}
                         attachments={message.attachments}
                         hasArtifact={!!artifactForMessage}
