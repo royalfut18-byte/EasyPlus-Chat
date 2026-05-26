@@ -658,6 +658,79 @@ const HTML_INTERACTION_FALLBACK_SCRIPT = `
     var target = typeof room === 'string' ? document.getElementById(room) : (room && room.closest ? room.closest('.room') : room);
     if (target) target.classList.toggle('open');
   };
+
+  document.addEventListener('click', function (event) {
+    var target = event.target;
+    if (!target || !target.closest) return;
+
+    var tab = target.closest('.tab, .tab-btn, [data-tab], [data-section]');
+    if (tab) {
+      var onclick = tab.getAttribute('onclick') || '';
+      var tabName = tab.getAttribute('data-tab') || tab.getAttribute('data-section');
+      var match = onclick.match(/(?:showSection|switchTab|showTab)\\(['"]([^'"]+)['"]\\)/);
+      if (!tabName && match) tabName = match[1];
+      if (tabName) {
+        event.preventDefault();
+        window.showSection(tabName);
+        return;
+      }
+    }
+
+    var reveal = target.closest('button, [role="button"]');
+    if (reveal) {
+      var label = (reveal.textContent || '').toLowerCase();
+      var looksLikeReveal =
+        label.indexOf('show') !== -1 ||
+        label.indexOf('hide') !== -1 ||
+        label.indexOf('reveal') !== -1 ||
+        label.indexOf('full') !== -1 ||
+        label.indexOf('answer') !== -1 ||
+        label.indexOf('sentence') !== -1 ||
+        label.indexOf('text') !== -1;
+
+      if (looksLikeReveal) {
+        var container = reveal.closest('.scene, .sentence-card, .step, .card, .drill-card, .test-card, .flashcard, .practice-card');
+        var text = container && container.querySelector('.scene-text, .drill-answer, .sentence-text, .step-content, .card-content, .card-hidden, .test-answer, .answer, .full-text, .hidden-text, [data-answer], [data-full-text]');
+        if (text) {
+          event.preventDefault();
+          event.stopPropagation();
+          var currentlyHidden = getComputedStyle(text).display === 'none' || !text.classList.contains('show') && !text.classList.contains('revealed') && (text.classList.contains('card-hidden') || text.classList.contains('test-answer') || text.classList.contains('scene-text'));
+          text.classList.toggle('show', currentlyHidden);
+          text.classList.toggle('revealed', currentlyHidden);
+          text.classList.toggle('hidden', !currentlyHidden);
+          text.style.display = currentlyHidden ? 'block' : 'none';
+          reveal.textContent = currentlyHidden
+            ? label.replace('show', 'hide').replace('reveal', 'hide')
+            : label.replace('hide', 'show');
+          return;
+        }
+      }
+    }
+
+    var roomHeader = target.closest('.room-header, .accordion-header, .section-header');
+    if (roomHeader) {
+      var room = roomHeader.closest('.room, .accordion, .collapsible, .section');
+      if (room) {
+        event.preventDefault();
+        room.classList.toggle('open');
+        room.classList.toggle('active', room.classList.contains('open'));
+        return;
+      }
+    }
+
+    var card = target.closest('.card, .sentence-card, .test-card, .flashcard');
+    if (card && !target.closest('button, a, input, textarea, select')) {
+      var hidden = card.querySelector('.card-hidden, .test-answer, .answer, .full-text, [data-answer], [data-full-text]');
+      if (hidden) {
+        event.preventDefault();
+        card.classList.toggle('revealed');
+        var isShown = card.classList.contains('revealed');
+        hidden.classList.toggle('show', isShown);
+        hidden.classList.toggle('revealed', isShown);
+        hidden.style.display = isShown ? 'block' : 'none';
+      }
+    }
+  }, true);
 })();
 </script>`
 
