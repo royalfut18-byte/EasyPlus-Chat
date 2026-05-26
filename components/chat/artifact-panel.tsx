@@ -598,6 +598,66 @@ const HTML_INTERACTION_FALLBACK_SCRIPT = `
       });
     };
   }
+
+  function resolveSection(name) {
+    return document.getElementById('sec-' + name) ||
+      document.getElementById('section-' + name) ||
+      document.getElementById('content-' + name) ||
+      document.getElementById(name + '-tab') ||
+      document.getElementById(name);
+  }
+
+  // Override common generated handlers so inline onclick attributes work even
+  // when the model omitted the script or used a slightly different naming style.
+  window.showSection = function (name) {
+    document.querySelectorAll('.section, .tab-content, [id^="sec-"], [id^="section-"], [id^="content-"]').forEach(function (section) {
+      section.classList.remove('active');
+      section.style.display = 'none';
+    });
+    showElement(resolveSection(name));
+
+    document.querySelectorAll('.tab, .tab-btn, [onclick*="showSection"], [onclick*="switchTab"]').forEach(function (button) {
+      var onclick = button.getAttribute('onclick') || '';
+      button.classList.toggle('active', onclick.indexOf("'" + name + "'") !== -1 || onclick.indexOf('"' + name + '"') !== -1);
+    });
+  };
+
+  window.switchTab = function (name) {
+    window.showSection(name);
+  };
+
+  window.toggleCard = function (card) {
+    if (!card) return;
+    card.classList.toggle('revealed');
+    var hidden = card.querySelector('.card-hidden, .answer, .details');
+    if (hidden) {
+      var isShown = card.classList.contains('revealed');
+      hidden.style.display = isShown ? 'block' : 'none';
+      hidden.classList.toggle('show', isShown);
+      hidden.classList.toggle('revealed', isShown);
+    }
+  };
+
+  window.toggleText = function (button, event) {
+    if (event) event.stopPropagation();
+    var container = button && button.closest ? button.closest('.scene, .sentence-card, .step, .card, .drill-card, .test-card') : null;
+    var text = container && container.querySelector('.scene-text, .drill-answer, .sentence-text, .step-content, .card-content, .card-hidden, .test-answer, .answer');
+    if (!text) return;
+    var isShown = text.classList.toggle('show');
+    text.classList.toggle('revealed', isShown);
+    text.style.display = isShown ? 'block' : 'none';
+    if (button) {
+      button.textContent = isShown
+        ? button.textContent.replace(/^Show/i, 'Hide')
+        : button.textContent.replace(/^Hide/i, 'Show');
+    }
+  };
+
+  window.toggleRoom = function (room, event) {
+    if (event && event.target && event.target.closest('button')) return;
+    var target = typeof room === 'string' ? document.getElementById(room) : (room && room.closest ? room.closest('.room') : room);
+    if (target) target.classList.toggle('open');
+  };
 })();
 </script>`
 
