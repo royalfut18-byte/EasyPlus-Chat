@@ -1381,6 +1381,276 @@ Rules:
     setWebSearchEnabled(!webSearchEnabled)
   }
 
+  const handleRegenerateResponse = async (assistantMessageId: string) => {
+    const conversationId = currentConversation?.id
+    if (!conversationId || isLoading || isCreatingConversation || isSendingRef.current || pendingResponsesRef.current[conversationId]) {
+      return
+    }
+
+    const orderedMessages = processMessages(messages, conversationId)
+    const assistantIndex = orderedMessages.findIndex((message) => message.id === assistantMessageId && message.role === 'assistant')
+    if (assistantIndex === -1) {
+      toast({
+        title: 'Retry unavailable',
+        description: 'Could not find that assistant message.',
+        variant: 'destructive',
+      })
+      return
+    }
+
+    let userIndex = -1
+    for (let index = assistantIndex - 1; index >= 0; index--) {
+      if (orderedMessages[index].role === 'user') {
+        userIndex = index
+        break
+      }
+    }
+
+    if (userIndex === -1) {
+      toast({
+        title: 'Retry unavailable',
+        description: 'Could not find the user message to retry.',
+        variant: 'destructive',
+      })
+      return
+    }
+
+    const userMessage = orderedMessages[userIndex]
+    const trimmedContent = userMessage.content.trim()
+    if (!trimmedContent && (!userMessage.attachments || userMessage.attachments.length === 0)) {
+      return
+    }
+
+    isSendingRef.current = true
+    setIsLoading(true)
+
+    const requestId = crypto.randomUUID()
+    const clientAssistantMessageId = crypto.randomUUID()
+    const requestArtifactMode = artifactMode
+    const requestWebSearchEnabled = webSearchEnabled
+    const requestReasoningMode = reasoningMode
+    const modelToUse = currentConversation.model_used || selectedModel
+    const isLongTask = isLongTaskClient(trimmedContent, userMessage.attachments)
+    const hasAttachments = !!userMessage.attachments?.length
+    const loadingMarker = requestArtifactMode
+      ? ARTIFACT_LOADING_MARKER
+      : isLongTask
+        ? LONG_TASK_LOADING_MARKER
+        : ASSISTANT_LOADING_MARKER
+
+    const initialStatusLabel = requestArtifactMode
+      ? 'Creating artifact...'
+      : hasAttachments
+        ? 'Reading attached files...'
+        : requestWebSearchEnabled
+          ? 'Searching the web...'
+          : isLongTask
+            ? 'Working through a larger task...'
+            : requestReasoningMode === 'extended'
+              ? 'Deep reasoning...'
+              : requestReasoningMode === 'instant'
+                ? 'Responding...'
+                : 'Thinking...'
+
+    const assistantPlaceholder: Message = {
+      id: clientAssistantMessageId,
+      conversation_id: conversationId,
+      role: 'assistant',
+      content: '',
+      model: modelToUse,
+      created_at: new Date().toISOString(),
+      request_id: requestId,
+      client_message_id: clientAssistantMessageId,
+      status: 'generating',
+      statusLabel: initialStatusLabel,
+    }
+
+    const messagesBeforeRetry = orderedMessages
+      .slice(0, userIndex + 1)
+      .filter((message) => message.role === 'user' || message.role === 'assistant')
+      .filter((message) => message.content && ![
+        ARTIFACT_LOADING_MARKER,
+        ASSISTANT_LOADING_MARKER,
+        LONG_TASK_LOADING_MARKER,
+        '__RECOVERY_POLLING__',
+      ].includes(message.content))
+      .slice(-20)
+
+    setMessages((prev) =>
+      processMessages(
+        [
+          ...prev.filter((message) => message.id !== assistantMessageId),
+          assistantPlaceholder,
+        ],
+        conversationId
+      )
+    )
+
+    setPendingResponse(conversationId, {
+      conversationId,
+      assistantMessageId: clientAssistantMessageId,
+      userMessageId: userMessage.id,
+      requestId,
+      startedAt: assistantPlaceholder.created_at,
+      model: modelToUse,
+      mode: requestArtifactMode ? 'artifact' : 'normal',
+      status: 'thinking',
+      loadingMarker,
+    })
+
+    const stripThinkingTags = (text: string): string => {
+      return text.replace(/<thinking>[\s\S]*?<\/thinking>\s*/g, '').replace(/<thinking>[\s\S]*$/g, '')
+    }
+
+    try {
+      const messagesToSend = messagesBeforeRetry.map((message, idx, arr) => ({
+        role: message.role,
+        content: message.content,
+        attachments: idx === arr.length - 1
+          ? message.attachments
+          : (message.attachments && message.attachments.length > 0
+            ? message.attachments.map(a => {
+              if (a.type === 'image') {
+                return { type: a.type, name: a.name, mimeType: a.mimeType, storageProvider: a.storageProvider, storageKey: a.storageKey, storagePath: a.storagePath, bucket: a.bucket }
+              }
+              return { type: a.type, name: a.name, mimeType: a.mimeType, textContent: a.textContent }
+            })
+            : undefined),
+      }))
+
+      if (requestArtifactMode) {
+        messagesToSend.unshift({
+          role: 'user',
+          content: `[ARTIFACT MODE ENABLED]
+
+When the user asks for buildable code/UI artifacts, return a short explanation, then include exactly one artifact block:
+
+\`\`\`artifact:html:Title
+CODE_HERE
+\`\`\`
+
+Default to artifact:html with a complete single-file HTML document. Do NOT output raw HTML outside the artifact block.`,
+          attachments: undefined,
+        })
+      }
+
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: modelToUse,
+          messages: messagesToSend,
+          conversationId,
+          artifactMode: requestArtifactMode,
+          webSearchEnabled: requestWebSearchEnabled,
+          reasoningMode: requestReasoningMode,
+          requestId,
+          clientMessageId: userMessage.client_message_id || userMessage.id,
+        }),
+      })
+
+      if (!response.ok) {
+        throw new Error(`Server error (${response.status})`)
+      }
+
+      const reader = response.body?.getReader()
+      const decoder = new TextDecoder()
+      let assistantContent = ''
+      let contentStarted = false
+
+      while (reader) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        const chunk = decoder.decode(value)
+        if (!contentStarted) {
+          const trimmed = chunk.trimStart()
+          if (trimmed.length === 0) continue
+          assistantContent += trimmed
+          contentStarted = true
+          const currentPending = pendingResponsesRef.current[conversationId]
+          if (currentPending) {
+            setPendingResponse(conversationId, {
+              ...(currentPending as PendingResponse),
+              status: 'streaming',
+            })
+          }
+        } else {
+          assistantContent += chunk
+        }
+
+        const displayContent = stripThinkingTags(assistantContent)
+        if (displayContent && selectedConversationIdRef.current === conversationId) {
+          setMessages((prev) =>
+            processMessages(
+              prev.map((message) =>
+                message.id === clientAssistantMessageId
+                  ? { ...message, content: displayContent, statusLabel: null }
+                  : message
+              ),
+              conversationId
+            )
+          )
+        }
+      }
+
+      const finalAssistantContent = stripThinkingTags(assistantContent).trim()
+      if (!finalAssistantContent) {
+        throw new Error('Received empty response from AI.')
+      }
+
+      const { artifact, cleanContent } = parseArtifactFromResponse(
+        finalAssistantContent,
+        true,
+        trimmedContent
+      )
+      const finalContent = artifact ? cleanContent : finalAssistantContent
+
+      if (selectedConversationIdRef.current === conversationId) {
+        setMessages((prev) =>
+          processMessages(
+            prev.map((message) =>
+              message.id === clientAssistantMessageId
+                ? { ...message, content: finalContent, artifact, status: 'completed' as const, statusLabel: null }
+                : message
+            ),
+            conversationId
+          )
+        )
+
+        if (artifact) {
+          setActiveArtifact(artifact)
+          setArtifactMessageId(clientAssistantMessageId)
+          setIsArtifactOpen(true)
+          saveArtifact(artifact, conversationId, clientAssistantMessageId)
+        }
+      }
+    } catch (error: any) {
+      if (selectedConversationIdRef.current === conversationId) {
+        setMessages((prev) =>
+          processMessages(
+            prev.map((message) =>
+              message.id === clientAssistantMessageId
+                ? { ...message, content: `Retry failed: ${error.message || 'Unknown error'}`, status: 'error' as const, statusLabel: null }
+                : message
+            ),
+            conversationId
+          )
+        )
+      }
+
+      toast({
+        title: 'Retry failed',
+        description: error.message || 'Could not regenerate this response.',
+        variant: 'destructive',
+      })
+    } finally {
+      setIsLoading(false)
+      isSendingRef.current = false
+      clearPendingResponse(conversationId)
+    }
+  }
+
   const HERO_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp']
   const HERO_ALLOWED_EXTENSIONS = ['.pdf', '.txt', '.md', '.csv', '.json', '.docx', '.xlsx', '.pptx', '.png', '.jpg', '.jpeg', '.webp', '.gif', '.mp4', '.webm', '.mp3', '.wav', '.zip', '.tar', '.gz']
   const HERO_MAX_FILE_SIZE = heroMaxUploadMB * 1024 * 1024
@@ -2073,6 +2343,7 @@ Rules:
                         hasArtifact={!!artifactForMessage}
                         artifact={artifactForMessage}
                         onOpenArtifact={artifactForMessage ? handleOpenArtifact : undefined}
+                        onRegenerate={message.role === 'assistant' ? () => handleRegenerateResponse(message.id) : undefined}
                         statusLabel={message.statusLabel}
                         onRequestOcr={handleRequestOcr}
                       />

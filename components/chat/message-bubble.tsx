@@ -528,6 +528,8 @@ export function MessageBubble({ role, content, model, onRegenerate, attachments,
                 variant="ghost"
                 className="h-7 w-7 hover:bg-white/10"
                 onClick={onRegenerate}
+                disabled={!onRegenerate}
+                title="Retry response"
               >
                 <RotateCw className="h-3 w-3" />
               </Button>
