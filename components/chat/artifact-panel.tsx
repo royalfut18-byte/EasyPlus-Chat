@@ -473,6 +473,18 @@ const HTML_INTERACTION_FALLBACK_SCRIPT = `
     };
   }
 
+  if (!window.switchTab) {
+    window.switchTab = function (name) {
+      document.querySelectorAll('.tab-content, [id^="content-"], [id$="-tab"]').forEach(hideElement);
+      showElement(document.getElementById('content-' + name) || document.getElementById(name + '-tab') || document.getElementById(name));
+
+      document.querySelectorAll('.tab-btn, .tab, [onclick*="switchTab"]').forEach(function (button) {
+        var onclick = button.getAttribute('onclick') || '';
+        button.classList.toggle('active', onclick.indexOf("'" + name + "'") !== -1 || onclick.indexOf('"' + name + '"') !== -1);
+      });
+    };
+  }
+
   if (!window.showSection) {
     window.showSection = function (name) {
       document.querySelectorAll('.section').forEach(function (section) {
@@ -491,7 +503,7 @@ const HTML_INTERACTION_FALLBACK_SCRIPT = `
   if (!window.toggleRoom) {
     window.toggleRoom = function (room, event) {
       if (event && event.target && event.target.closest('button')) return;
-      var target = room && room.closest ? room.closest('.room') : room;
+      var target = typeof room === 'string' ? document.getElementById(room) : (room && room.closest ? room.closest('.room') : room);
       if (target) target.classList.toggle('open');
     };
   }
@@ -508,6 +520,19 @@ const HTML_INTERACTION_FALLBACK_SCRIPT = `
     };
   }
 
+  if (!window.toggleText) {
+    window.toggleText = function (button, event) {
+      if (event) event.stopPropagation();
+      var container = button && button.closest ? button.closest('.scene, .sentence-card, .step, .card, .drill-card') : null;
+      var text = container && container.querySelector('.scene-text, .drill-answer, .sentence-text, .step-content, .card-content, .answer');
+      if (!text) return;
+      var isShown = text.classList.toggle('show');
+      text.classList.toggle('revealed', isShown);
+      text.style.display = isShown ? 'block' : 'none';
+      if (button) button.textContent = isShown ? 'Hide Full Sentence' : 'Show Full Sentence';
+    };
+  }
+
   if (!window.toggleSentence) {
     window.toggleSentence = function (card) {
       var text = card && card.querySelector ? card.querySelector('.sentence-text, .step-content, .content, .card-content') : card;
@@ -515,6 +540,26 @@ const HTML_INTERACTION_FALLBACK_SCRIPT = `
       text.classList.toggle('hidden');
       card.classList.toggle('hidden-text');
       card.classList.toggle('revealed');
+    };
+  }
+
+  if (!window.nextCard) {
+    window.nextCard = function () {
+      var cards = Array.from(document.querySelectorAll('.drill-card, .practice-card'));
+      var current = cards.findIndex(function (card) { return card.style.display !== 'none'; });
+      if (current === -1) current = 0;
+      cards.forEach(hideElement);
+      showElement(cards[(current + 1) % cards.length]);
+    };
+  }
+
+  if (!window.prevCard) {
+    window.prevCard = function () {
+      var cards = Array.from(document.querySelectorAll('.drill-card, .practice-card'));
+      var current = cards.findIndex(function (card) { return card.style.display !== 'none'; });
+      if (current === -1) current = 0;
+      cards.forEach(hideElement);
+      showElement(cards[(current - 1 + cards.length) % cards.length]);
     };
   }
 
