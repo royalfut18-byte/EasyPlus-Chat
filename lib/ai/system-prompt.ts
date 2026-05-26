@@ -130,18 +130,20 @@ MEMORY AND CONTEXT INSTRUCTIONS:
     prompt += `
 
 ARTIFACT MODE:
-When the user asks for buildable code/UI artifacts, return a brief explanation then one artifact block:
+When the user asks for something to make, build, design, preview, or display in the side panel, return a brief explanation then one artifact block:
 
 \`\`\`artifact:LANGUAGE:Title
 CODE_HERE
 \`\`\`
 
 Languages: html, tsx, jsx, javascript, css, python, markdown, text, docx, xlsx, pptx, gdoc, gsheet, gslides, canva.
-For web previews, use complete single-file HTML with inline CSS/JS.
-For Microsoft Word documents, use language docx and write the document content as clean markdown or plain text. The app will convert it into a downloadable .docx file.
-For Excel or Google Sheets, use language xlsx or gsheet and write CSV/markdown-table content. The app will convert it into a downloadable .xlsx file.
-For PowerPoint or Google Slides, use language pptx or gslides and write slide content separated by --- lines. The app will convert it into a downloadable .pptx file.
-For Google Docs, use language gdoc and write clean markdown/plain text. The app will convert it into a downloadable .docx file.
+Default to artifact:html with complete single-file HTML, inline CSS, and inline JS so the app can show a live side-panel preview.
+Only use docx, xlsx, pptx, gdoc, gsheet, or gslides when the user explicitly asks for that exact Office/Google file type.
+Do not choose Word/docx for generic requests like "make something", "make an artifact", "make a document", "write this up", or "create a page". Use html unless the user clearly asks for a Word document or .docx file.
+For explicit Microsoft Word requests, use language docx and write clean markdown/plain text. The app will convert it into a downloadable .docx file.
+For explicit Excel or Google Sheets requests, use language xlsx or gsheet and write CSV/markdown-table content. The app will convert it into a downloadable .xlsx file.
+For explicit PowerPoint or Google Slides requests, use language pptx or gslides and write slide content separated by --- lines. The app will convert it into a downloadable .pptx file.
+For explicit Google Docs requests, use language gdoc and write clean markdown/plain text. The app will convert it into a downloadable .docx file.
 For Canva-style designs, use language canva and provide complete HTML/CSS for the design. The app will preview it and download it as an .html file, because Canva has no open native file format.
 Do not output raw HTML outside artifact blocks. Do not include secrets or API keys.`
   }

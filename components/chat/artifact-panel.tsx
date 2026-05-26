@@ -132,18 +132,142 @@ function createZip(files: Array<{ name: string; content: string }>, mimeType: st
   return new Blob([new Uint8Array(output)], { type: mimeType })
 }
 
+function textRunXml(text: string, options: { bold?: boolean; italic?: boolean } = {}): string {
+  if (!text) return ''
+
+  const runProperties = [
+    options.bold ? '<w:b/>' : '',
+    options.italic ? '<w:i/>' : '',
+  ].join('')
+
+  return `<w:r><w:rPr>${runProperties}</w:rPr><w:t xml:space="preserve">${escapeXml(text)}</w:t></w:r>`
+}
+
+function inlineRunsXml(text: string, baseOptions: { bold?: boolean; italic?: boolean } = {}): string {
+  const runs: string[] = []
+  let buffer = ''
+  let index = 0
+
+  const flush = () => {
+    if (buffer) {
+      runs.push(textRunXml(buffer, baseOptions))
+      buffer = ''
+    }
+  }
+
+  while (index < text.length) {
+    const marker = text.startsWith('**', index) ? '**' : text.startsWith('__', index) ? '__' : null
+    if (marker) {
+      const end = text.indexOf(marker, index + marker.length)
+      if (end !== -1) {
+        flush()
+        runs.push(textRunXml(text.slice(index + marker.length, end), { ...baseOptions, bold: true }))
+        index = end + marker.length
+        continue
+      }
+    }
+
+    const char = text[index]
+    if ((char === '*' || char === '_') && text[index + 1] !== char) {
+      const end = text.indexOf(char, index + 1)
+      if (end !== -1) {
+        flush()
+        runs.push(textRunXml(text.slice(index + 1, end), { ...baseOptions, italic: true }))
+        index = end + 1
+        continue
+      }
+    }
+
+    buffer += char
+    index += 1
+  }
+
+  flush()
+  return runs.join('') || textRunXml(text, baseOptions)
+}
+
 function paragraphXml(line: string): string {
   const trimmed = line.trim()
   const headingMatch = trimmed.match(/^(#{1,3})\s+(.+)$/)
   const bulletMatch = trimmed.match(/^[-*]\s+(.+)$/)
   const text = headingMatch?.[2] || bulletMatch?.[1] || trimmed
-  const bold = headingMatch ? '<w:b/>' : ''
   const size = headingMatch
     ? headingMatch[1].length === 1 ? '<w:sz w:val="32"/>' : '<w:sz w:val="28"/>'
     : ''
   const prefix = bulletMatch ? '- ' : ''
 
-  return `<w:p><w:r><w:rPr>${bold}${size}</w:rPr><w:t xml:space="preserve">${escapeXml(prefix + text)}</w:t></w:r></w:p>`
+  if (headingMatch) {
+    return `<w:p><w:r><w:rPr><w:b/>${size}</w:rPr><w:t xml:space="preserve">${escapeXml(text)}</w:t></w:r></w:p>`
+  }
+
+  return `<w:p>${inlineRunsXml(prefix + text)}</w:p>`
+}
+
+function markdownTableCells(line: string): string[] {
+  return line
+    .trim()
+    .replace(/^\|/, '')
+    .replace(/\|$/, '')
+    .split('|')
+    .map(cell => cell.trim())
+}
+
+function isMarkdownTableSeparator(line: string): boolean {
+  const cells = markdownTableCells(line)
+  return cells.length > 1 && cells.every(cell => /^:?-{3,}:?$/.test(cell))
+}
+
+function isMarkdownTableRow(line: string): boolean {
+  return line.includes('|') && markdownTableCells(line).length > 1
+}
+
+function tableXml(rows: string[][]): string {
+  const border = '<w:top w:val="single" w:sz="4" w:space="0" w:color="bfbfbf"/><w:left w:val="single" w:sz="4" w:space="0" w:color="bfbfbf"/><w:bottom w:val="single" w:sz="4" w:space="0" w:color="bfbfbf"/><w:right w:val="single" w:sz="4" w:space="0" w:color="bfbfbf"/><w:insideH w:val="single" w:sz="4" w:space="0" w:color="bfbfbf"/><w:insideV w:val="single" w:sz="4" w:space="0" w:color="bfbfbf"/>'
+  const maxColumns = Math.max(...rows.map(row => row.length), 1)
+
+  const tableRows = rows.map((row, rowIndex) => {
+    const cells = Array.from({ length: maxColumns }, (_, cellIndex) => row[cellIndex] || '')
+    const tableCells = cells.map(cell => {
+      const shading = rowIndex === 0 ? '<w:shd w:fill="EDEDED"/>' : ''
+      return `<w:tc><w:tcPr><w:tcW w:w="${Math.floor(9000 / maxColumns)}" w:type="dxa"/>${shading}</w:tcPr><w:p>${inlineRunsXml(cell, { bold: rowIndex === 0 })}</w:p></w:tc>`
+    }).join('')
+
+    return `<w:tr>${tableCells}</w:tr>`
+  }).join('')
+
+  return `<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/><w:tblBorders>${border}</w:tblBorders><w:tblCellMar><w:left w:w="120" w:type="dxa"/><w:right w:w="120" w:type="dxa"/></w:tblCellMar></w:tblPr>${tableRows}</w:tbl>`
+}
+
+function documentBodyXml(content: string): string {
+  const lines = content.replace(/\r\n/g, '\n').split('\n')
+  const blocks: string[] = []
+  let index = 0
+
+  while (index < lines.length) {
+    const line = lines[index]
+
+    if (
+      isMarkdownTableRow(line) &&
+      index + 1 < lines.length &&
+      isMarkdownTableSeparator(lines[index + 1])
+    ) {
+      const rows = [markdownTableCells(line)]
+      index += 2
+
+      while (index < lines.length && isMarkdownTableRow(lines[index])) {
+        rows.push(markdownTableCells(lines[index]))
+        index += 1
+      }
+
+      blocks.push(tableXml(rows))
+      continue
+    }
+
+    blocks.push(line.trim() ? paragraphXml(line) : '<w:p/>')
+    index += 1
+  }
+
+  return blocks.join('')
 }
 
 function parseDelimitedRows(content: string): string[][] {
@@ -349,17 +473,13 @@ function createCanvaHtml(title: string, content: string): string {
 }
 
 function createDocxBlob(title: string, content: string): Blob {
-  const paragraphs = content
-    .replace(/\r\n/g, '\n')
-    .split('\n')
-    .map(line => line.trim() ? paragraphXml(line) : '<w:p/>')
-    .join('')
+  const body = documentBodyXml(content)
 
   const documentXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
   <w:body>
     ${paragraphXml(`# ${title}`)}
-    ${paragraphs}
+    ${body}
     <w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440"/></w:sectPr>
   </w:body>
 </w:document>`

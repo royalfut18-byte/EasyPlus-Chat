@@ -901,11 +901,13 @@ CODE_HERE
 
 Rules:
 - Use language values: html, tsx, jsx, javascript, css, python, markdown, text, docx, xlsx, pptx, gdoc, gsheet, gslides, canva.
-- For complete webpages/previews, prefer a full single-file HTML document with inline CSS and JS.
-- For Microsoft Word documents, use artifact:docx:Title and put clean markdown/plain text inside. The app will convert it into a downloadable .docx file.
-- For Excel or Google Sheets, use artifact:xlsx:Title or artifact:gsheet:Title and put CSV/markdown-table content inside. The app will convert it into a downloadable .xlsx file.
-- For PowerPoint or Google Slides, use artifact:pptx:Title or artifact:gslides:Title and separate slides with --- lines. The app will convert it into a downloadable .pptx file.
-- For Google Docs, use artifact:gdoc:Title and put clean markdown/plain text inside. The app will convert it into a downloadable .docx file.
+- Default to artifact:html with a full single-file HTML document, inline CSS, and inline JS so it opens as a live side-panel preview.
+- Only use artifact:docx, artifact:xlsx, artifact:pptx, artifact:gdoc, artifact:gsheet, or artifact:gslides when the user explicitly asks for that exact Office/Google file type.
+- Do not choose Word/docx for generic requests like "make something", "make an artifact", "make a document", "write this up", or "create a page".
+- For explicit Microsoft Word documents, use artifact:docx:Title and put clean markdown/plain text inside. The app will convert it into a downloadable .docx file.
+- For explicit Excel or Google Sheets, use artifact:xlsx:Title or artifact:gsheet:Title and put CSV/markdown-table content inside. The app will convert it into a downloadable .xlsx file.
+- For explicit PowerPoint or Google Slides, use artifact:pptx:Title or artifact:gslides:Title and separate slides with --- lines. The app will convert it into a downloadable .pptx file.
+- For explicit Google Docs, use artifact:gdoc:Title and put clean markdown/plain text inside. The app will convert it into a downloadable .docx file.
 - For Canva-style designs, use artifact:canva:Title and put complete HTML/CSS inside. The app previews and downloads it as .html because Canva has no open native file format.
 - Do NOT output raw HTML outside the artifact block.
 - Do NOT include secrets, API keys, or env vars.

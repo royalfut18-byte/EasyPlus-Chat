@@ -5,7 +5,7 @@ const BUILDABLE_KEYWORDS = [
   'html', 'css', 'react', 'component', 'game', 'dashboard', 'bracket',
   'calculator', 'app', 'ui', 'mockup', 'page', 'tool', 'generator',
   'form', 'chart', 'graph', 'animation', 'navigation', 'navbar', 'footer',
-  'hero', 'section', 'layout', 'word', 'docx', 'document', 'excel', 'xlsx',
+  'hero', 'section', 'layout', 'word', 'docx', 'excel', 'xlsx',
   'spreadsheet', 'sheet', 'sheets', 'powerpoint', 'ppt', 'pptx', 'slides',
   'presentation', 'google doc', 'google docs', 'google sheet', 'google sheets',
   'google slides', 'canva', 'deck'
@@ -32,7 +32,6 @@ function normalizeLanguage(language?: string): Artifact['language'] | null {
     txt: 'text',
     doc: 'docx',
     word: 'docx',
-    document: 'docx',
     docs: 'gdoc',
     google_doc: 'gdoc',
     google_docs: 'gdoc',
