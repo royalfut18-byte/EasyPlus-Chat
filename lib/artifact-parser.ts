@@ -117,6 +117,23 @@ function createArtifact(language: Artifact['language'], title: string, code: str
   }
 }
 
+function extractHtmlDocument(content: string): string | null {
+  const startMatch = content.match(/<!DOCTYPE\s+html\b|<html[\s>]/i)
+  if (!startMatch || startMatch.index === undefined) return null
+
+  const start = startMatch.index
+  const afterStart = content.slice(start)
+  const endMatch = afterStart.match(/<\/html\s*>/i)
+
+  if (endMatch?.index !== undefined) {
+    return afterStart.slice(0, endMatch.index + endMatch[0].length)
+  }
+
+  // Some model responses get cut off before </html>. Still recover the
+  // document so the user gets an artifact button instead of raw HTML text.
+  return afterStart.trim()
+}
+
 function buildCleanContent(content: string, fullMatch: string, artifact: Artifact): string {
   const beforeArtifact = content.substring(0, content.indexOf(fullMatch)).trim()
   const afterArtifact = content.substring(content.indexOf(fullMatch) + fullMatch.length).trim()
@@ -169,14 +186,26 @@ export function parseArtifactFromResponse(
     return { cleanContent, artifact }
   }
 
-  // Raw full HTML document fallback for models that ignore artifact fences.
-  const htmlDocRegex = /<!DOCTYPE\s+html[\s\S]*?<html[\s\S]*?<\/html>/i
-  const htmlMatch = content.match(htmlDocRegex)
+  // HTML code fence fallback. Handles complete and truncated HTML fences.
+  const htmlFenceRegex = /```\s*(html|htm)[^\n`]*\r?\n([\s\S]*?)```/i
+  const htmlFenceMatch = content.match(htmlFenceRegex)
 
-  if (htmlMatch) {
-    const code = htmlMatch[0]
+  if (htmlFenceMatch) {
+    const [fullMatch, , code] = htmlFenceMatch
     const artifact = createArtifact('html', generateTitleFromHtml(code, userPrompt), code)
-    const cleanContent = buildCleanContent(content, htmlMatch[0], artifact)
+    const cleanContent = buildCleanContent(content, fullMatch, artifact)
+
+    return { cleanContent, artifact }
+  }
+
+  // Raw HTML document fallback for models that ignore artifact fences.
+  // Handles complete documents and truncated responses missing </html>.
+  const htmlDocument = extractHtmlDocument(content)
+
+  if (htmlDocument) {
+    const code = htmlDocument
+    const artifact = createArtifact('html', generateTitleFromHtml(code, userPrompt), code)
+    const cleanContent = buildCleanContent(content, htmlDocument, artifact)
 
     return { cleanContent, artifact }
   }
@@ -199,20 +228,6 @@ export function parseArtifactFromResponse(
 
       return { cleanContent, artifact }
     }
-  }
-
-  // If artifact parsing has been explicitly requested, recover obvious HTML
-  // code fences even when the original user prompt is not available. This is
-  // important for older saved chats where only the assistant message remains.
-  const htmlFenceRegex = /```\s*(html|htm)?[^\n`]*\r?\n([\s\S]*?<\/html>\s*)```/i
-  const htmlFenceMatch = content.match(htmlFenceRegex)
-
-  if (htmlFenceMatch) {
-    const [fullMatch, , code] = htmlFenceMatch
-    const artifact = createArtifact('html', generateTitleFromHtml(code, userPrompt), code)
-    const cleanContent = buildCleanContent(content, fullMatch, artifact)
-
-    return { cleanContent, artifact }
   }
 
   return { cleanContent: content, artifact: null }
