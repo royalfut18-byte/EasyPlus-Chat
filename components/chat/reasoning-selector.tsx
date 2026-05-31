@@ -19,7 +19,7 @@ const MODE_CONFIG: { mode: ReasoningMode; icon: typeof Zap; activeColor: string 
 
 export function ReasoningSelector({ selectedMode, onSelectMode, disabled = false }: ReasoningSelectorProps) {
   return (
-    <div className="flex items-center gap-0.5 rounded-full border border-white/[0.06] bg-black/10 p-0.5">
+    <div className="flex items-center gap-0.5 rounded-full border border-white/[0.07] bg-black/15 p-0.5">
       {MODE_CONFIG.map(({ mode, icon: Icon, activeColor }) => {
         const profile = REASONING_PROFILES[mode]
         const isSelected = selectedMode === mode
@@ -39,7 +39,7 @@ export function ReasoningSelector({ selectedMode, onSelectMode, disabled = false
           >
             {isSelected && (
               <motion.div
-                className="absolute inset-0 rounded-full border border-violet-400/15 bg-violet-500/10"
+                className="absolute inset-0 rounded-full border border-violet-300/[0.14] bg-violet-400/[0.08]"
                 layoutId="reasoning-pill"
                 transition={{ type: 'spring', stiffness: 400, damping: 28 }}
               />

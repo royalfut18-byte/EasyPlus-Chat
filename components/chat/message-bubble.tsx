@@ -112,13 +112,13 @@ export function MessageBubble({ role, content, model, onRegenerate, attachments,
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3 }}
-      className={cn('mb-4 md:mb-6', isUser ? 'flex justify-end' : 'flex justify-start')}
+      className={cn('mb-5 md:mb-7', isUser ? 'flex justify-end' : 'flex justify-start')}
     >
       <div
         className={cn(
           'relative group min-w-0',
           isUser
-            ? 'mb-5 max-w-[85%] rounded-3xl bg-violet-600/85 text-white md:max-w-[72%]'
+            ? 'mb-4 max-w-[85%] rounded-2xl border border-violet-300/[0.08] bg-[#312b3b] text-gray-100 md:max-w-[72%]'
             : 'w-full'
         )}
       >
@@ -140,7 +140,7 @@ export function MessageBubble({ role, content, model, onRegenerate, attachments,
         {attachments && attachments.length > 0 && (
           <div className={cn(
             'flex flex-wrap gap-2',
-            isUser ? 'px-3 pb-1 pt-3 md:px-4 md:pt-4' : 'mb-3'
+            isUser ? 'px-3 pb-1 pt-3 md:px-3.5 md:pt-3.5' : 'mb-3'
           )}>
             {attachments.map((attachment, index) => {
               const openUrl = getAttachmentOpenUrl(attachment)
@@ -308,7 +308,7 @@ export function MessageBubble({ role, content, model, onRegenerate, attachments,
 
         <div className={cn(
           'message-content prose prose-invert max-w-none',
-          isUser ? 'prose-sm p-3 md:p-4' : 'prose-sm md:prose-base'
+          isUser ? 'prose-sm px-3 py-2.5 md:px-3.5 md:py-3' : 'prose-sm md:prose-base'
         )}>
           {isUser ? (
             safeContent ? <p className="mb-0 whitespace-pre-wrap break-words text-sm md:text-base leading-6">{safeContent}</p> : null

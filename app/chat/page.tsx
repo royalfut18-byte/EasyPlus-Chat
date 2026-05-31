@@ -2089,8 +2089,8 @@ Default to artifact:html with a complete single-file HTML document. Do NOT outpu
                 >
                   {heroIsDragging && (
                     <div className="pointer-events-none fixed inset-0 z-[80] flex items-center justify-center bg-black/55 p-4 backdrop-blur-md">
-                      <div className="w-full max-w-lg rounded-3xl border border-dashed border-violet-400/45 bg-[#181818]/95 p-8 text-center shadow-2xl shadow-black/40">
-                        <Paperclip className="h-12 w-12 text-violet-300 mx-auto mb-3" />
+                      <div className="w-full max-w-lg rounded-2xl border border-dashed border-white/[0.18] bg-[#1b1b1b]/95 p-8 text-center shadow-2xl shadow-black/40">
+                        <Paperclip className="h-12 w-12 text-gray-400 mx-auto mb-3" />
                         <p className="text-lg font-semibold text-white">Drop files to attach</p>
                         <p className="text-gray-400 text-sm mt-1">
                           PDFs, images, Word, Excel, PowerPoint, text, CSV, JSON, ZIP, audio, and video
@@ -2133,7 +2133,7 @@ Default to artifact:html with a complete single-file HTML document. Do NOT outpu
                     transition={{ delay: 0.25 }}
                     className="relative w-full max-w-3xl"
                   >
-                    <div className="relative rounded-[24px] border border-white/[0.10] bg-[#2b2b2b] px-2.5 py-2.5 transition-colors focus-within:border-white/[0.18] md:px-3">
+                    <div className="relative rounded-[24px] border border-white/[0.11] bg-[#262626] px-2.5 py-2.5 transition-colors focus-within:border-white/[0.20] md:px-3">
                       <input
                         ref={heroFileInputRef}
                         type="file"
@@ -2159,7 +2159,7 @@ Default to artifact:html with a complete single-file HTML document. Do NOT outpu
                                   <img src={att.dataUrl} alt={att.name} className="h-full w-full object-cover" />
                                 </div>
                               ) : (
-                                <div className="flex h-14 w-40 items-center gap-2 rounded-lg border border-white/[0.10] bg-[#242424] p-2 md:h-16 md:w-48">
+                                <div className="flex h-14 w-40 items-center gap-2 rounded-lg border border-white/[0.10] bg-[#202020] p-2 md:h-16 md:w-48">
                                   <FileText className="h-5 w-5 text-gray-400 shrink-0" />
                                   <div className="min-w-0">
                                     <p className="text-xs font-medium text-white truncate">{att.name}</p>
@@ -2265,7 +2265,7 @@ Default to artifact:html with a complete single-file HTML document. Do NOT outpu
                             }
                           }}
                           disabled={(!heroInput.trim() && heroAttachments.length === 0) || isRequestInProgress || heroAttachments.some(a => a.uploadStatus === 'pending' || a.uploadStatus === 'uploading' || a.uploadStatus === 'processing' || a.uploadStatus === 'compressing')}
-                          className="mb-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-violet-600 transition-colors hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-30"
+                          className="mb-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-violet-600/90 transition-colors hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-30"
                         >
                           {isRequestInProgress || heroAttachments.some(a => a.uploadStatus === 'pending' || a.uploadStatus === 'uploading' || a.uploadStatus === 'processing') ? (
                             <Loader2 className="h-3.5 w-3.5 md:h-4 md:w-4 text-white animate-spin" />
@@ -2303,7 +2303,7 @@ Default to artifact:html with a complete single-file HTML document. Do NOT outpu
                         key={i}
                         onClick={() => handleSendMessage(text)}
                         disabled={isRequestInProgress}
-                        className="rounded-full border border-white/[0.07] bg-white/[0.02] px-3 py-1.5 text-xs text-gray-400 transition-colors hover:border-white/[0.14] hover:bg-white/[0.05] hover:text-gray-200 disabled:cursor-not-allowed disabled:opacity-50 md:text-sm"
+                        className="rounded-full border border-white/[0.07] bg-white/[0.02] px-3 py-1.5 text-xs text-gray-400 transition-colors hover:border-violet-300/[0.18] hover:bg-white/[0.05] hover:text-gray-200 disabled:cursor-not-allowed disabled:opacity-50 md:text-sm"
                       >
                         {text}
                       </button>

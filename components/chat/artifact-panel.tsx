@@ -1286,7 +1286,7 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
       {!isMobile && isOpen && (
         <aside
           ref={panelRef}
-          className="hidden md:flex relative h-full min-h-0 flex-shrink-0 flex-col border-l border-white/[0.06] bg-[#0a0a10] shadow-2xl"
+          className="hidden md:flex relative h-full min-h-0 flex-shrink-0 flex-col border-l border-white/[0.06] bg-[#111111] shadow-2xl"
           style={{ width: `${currentWidth}px` }}
         >
           {/* Resize Handle - Desktop Only - Full Height */}

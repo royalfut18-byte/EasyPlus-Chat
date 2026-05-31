@@ -175,7 +175,7 @@ export function Sidebar({
                   <button className="flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left transition-colors hover:bg-white/[0.05]">
                     <Avatar className="h-8 w-8">
                       <AvatarImage src={userProfile.avatar_url || undefined} />
-                      <AvatarFallback className="bg-violet-600/80 text-xs text-white">
+                      <AvatarFallback className="border border-white/[0.08] bg-[#292929] text-xs text-gray-200">
                         {initials}
                       </AvatarFallback>
                     </Avatar>

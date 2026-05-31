@@ -402,7 +402,7 @@ export function ChatInput({ onSend, disabled, isLoading, conversationId, reasoni
 
   return (
     <div
-      className="sticky bottom-0 bg-gradient-to-t from-[#0f0f0f] via-[#0f0f0f] to-[#0f0f0f]/80 px-3 pb-3 pt-2 md:px-4 md:pb-4"
+      className="sticky bottom-0 bg-gradient-to-t from-[#0f0f0f] via-[#0f0f0f] to-[#0f0f0f]/90 px-3 pb-3 pt-2 md:px-4 md:pb-4"
       onDragEnter={handleDragEnter}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
@@ -410,8 +410,8 @@ export function ChatInput({ onSend, disabled, isLoading, conversationId, reasoni
     >
       {isDragging && (
         <div className="pointer-events-none fixed inset-0 z-[80] flex items-center justify-center bg-black/55 p-4 backdrop-blur-md">
-          <div className="w-full max-w-lg rounded-3xl border border-dashed border-violet-400/45 bg-[#181818]/95 p-8 text-center shadow-2xl shadow-black/40">
-            <Paperclip className="h-12 w-12 text-violet-300 mx-auto mb-3" />
+          <div className="w-full max-w-lg rounded-2xl border border-dashed border-white/[0.18] bg-[#1b1b1b]/95 p-8 text-center shadow-2xl shadow-black/40">
+            <Paperclip className="h-12 w-12 text-gray-400 mx-auto mb-3" />
             <p className="text-lg font-semibold text-white">Drop files to attach</p>
             <p className="text-gray-400 text-sm mt-1">
               PDFs, images, Word, Excel, PowerPoint, text, CSV, JSON, ZIP, audio, and video
@@ -423,7 +423,7 @@ export function ChatInput({ onSend, disabled, isLoading, conversationId, reasoni
         </div>
       )}
       <div className="mx-auto max-w-[820px]">
-        <div className="rounded-[24px] border border-white/[0.10] bg-[#2b2b2b] p-2 transition-colors focus-within:border-white/[0.18] md:p-2.5">
+        <div className="rounded-[24px] border border-white/[0.11] bg-[#262626] p-2 transition-colors focus-within:border-white/[0.20] md:p-2.5">
           {attachments.length > 0 && (
             <>
             <div className="text-xs text-gray-400 mb-2 px-1">
@@ -453,7 +453,7 @@ export function ChatInput({ onSend, disabled, isLoading, conversationId, reasoni
                       )}
                     </div>
                   ) : (
-                    <div className="flex h-14 w-44 flex-col justify-between rounded-lg border border-white/[0.09] bg-[#242424] p-2 md:h-16 md:w-52">
+                    <div className="flex h-14 w-44 flex-col justify-between rounded-lg border border-white/[0.09] bg-[#202020] p-2 md:h-16 md:w-52">
                       <div className="flex items-start gap-2">
                         {attachment.uploadStatus === 'uploading' || attachment.uploadStatus === 'processing' || attachment.uploadStatus === 'pending' ? (
                           <Upload className="h-5 w-5 text-violet-400 animate-pulse shrink-0" />
@@ -554,7 +554,7 @@ export function ChatInput({ onSend, disabled, isLoading, conversationId, reasoni
               onMouseDown={(event) => event.preventDefault()}
               disabled={(!message.trim() && attachments.length === 0) || isComposerUnavailable || hasActiveUpload}
               size="icon"
-              className="h-8 w-8 shrink-0 rounded-full bg-violet-600 transition-colors hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-40 md:h-9 md:w-9"
+              className="h-8 w-8 shrink-0 rounded-full bg-violet-600/90 transition-colors hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-40 md:h-9 md:w-9"
             >
               {isLoading ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
