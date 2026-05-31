@@ -1,8 +1,8 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getAdminAccess, canManageTarget } from '@/lib/admin-access.server'
 
-export async function DELETE(request: Request, { params }: { params: { id: string } }) {
+export async function DELETE(request: NextRequest) {
   try {
     const supabase = await createClient()
     const { data: { user }, error: userError } = await supabase.auth.getUser()
@@ -15,7 +15,10 @@ export async function DELETE(request: Request, { params }: { params: { id: strin
       return NextResponse.json({ error: 'Admin access required' }, { status: 403 })
     }
 
-    const targetUserId = params.id
+    // Extract target id from the URL path (route: /api/admin/users/[id]/delete)
+    const url = new URL(request.url)
+    const parts = url.pathname.split('/').filter(Boolean)
+    const targetUserId = parts[parts.length - 2]
 
     const { data: profile, error: profileError } = await access.db
       .from('profiles')
