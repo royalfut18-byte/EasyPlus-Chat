@@ -46,7 +46,7 @@ export async function POST(request: NextRequest) {
     const entitlementBlock = getEntitlementBlockResponse(await getAccountEntitlement(db, user.id))
     if (entitlementBlock) return entitlementBlock
 
-    const { title, model, reasoningMode } = await request.json()
+    const { title, model, reasoningMode, projectId } = await request.json()
     const publicModelId = toPublicModelId(model)
 
     if (!getInternalModel(publicModelId)) {
@@ -61,6 +61,20 @@ export async function POST(request: NextRequest) {
       user_id: user.id,
       title: title || 'New Conversation',
       model_used: publicModelId,
+    }
+
+    if (projectId) {
+      // validate ownership of the project
+      const { data: projectRow, error: projectErr } = await db
+        .from('projects')
+        .select('id, user_id')
+        .eq('id', projectId)
+        .limit(1)
+        .single()
+      if (projectErr || !projectRow || projectRow.user_id !== user.id) {
+        return NextResponse.json({ error: 'Invalid project' }, { status: 403 })
+      }
+      insertPayload.project_id = projectId
     }
 
     if (reasoningMode) {
@@ -81,6 +95,7 @@ export async function POST(request: NextRequest) {
           user_id: user.id,
           title: title || 'New Conversation',
           model_used: publicModelId,
+          ...(projectId ? { project_id: projectId } : {}),
         })
         .select()
         .single()

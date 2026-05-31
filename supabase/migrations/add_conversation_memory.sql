@@ -154,19 +154,3 @@ DO $$ BEGIN
     CREATE POLICY "Users can delete own snapshots" ON public.context_snapshots FOR DELETE USING (auth.uid() = user_id);
   END IF;
 END $$;
-
--- 12. Service role bypass policies (for background jobs)
-DO $$ BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'conversation_memories' AND policyname = 'Service role full access conv memories') THEN
-    CREATE POLICY "Service role full access conv memories" ON public.conversation_memories FOR ALL USING (true) WITH CHECK (true);
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'memory_chunks' AND policyname = 'Service role full access chunks') THEN
-    CREATE POLICY "Service role full access chunks" ON public.memory_chunks FOR ALL USING (true) WITH CHECK (true);
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'context_snapshots' AND policyname = 'Service role full access snapshots') THEN
-    CREATE POLICY "Service role full access snapshots" ON public.context_snapshots FOR ALL USING (true) WITH CHECK (true);
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'attachments' AND policyname = 'Service role full access attachments') THEN
-    CREATE POLICY "Service role full access attachments" ON public.attachments FOR ALL USING (true) WITH CHECK (true);
-  END IF;
-END $$;

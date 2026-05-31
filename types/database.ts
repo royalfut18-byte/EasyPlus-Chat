@@ -62,6 +62,7 @@ export interface Database {
           user_id: string
           title: string
           model_used: string
+          project_id?: string | null
           created_at: string
           updated_at: string
         }
@@ -70,6 +71,7 @@ export interface Database {
           user_id: string
           title?: string
           model_used: string
+          project_id?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -78,6 +80,92 @@ export interface Database {
           user_id?: string
           title?: string
           model_used?: string
+          project_id?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+      }
+      projects: {
+        Row: {
+          id: string
+          user_id: string
+          name: string
+          description: string | null
+          instructions: string | null
+          icon: string | null
+          color: string | null
+          archived_at: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          name: string
+          description?: string | null
+          instructions?: string | null
+          icon?: string | null
+          color?: string | null
+          archived_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          name?: string
+          description?: string | null
+          instructions?: string | null
+          icon?: string | null
+          color?: string | null
+          archived_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+      }
+      project_memories: {
+        Row: {
+          id: string
+          project_id: string
+          user_id: string
+          memory_type: string | null
+          title: string | null
+          content: string
+          importance: number
+          source_type: string | null
+          source_id: string | null
+          last_used_at: string | null
+          archived_at: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          project_id: string
+          user_id: string
+          memory_type?: string | null
+          title?: string | null
+          content: string
+          importance?: number
+          source_type?: string | null
+          source_id?: string | null
+          last_used_at?: string | null
+          archived_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          project_id?: string
+          user_id?: string
+          memory_type?: string | null
+          title?: string | null
+          content?: string
+          importance?: number
+          source_type?: string | null
+          source_id?: string | null
+          last_used_at?: string | null
+          archived_at?: string | null
           created_at?: string
           updated_at?: string
         }

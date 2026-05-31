@@ -49,7 +49,4 @@ DO $$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'attachment_pages' AND policyname = 'Users can delete own attachment pages') THEN
     CREATE POLICY "Users can delete own attachment pages" ON public.attachment_pages FOR DELETE USING (auth.uid() = user_id);
   END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'attachment_pages' AND policyname = 'Service role full access attachment pages') THEN
-    CREATE POLICY "Service role full access attachment pages" ON public.attachment_pages FOR ALL USING (true) WITH CHECK (true);
-  END IF;
 END $$;
