@@ -792,6 +792,94 @@ function createCanvaHtml(title: string, content: string): string {
 </html>`)
 }
 
+function createMarkdownPreviewHtml(title: string, content: string): string {
+  const html = content
+    .split(/\n{2,}/)
+    .map(block => {
+      const trimmed = block.trim()
+      if (!trimmed) return ''
+      if (/^###\s+/.test(trimmed)) return `<h3>${escapeXml(trimmed.replace(/^###\s+/, ''))}</h3>`
+      if (/^##\s+/.test(trimmed)) return `<h2>${escapeXml(trimmed.replace(/^##\s+/, ''))}</h2>`
+      if (/^#\s+/.test(trimmed)) return `<h1>${escapeXml(trimmed.replace(/^#\s+/, ''))}</h1>`
+      if (/^[-*]\s+/m.test(trimmed)) {
+        const items = trimmed.split(/\n/).filter(Boolean).map(line => `<li>${escapeXml(line.replace(/^[-*]\s+/, ''))}</li>`).join('')
+        return `<ul>${items}</ul>`
+      }
+      return `<p>${escapeXml(trimmed).replace(/\n/g, '<br />')}</p>`
+    })
+    .join('\n')
+
+  return createPreviewHtml(title, `<main class="markdown-preview">${html}</main><style>
+    body { margin: 0; background: #0f172a; color: #e5e7eb; font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
+    .markdown-preview { max-width: 860px; margin: 0 auto; padding: 40px 28px; line-height: 1.7; }
+    h1, h2, h3 { color: #fff; line-height: 1.2; margin: 1.2em 0 .5em; }
+    h1 { font-size: 2.4rem; } h2 { font-size: 1.7rem; } h3 { font-size: 1.25rem; }
+    p, li { font-size: 1rem; } ul { padding-left: 1.4rem; }
+  </style>`)
+}
+
+function createJsonPreviewHtml(title: string, content: string): string {
+  let formatted = content
+  try {
+    formatted = JSON.stringify(JSON.parse(content), null, 2)
+  } catch {
+    formatted = content
+  }
+
+  return createPreviewHtml(title, `<main><h1>${escapeXml(title)}</h1><pre>${escapeXml(formatted)}</pre></main><style>
+    body { margin: 0; background: #111827; color: #e5e7eb; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    main { padding: 28px; }
+    h1 { font: 600 20px Inter, ui-sans-serif, system-ui, sans-serif; color: white; }
+    pre { overflow: auto; padding: 20px; border-radius: 14px; background: #020617; border: 1px solid rgba(255,255,255,.1); }
+  </style>`)
+}
+
+function createSvgPreviewHtml(title: string, content: string): string {
+  return createPreviewHtml(title, `<main>${content}</main><style>
+    body { margin: 0; min-height: 100vh; background: #111827; display: grid; place-items: center; }
+    main { width: min(90vw, 900px); height: min(80vh, 700px); display: grid; place-items: center; padding: 24px; }
+    svg { max-width: 100%; max-height: 100%; }
+  </style>`)
+}
+
+function createCssPreviewHtml(title: string, content: string): string {
+  return createPreviewHtml(title, `<main><section class="demo-card"><span class="eyebrow">CSS Preview</span><h1>${escapeXml(title)}</h1><p>This preview applies the generated CSS to a sample card.</p><button>Sample button</button></section></main><style>
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #111827; font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
+    .demo-card { padding: 36px; border-radius: 24px; background: white; color: #111827; box-shadow: 0 24px 80px rgba(0,0,0,.35); }
+    .eyebrow { color: #7c3aed; font-weight: 700; text-transform: uppercase; letter-spacing: .12em; font-size: 12px; }
+    button { padding: 10px 16px; border: 0; border-radius: 10px; background: #7c3aed; color: white; }
+    ${content}
+  </style>`)
+}
+
+function createJavaScriptPreviewHtml(title: string, content: string): string {
+  return createPreviewHtml(title, `<main><h1>${escapeXml(title)}</h1><p>JavaScript preview console:</p><pre id="output"></pre></main><script>
+    const output = document.getElementById('output');
+    const originalLog = console.log;
+    console.log = (...args) => {
+      output.textContent += args.map(value => typeof value === 'object' ? JSON.stringify(value, null, 2) : String(value)).join(' ') + '\\n';
+      originalLog(...args);
+    };
+    try {
+      ${content}
+    } catch (error) {
+      output.textContent += 'Error: ' + error.message;
+    }
+  </script><style>
+    body { margin: 0; background: #111827; color: #e5e7eb; font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
+    main { padding: 28px; }
+    pre { min-height: 220px; padding: 18px; border-radius: 14px; background: #020617; border: 1px solid rgba(255,255,255,.1); color: #a7f3d0; }
+  </style>`)
+}
+
+function createTextPreviewHtml(title: string, content: string): string {
+  return createPreviewHtml(title, `<main><h1>${escapeXml(title)}</h1><pre>${escapeXml(content)}</pre></main><style>
+    body { margin: 0; background: #111827; color: #e5e7eb; font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
+    main { max-width: 900px; margin: 0 auto; padding: 36px 28px; }
+    pre { white-space: pre-wrap; line-height: 1.7; font: inherit; }
+  </style>`)
+}
+
 function createDocxBlob(title: string, content: string): Blob {
   const body = documentBodyXml(content)
 
@@ -848,6 +936,13 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
   useEffect(() => {
     setCurrentWidth(width)
   }, [width])
+
+  useEffect(() => {
+    if (!artifact) return
+    const previewable = ['html', 'canva', 'markdown', 'json', 'svg', 'css', 'javascript', 'text'].includes(artifact.language)
+    setActiveTab(previewable ? 'preview' : 'code')
+    setRefreshKey(k => k + 1)
+  }, [artifact?.id, artifact?.language])
 
   useEffect(() => {
     if (!isResizing) return
@@ -911,9 +1006,20 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
     })
   }
 
-  const canPreview = artifact?.language === 'html' || artifact?.language === 'canva'
+  const canPreview = !!artifact && ['html', 'canva', 'markdown', 'json', 'svg', 'css', 'javascript', 'text'].includes(artifact.language)
   const isReact = artifact?.language === 'tsx' || artifact?.language === 'jsx'
-  const currentTab = canPreview || isReact ? activeTab : 'code'
+  const currentTab = activeTab
+
+  const getPreviewSrcDoc = (artifact: Artifact): string => {
+    if (artifact.language === 'canva') return createCanvaHtml(artifact.title, artifact.code)
+    if (artifact.language === 'html') return createPreviewHtml(artifact.title, artifact.code)
+    if (artifact.language === 'markdown') return createMarkdownPreviewHtml(artifact.title, artifact.code)
+    if (artifact.language === 'json') return createJsonPreviewHtml(artifact.title, artifact.code)
+    if (artifact.language === 'svg') return createSvgPreviewHtml(artifact.title, artifact.code)
+    if (artifact.language === 'css') return createCssPreviewHtml(artifact.title, artifact.code)
+    if (artifact.language === 'javascript') return createJavaScriptPreviewHtml(artifact.title, artifact.code)
+    return createTextPreviewHtml(artifact.title, artifact.code)
+  }
 
   // Get display label for artifact language
   const getLanguageLabel = (artifact: Artifact | null): string => {
@@ -939,9 +1045,12 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
 
     // Other languages
     if (lang === 'javascript') return 'JavaScript'
+    if (lang === 'typescript') return 'TypeScript'
     if (lang === 'python') return 'Python'
     if (lang === 'css') return 'CSS'
     if (lang === 'markdown') return 'Markdown'
+    if (lang === 'json') return 'JSON'
+    if (lang === 'svg') return 'SVG'
     if (lang === 'docx') return 'Microsoft Word'
     if (lang === 'gdoc') return 'Google Docs'
     if (lang === 'xlsx') return 'Excel'
@@ -985,20 +1094,18 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
       {/* Tabs and Controls */}
       <div className="bg-white/[0.02] border-b border-white/[0.06] px-4 flex items-center gap-2 justify-between">
         <div className="flex items-center gap-2">
-          {canPreview && (
-            <button
-              onClick={() => setActiveTab('preview')}
-              className={cn(
-                'px-4 py-3 text-sm font-medium transition-colors border-b-2 flex items-center gap-2',
-                currentTab === 'preview'
-                  ? 'text-white border-violet-500'
-                  : 'text-gray-400 border-transparent hover:text-white'
-              )}
-            >
-              <Eye className="h-4 w-4" />
-              Preview
-            </button>
-          )}
+          <button
+            onClick={() => setActiveTab('preview')}
+            className={cn(
+              'px-4 py-3 text-sm font-medium transition-colors border-b-2 flex items-center gap-2',
+              currentTab === 'preview'
+                ? 'text-white border-violet-500'
+                : 'text-gray-400 border-transparent hover:text-white'
+            )}
+          >
+            <Eye className="h-4 w-4" />
+            Preview
+          </button>
           <button
             onClick={() => setActiveTab('code')}
             className={cn(
@@ -1014,7 +1121,7 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
         </div>
 
         {/* Device Preview Controls - Only show in preview tab for HTML */}
-        {canPreview && currentTab === 'preview' && artifact?.code && (
+        {canPreview && currentTab === 'preview' && artifact?.code && ['html', 'canva'].includes(artifact.language) && (
           <div className="flex items-center gap-1">
             <button
               onClick={() => setPreviewDevice('desktop')}
@@ -1112,7 +1219,7 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
                 <iframe
                   ref={iframeRef}
                   key={refreshKey}
-                  srcDoc={artifact.language === 'canva' ? createCanvaHtml(artifact.title, artifact.code) : createPreviewHtml(artifact.title, artifact.code)}
+                  srcDoc={getPreviewSrcDoc(artifact)}
                   title={artifact.title}
                   sandbox="allow-scripts allow-forms allow-modals allow-popups allow-pointer-lock"
                   className="w-full h-full border-0 bg-white pointer-events-auto"
@@ -1147,7 +1254,9 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
                 </div>
                 <h4 className="text-lg font-semibold text-white">Preview Not Available</h4>
                 <p className="text-sm text-gray-400">
-                  Preview is only available for HTML and Canva-style artifacts. Switch to the Code tab to view the {artifact.language} content.
+                  {artifact.language === 'python'
+                    ? 'Live preview is not available for Python or Pygame artifacts in the browser. Download the file and run it locally with Python.'
+                    : 'Live preview is not available for this artifact type yet. Use the Code tab to view, copy, or download the source.'}
                 </p>
               </div>
             </div>
@@ -1158,6 +1267,8 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
               language={
                 artifact.language === 'tsx' || artifact.language === 'jsx'
                   ? 'tsx'
+                  : artifact.language === 'typescript'
+                    ? 'typescript'
                   : artifact.language === 'javascript'
                     ? 'javascript'
                     : ['docx', 'gdoc', 'xlsx', 'gsheet', 'pptx', 'gslides'].includes(artifact.language)
@@ -1229,9 +1340,12 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
       tsx: 'tsx',
       jsx: 'jsx',
       javascript: 'js',
+      typescript: 'ts',
       css: 'css',
       python: 'py',
       markdown: 'md',
+      json: 'json',
+      svg: 'svg',
       text: 'txt',
       docx: 'docx',
       gdoc: 'docx',
@@ -1279,9 +1393,12 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
       tsx: 'tsx',
       jsx: 'jsx',
       javascript: 'js',
+      typescript: 'ts',
       css: 'css',
       python: 'py',
       markdown: 'md',
+      json: 'json',
+      svg: 'svg',
       text: 'txt',
       docx: 'txt',
       gdoc: 'txt',

@@ -1008,8 +1008,10 @@ CODE_HERE
 \`\`\`
 
 Rules:
-- Use language values: html, tsx, jsx, javascript, css, python, markdown, text, docx, xlsx, pptx, gdoc, gsheet, gslides, canva.
+- Use language values: html, tsx, jsx, javascript, typescript, css, python, markdown, json, svg, text, docx, xlsx, pptx, gdoc, gsheet, gslides, canva.
 - Default to artifact:html with a full single-file HTML document, inline CSS, and inline JS so it opens as a live side-panel preview.
+- For visual, interactive, playable, game, calculator, dashboard, landing page, website, or browser-app requests, use artifact:html by default with complete browser-playable HTML/CSS/JS.
+- Only use artifact:python or Pygame when the user explicitly asks for Python, Pygame, or a Python script.
 - Only use artifact:docx, artifact:xlsx, artifact:pptx, artifact:gdoc, artifact:gsheet, or artifact:gslides when the user explicitly asks for that exact Office/Google file type.
 - Do not choose Word/docx for generic requests like "make something", "make an artifact", "make a document", "write this up", or "create a page".
 - For explicit Microsoft Word documents, use artifact:docx:Title and put clean markdown/plain text inside. The app will convert it into a downloadable .docx file.
@@ -1639,7 +1641,7 @@ When the user asks for buildable code/UI artifacts, return a short explanation, 
 CODE_HERE
 \`\`\`
 
-Default to artifact:html with a complete single-file HTML document. Do NOT output raw HTML outside the artifact block.`,
+Default to artifact:html with a complete single-file HTML document for visual, playable, interactive, website, app, game, or dashboard requests. Only use Python/Pygame when explicitly requested. Do NOT output raw HTML outside the artifact block.`,
           attachments: undefined,
         })
       }

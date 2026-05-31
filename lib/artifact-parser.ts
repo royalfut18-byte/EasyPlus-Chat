@@ -12,7 +12,7 @@ const BUILDABLE_KEYWORDS = [
 ]
 
 const SUPPORTED_LANGUAGES = new Set([
-  'html', 'tsx', 'jsx', 'javascript', 'css', 'python', 'markdown', 'text',
+  'html', 'tsx', 'jsx', 'javascript', 'typescript', 'css', 'python', 'markdown', 'json', 'svg', 'text',
   'docx', 'xlsx', 'pptx', 'gdoc', 'gsheet', 'gslides', 'canva'
 ])
 
@@ -24,11 +24,14 @@ function normalizeLanguage(language?: string): Artifact['language'] | null {
   const aliases: Record<string, Artifact['language']> = {
     htm: 'html',
     js: 'javascript',
-    ts: 'tsx',
-    typescript: 'tsx',
+    ts: 'typescript',
+    typescript: 'typescript',
     react: 'tsx',
     py: 'python',
     md: 'markdown',
+    markdown: 'markdown',
+    json: 'json',
+    svg: 'svg',
     txt: 'text',
     doc: 'docx',
     word: 'docx',
@@ -103,6 +106,15 @@ function inferLanguageFromCode(code: string, fallback?: string): Artifact['langu
 
   const trimmed = code.trim()
   if (/^<!DOCTYPE\s+html/i.test(trimmed) || /<html[\s>]/i.test(trimmed)) return 'html'
+  if (/^<svg[\s>]/i.test(trimmed)) return 'svg'
+  if (/^[\[{]/.test(trimmed)) {
+    try {
+      JSON.parse(trimmed)
+      return 'json'
+    } catch {
+      // Fall through to other lightweight detection.
+    }
+  }
   if (/^#\s|\n#{1,6}\s|^\s*[-*]\s+/m.test(trimmed)) return 'markdown'
   return 'text'
 }

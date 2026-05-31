@@ -194,8 +194,10 @@ When the user asks for something to make, build, design, preview, or display in 
 CODE_HERE
 \`\`\`
 
-Languages: html, tsx, jsx, javascript, css, python, markdown, text, docx, xlsx, pptx, gdoc, gsheet, gslides, canva.
+Languages: html, tsx, jsx, javascript, typescript, css, python, markdown, json, svg, text, docx, xlsx, pptx, gdoc, gsheet, gslides, canva.
 Default to artifact:html with complete single-file HTML, inline CSS, and inline JS so the app can show a live side-panel preview.
+For visual, interactive, playable, game, calculator, dashboard, landing page, website, or browser-app requests, use artifact:html by default with complete browser-playable HTML/CSS/JS.
+Only use artifact:python or Pygame when the user explicitly asks for Python, Pygame, or a Python script. Do not make browser games as Python by default.
 Only use docx, xlsx, pptx, gdoc, gsheet, or gslides when the user explicitly asks for that exact Office/Google file type.
 Do not choose Word/docx for generic requests like "make something", "make an artifact", "make a document", "write this up", or "create a page". Use html unless the user clearly asks for a Word document or .docx file.
 For explicit Microsoft Word requests, use language docx and write clean markdown/plain text. The app will convert it into a downloadable .docx file.
