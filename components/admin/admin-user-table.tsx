@@ -119,7 +119,7 @@ export function AdminUserTable() {
       <td className="px-3 py-3 text-gray-500">{user.account_expires_at ? formatDate(user.account_expires_at) : 'No expiry'}</td>
       <td className="px-3 py-3 flex items-center gap-2">
         <Button size="sm" variant="outline" className="border-white/[0.10]" onClick={() => openEdit(user)}><Settings className="mr-1 h-3 w-3" />Edit</Button>
-        {data.actorRole === 'admin' && (
+        {(data.actorRole === 'admin' || data.actorRole === 'sub_admin') && user.role === 'user' && (
           <Button size="sm" variant="destructive" onClick={async () => {
             if (!confirm(`Delete account ${user.display_name || user.email}? This will remove the profile and auth user.`)) return
             const res = await fetch(`/api/admin/users/${user.user_id}/delete`, { method: 'DELETE' })
