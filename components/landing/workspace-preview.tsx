@@ -1,23 +1,25 @@
 'use client'
 
 import { motion } from 'framer-motion'
-import { MessageSquare, Search, Box, Send, Globe, Sparkles, Image as ImageIcon } from 'lucide-react'
+import { MessageSquare, Search, Box, Send, Globe, Sparkles, Image as ImageIcon, Plus, Paperclip } from 'lucide-react'
 import { ChatGPTIcon } from '@/components/icons/chatgpt-icon'
 import { AnthropicIcon } from '@/components/icons/anthropic-icon'
 import { Logo } from '@/components/brand/logo'
 
 const conversations = [
-  { title: 'Latest AI News', active: true },
-  { title: 'Code Review Help', active: false },
-  { title: 'Research Summary', active: false },
-  { title: 'Web Search Test', active: false },
+  { title: 'Latest AI News', active: true, date: 'Today' },
+  { title: 'Code Review Help', active: false, date: 'Today' },
+  { title: 'Research Summary', active: false, date: 'Yesterday' },
+  { title: 'Web Search Test', active: false, date: 'May 29' },
 ]
 
 const models = [
-  { name: 'Claude Opus 4.7', icon: <AnthropicIcon className="h-4 w-4" />, color: '#d97757', active: true },
-  { name: 'Chat GPT 5.5', icon: <ChatGPTIcon className="h-4 w-4" />, color: '#10a37f', active: false },
-  { name: 'Gemini 3.1 Pro', icon: <Sparkles className="h-4 w-4" />, color: '#4285f4', active: false },
+  { name: 'Claude Opus 4.7', icon: <AnthropicIcon className="h-3.5 w-3.5" />, color: '#d97757', active: true },
+  { name: 'Chat GPT 5.5', icon: <ChatGPTIcon className="h-3.5 w-3.5" />, color: '#10a37f', active: false },
+  { name: 'Gemini 3.1 Pro', icon: <Sparkles className="h-3.5 w-3.5" />, color: '#4285f4', active: false },
 ]
+
+const modes = ['Instant', 'Thinking', 'Extended']
 
 export function WorkspacePreview() {
   return (
@@ -26,11 +28,11 @@ export function WorkspacePreview() {
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true }}
       transition={{ duration: 0.8 }}
-      className="max-w-7xl mx-auto mb-20 md:mb-32 px-0 sm:px-4"
+      className="mx-auto mb-20 max-w-7xl px-0 sm:px-4 md:mb-32"
     >
-      <div className="text-center mb-12 md:mb-16 space-y-3 md:space-y-4 px-4">
-        <h2 className="text-3xl md:text-4xl lg:text-5xl font-bold">See the workspace in action.</h2>
-        <p className="text-base md:text-lg lg:text-xl text-gray-400 max-w-3xl mx-auto">
+      <div className="mb-12 space-y-3 px-4 text-center md:mb-16 md:space-y-4">
+        <h2 className="text-3xl font-bold md:text-4xl lg:text-5xl">See the workspace in action.</h2>
+        <p className="mx-auto max-w-3xl text-base text-gray-400 md:text-lg lg:text-xl">
           Search the web, switch models, create artifacts, upload images, and keep conversations organized - all from one private chat interface.
         </p>
       </div>
@@ -42,182 +44,196 @@ export function WorkspacePreview() {
         transition={{ duration: 0.8, delay: 0.15 }}
         className="relative"
       >
-        <div className="absolute -inset-x-6 -inset-y-4 bg-[linear-gradient(115deg,rgba(124,58,237,0.10),rgba(6,182,212,0.06),rgba(236,72,153,0.08))] rounded-3xl blur-3xl" />
+        <div className="absolute -inset-x-6 -inset-y-4 rounded-3xl bg-[linear-gradient(115deg,rgba(124,58,237,0.08),rgba(255,255,255,0.02),rgba(6,182,212,0.05))] blur-3xl" />
 
-        <div className="relative bg-[#0a0a10]/95 rounded-2xl border border-white/[0.09] overflow-hidden shadow-2xl shadow-black/50">
-          <div className="bg-white/[0.035] px-3 py-3 md:px-4 md:py-4 border-b border-white/[0.06] flex items-center gap-3">
+        <div className="relative overflow-hidden rounded-2xl border border-white/[0.08] bg-[#212121] shadow-2xl shadow-black/50">
+          <div className="flex items-center gap-3 border-b border-white/[0.06] bg-[#171717] px-3 py-3 md:px-4">
             <div className="flex gap-1.5">
-              <div className="w-3 h-3 rounded-full bg-red-500/50" />
-              <div className="w-3 h-3 rounded-full bg-yellow-500/50" />
-              <div className="w-3 h-3 rounded-full bg-green-500/50" />
+              <div className="h-3 w-3 rounded-full bg-red-500/45" />
+              <div className="h-3 w-3 rounded-full bg-yellow-500/45" />
+              <div className="h-3 w-3 rounded-full bg-green-500/45" />
             </div>
-            <div className="flex-1 flex items-center justify-center gap-2 min-w-0">
+            <div className="flex min-w-0 flex-1 items-center justify-center gap-2">
               <Logo size="sm" />
-              <span className="text-xs md:text-sm text-gray-300 truncate">EasyPlus AI Workspace</span>
+              <span className="truncate text-xs text-gray-300 md:text-sm">EasyPlus AI</span>
             </div>
-            <div className="hidden sm:flex items-center gap-1.5 text-[11px] text-emerald-300">
+            <div className="hidden items-center gap-1.5 text-[11px] text-emerald-300 sm:flex">
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
               Live
             </div>
           </div>
 
           <div className="flex min-h-[560px] md:h-[620px]">
-            <div className="hidden md:block w-64 border-r border-white/[0.06] bg-[#07070d] p-4 space-y-3">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-sm font-semibold text-white">Conversations</h3>
-                <MessageSquare className="h-4 w-4 text-gray-400" />
+            <aside className="hidden w-72 shrink-0 border-r border-white/[0.06] bg-[#171717] p-3 md:flex md:flex-col">
+              <div className="px-2 py-1">
+                <Logo size="sm" showText />
               </div>
-              {conversations.map((conv) => (
-                <div
-                  key={conv.title}
-                  className={`p-3 rounded-xl transition-all ${
-                    conv.active
-                      ? 'bg-violet-500/[0.10] border border-violet-400/25 shadow-lg shadow-violet-950/20'
-                      : 'bg-white/[0.025] border border-transparent hover:border-white/[0.06]'
-                  }`}
-                >
-                  <div className="flex items-start gap-2">
-                    <MessageSquare className={`h-4 w-4 mt-0.5 ${conv.active ? 'text-violet-400' : 'text-gray-500'}`} />
-                    <span className={`text-xs font-medium ${conv.active ? 'text-white' : 'text-gray-300'}`}>
-                      {conv.title}
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
 
-            <div className="flex-1 flex flex-col bg-[#08070d]">
-              <div className="border-b border-white/[0.06] p-3 md:p-4 space-y-3 bg-white/[0.015]">
-                <div className="md:hidden flex gap-2 overflow-x-auto pb-1">
-                  {conversations.map((conv) => (
-                    <div
-                      key={conv.title}
-                      className={`shrink-0 rounded-full border px-3 py-1.5 text-[11px] ${
-                        conv.active
-                          ? 'border-violet-400/25 bg-violet-500/10 text-white'
-                          : 'border-white/[0.06] bg-white/[0.025] text-gray-400'
-                      }`}
-                    >
-                      {conv.title}
-                    </div>
-                  ))}
-                </div>
+              <button className="mt-3 flex h-10 items-center rounded-lg border border-white/[0.08] px-3 text-sm text-gray-200">
+                <Plus className="mr-2 h-4 w-4 text-violet-400" />
+                New Chat
+              </button>
 
-                <div className="flex flex-wrap gap-2">
-                  {models.map((model) => (
-                    <div
-                      key={model.name}
-                      className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${
-                        model.active
-                          ? 'border-white/[0.12] bg-white/[0.06]'
-                          : 'border-white/[0.06] bg-white/[0.02]'
-                      }`}
-                      style={model.active ? {
-                        background: `linear-gradient(135deg, ${model.color}15, ${model.color}08)`,
-                        boxShadow: `0 0 8px ${model.color}20`,
-                      } : undefined}
-                    >
-                      <div className="w-5 h-5 rounded-lg bg-white/[0.06] flex items-center justify-center" style={{ color: model.color }}>
-                        {model.icon}
+              <div className="px-2 pb-1 pt-5 text-[11px] font-medium uppercase tracking-[0.12em] text-gray-500">
+                Recent
+              </div>
+
+              <div className="space-y-0.5">
+                {conversations.map((conv) => (
+                  <div
+                    key={conv.title}
+                    className={`rounded-lg px-2.5 py-2 ${
+                      conv.active ? 'bg-white/[0.08]' : 'bg-transparent'
+                    }`}
+                  >
+                    <div className="flex items-start gap-2.5">
+                      <MessageSquare className={`mt-0.5 h-3.5 w-3.5 shrink-0 ${conv.active ? 'text-violet-400' : 'text-gray-500'}`} />
+                      <div className="min-w-0 flex-1">
+                        <p className={`truncate text-sm leading-snug ${conv.active ? 'text-white' : 'text-gray-300'}`}>
+                          {conv.title}
+                        </p>
+                        <p className="mt-0.5 text-[11px] text-gray-500">{conv.date}</p>
                       </div>
-                      <span className={model.active ? 'text-white' : 'text-gray-400'}>{model.name}</span>
                     </div>
-                  ))}
-                </div>
+                  </div>
+                ))}
+              </div>
 
-                <div className="flex flex-wrap gap-2">
-                  <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-violet-500/10 border border-violet-500/20 text-violet-300 text-xs font-medium">
-                    <Globe className="h-3 w-3" />
-                    <span>Web Search</span>
+              <div className="mt-auto border-t border-white/[0.06] pt-3">
+                <div className="flex items-center gap-3 rounded-lg px-2 py-2">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-violet-600/80 text-xs font-semibold text-white">
+                    E
                   </div>
-                  <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-violet-500/10 border border-violet-500/20 text-violet-300 text-xs font-medium">
-                    <Box className="h-3 w-3" />
-                    <span>Artifacts</span>
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium text-gray-200">EasyPlus User</p>
+                    <p className="text-[11px] text-gray-500">12.4K credits</p>
                   </div>
-                  <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-pink-500/10 border border-pink-500/20 text-pink-200 text-xs font-medium">
-                    <ImageIcon className="h-3 w-3" />
-                    <span>Images</span>
+                </div>
+              </div>
+            </aside>
+
+            <main className="flex min-w-0 flex-1 flex-col bg-[#212121]">
+              <div className="border-b border-white/[0.06] bg-[#212121]/95 px-3 py-3 md:px-5">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                    {models.map((model) => (
+                      <div
+                        key={model.name}
+                        className={`flex h-9 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-medium ${
+                          model.active
+                            ? 'border-white/[0.12] bg-white/[0.08] text-white'
+                            : 'border-transparent text-gray-400'
+                        }`}
+                      >
+                        <span className="flex h-5 w-5 items-center justify-center rounded-md bg-white/[0.05]" style={{ color: model.color }}>
+                          {model.icon}
+                        </span>
+                        <span className="hidden truncate sm:inline">{model.name}</span>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="flex shrink-0 items-center gap-1.5">
+                    <div className="flex h-9 items-center gap-1.5 rounded-lg border border-white/[0.08] bg-white/[0.03] px-2.5 text-xs text-gray-300">
+                      <Globe className="h-3.5 w-3.5" />
+                      <span className="hidden sm:inline">Search</span>
+                    </div>
+                    <div className="flex h-9 items-center gap-1.5 rounded-lg border border-white/[0.08] bg-white/[0.03] px-2.5 text-xs text-gray-300">
+                      <Box className="h-3.5 w-3.5" />
+                      <span className="hidden sm:inline">Artifacts</span>
+                    </div>
                   </div>
                 </div>
               </div>
 
-              <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-4">
-                <div className="flex justify-end">
-                  <div className="max-w-[86%] md:max-w-[70%] rounded-3xl bg-gradient-to-br from-indigo-600/80 to-violet-700/70 text-white p-3 md:p-4 shadow-lg shadow-violet-950/20">
-                    <p className="text-xs md:text-sm leading-relaxed">
+              <div className="flex-1 overflow-hidden px-4 py-5 md:px-8">
+                <div className="mx-auto flex h-full max-w-3xl flex-col justify-end gap-5">
+                  <div className="flex justify-end">
+                    <div className="max-w-[84%] rounded-3xl bg-[#303030] px-4 py-3 text-sm leading-6 text-gray-100 md:max-w-[70%]">
                       What's the latest news about AI today? Search the web.
-                    </p>
+                    </div>
                   </div>
-                </div>
 
-                <div className="flex justify-start">
-                  <div className="max-w-[92%] md:max-w-[80%] bg-white/[0.035] border border-white/[0.07] rounded-2xl p-4 md:p-5 space-y-3">
-                    <div className="flex items-center gap-2 pb-2 border-b border-white/[0.06]">
-                      <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-[#d97757]/20 to-[#d97757]/10 flex items-center justify-center">
-                        <AnthropicIcon className="w-3.5 h-3.5 text-[#d97757]" />
-                      </div>
-                      <span className="text-xs font-medium text-gray-400">Claude Opus 4.7</span>
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-2 text-xs text-gray-500">
+                      <span className="flex h-6 w-6 items-center justify-center rounded-md bg-white/[0.05] text-[#d97757]">
+                        <AnthropicIcon className="h-3.5 w-3.5" />
+                      </span>
+                      Claude Opus 4.7
                     </div>
 
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-2 text-cyan-400">
-                        <Search className="h-4 w-4 animate-pulse" />
-                        <span className="text-xs font-medium">Searching the web...</span>
+                    <div className="space-y-3 text-sm leading-6 text-gray-100">
+                      <div className="flex items-center gap-2 text-gray-400">
+                        <Search className="h-4 w-4 animate-pulse text-violet-400" />
+                        <span>Searching the web...</span>
                       </div>
 
-                      <div className="text-xs md:text-sm text-gray-100 leading-relaxed space-y-2">
-                        <p>Based on recent web search results, here are today's key AI developments:</p>
-                        <ul className="space-y-1 pl-1">
-                          <li className="flex items-start gap-2">
-                            <span className="text-violet-400/80 mt-1">•</span>
-                            <span>OpenAI releases new safety research framework</span>
-                          </li>
-                          <li className="flex items-start gap-2">
-                            <span className="text-violet-400/80 mt-1">•</span>
-                            <span>Claude Opus 4.7 advances in reasoning capabilities</span>
-                          </li>
-                          <li className="flex items-start gap-2">
-                            <span className="text-violet-400/80 mt-1">•</span>
-                            <span>DeepMind achieves breakthrough in protein folding</span>
-                          </li>
-                        </ul>
-                      </div>
+                      <p>Based on recent web search results, here are today's key AI developments:</p>
+                      <ul className="space-y-1 pl-5">
+                        <li>OpenAI releases new safety research framework</li>
+                        <li>Claude Opus 4.7 advances in reasoning capabilities</li>
+                        <li>DeepMind achieves breakthrough in protein folding</li>
+                      </ul>
 
-                      <div className="flex flex-wrap gap-2 pt-2">
+                      <div className="flex flex-wrap gap-2 pt-1">
                         {['TechCrunch', 'The Verge', 'MIT Tech'].map((source) => (
-                          <div key={source} className="px-2 py-1 rounded-lg bg-cyan-500/10 border border-cyan-500/20 text-cyan-300 text-[10px] md:text-xs font-medium">
+                          <span key={source} className="rounded-full border border-white/[0.08] bg-white/[0.04] px-2.5 py-1 text-xs text-gray-300">
                             {source}
-                          </div>
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 text-xs text-gray-500">
+                    <Sparkles className="h-4 w-4 animate-pulse text-violet-400" />
+                    <span>Claude Opus 4.7 is responding...</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-gradient-to-t from-[#212121] via-[#212121] to-[#212121]/80 px-4 pb-4 md:px-8 md:pb-6">
+                <div className="mx-auto max-w-3xl">
+                  <div className="rounded-[26px] border border-white/[0.10] bg-[#2f2f2f] p-2.5">
+                    <div className="flex items-end gap-2">
+                      <button className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-gray-400">
+                        <Paperclip className="h-4 w-4" />
+                      </button>
+                      <input
+                        type="text"
+                        placeholder="Ask anything..."
+                        disabled
+                        className="min-h-9 flex-1 bg-transparent text-sm text-white outline-none placeholder:text-gray-500"
+                      />
+                      <button className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-violet-600 text-white">
+                        <Send className="h-4 w-4" />
+                      </button>
+                    </div>
+
+                    <div className="mt-2 flex flex-wrap items-center justify-between gap-2 pl-1">
+                      <div className="flex items-center gap-1.5 text-xs text-gray-500">
+                        <ImageIcon className="h-3.5 w-3.5" />
+                        Files, images, and PDFs supported
+                      </div>
+                      <div className="flex rounded-lg border border-white/[0.06] bg-black/10 p-0.5">
+                        {modes.map((mode) => (
+                          <span
+                            key={mode}
+                            className={`rounded-md px-2 py-1 text-[11px] ${
+                              mode === 'Instant'
+                                ? 'border border-violet-400/20 bg-violet-500/10 text-violet-200'
+                                : 'text-gray-500'
+                            }`}
+                          >
+                            {mode}
+                          </span>
                         ))}
                       </div>
                     </div>
                   </div>
                 </div>
-
-                <div className="flex items-center gap-2 text-gray-500">
-                  <div className="flex gap-1">
-                    <div className="w-1.5 h-1.5 bg-violet-400/60 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                    <div className="w-1.5 h-1.5 bg-violet-400/60 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                    <div className="w-1.5 h-1.5 bg-violet-400/60 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-                  </div>
-                  <span className="text-xs">Claude Opus 4.7 is responding...</span>
-                </div>
               </div>
-
-              <div className="border-t border-white/[0.06] bg-[#08070d]/90 p-3 md:p-4">
-                <div className="bg-white/[0.035] border border-white/[0.08] rounded-2xl p-2.5 md:p-3 flex items-center gap-2">
-                  <input
-                    type="text"
-                    placeholder="Ask anything..."
-                    disabled
-                    className="flex-1 bg-transparent text-xs md:text-sm text-white placeholder:text-gray-500 outline-none"
-                  />
-                  <div className="h-8 w-8 md:h-9 md:w-9 rounded-xl bg-violet-600 flex items-center justify-center">
-                    <Send className="h-3.5 w-3.5 text-white" />
-                  </div>
-                </div>
-              </div>
-            </div>
+            </main>
           </div>
         </div>
       </motion.div>
