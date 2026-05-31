@@ -85,7 +85,30 @@ export async function getAccountEntitlement(db: any, userId: string): Promise<Ac
     .eq('user_id', userId)
     .single()
 
-  if (error || !data) return null
+  if (error) {
+    const missingNewEntitlementColumns =
+      error.code === '42703' ||
+      /account_status|account_expires_at|owner_sub_admin_id|created_by/i.test(error.message || '')
+
+    if (!missingNewEntitlementColumns) return null
+
+    const { data: legacyData, error: legacyError } = await db
+      .from('profiles')
+      .select('id, user_id, display_name, avatar_url, role, credits, unlimited_credits, subscription_tier, created_at')
+      .eq('user_id', userId)
+      .single()
+
+    if (legacyError || !legacyData) return null
+    return normalizeEntitlement({
+      ...legacyData,
+      account_status: 'active',
+      account_expires_at: null,
+      owner_sub_admin_id: null,
+      created_by: null,
+    } as AccountProfileRow)
+  }
+
+  if (!data) return null
   return normalizeEntitlement(data as AccountProfileRow)
 }
 

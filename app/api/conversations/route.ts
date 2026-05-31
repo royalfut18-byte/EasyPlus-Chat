@@ -15,14 +15,12 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const entitlementBlock = getEntitlementBlockResponse(await getAccountEntitlement(db, user.id))
-    if (entitlementBlock) return entitlementBlock
-
     const { data: conversations, error } = await db
       .from('conversations')
       .select('*')
       .eq('user_id', user.id)
-      .order('updated_at', { ascending: false })
+      .order('updated_at', { ascending: false, nullsFirst: false })
+      .order('created_at', { ascending: false, nullsFirst: false })
 
     if (error) throw error
 
