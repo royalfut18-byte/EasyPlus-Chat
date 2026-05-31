@@ -115,6 +115,7 @@ export function AdminUserTable() {
       <td className="px-3 py-3 text-gray-400">{user.message_count}</td>
       <td className="px-3 py-3 text-gray-400">{user.conversation_count}</td>
       <td className="px-3 py-3"><Status value={user.account_status} /></td>
+      <td className="px-3 py-3 text-gray-400">{user.created_at ? formatDate(user.created_at) : 'Unknown'}</td>
       <td className="px-3 py-3 text-gray-500">{user.account_expires_at ? formatDate(user.account_expires_at) : 'No expiry'}</td>
       <td className="px-3 py-3"><Button size="sm" variant="outline" className="border-white/[0.10]" onClick={() => openEdit(user)}><Settings className="mr-1 h-3 w-3" />Edit</Button></td>
     </tr>
@@ -130,14 +131,14 @@ export function AdminUserTable() {
       <div className="overflow-x-auto rounded-xl border border-white/[0.07]">
         <table className="w-full min-w-[980px]">
           <thead className="bg-white/[0.025] text-left text-xs uppercase tracking-wide text-gray-500">
-            <tr>{['Name', 'Email', 'Role', 'Credits', 'Messages', 'Chats', 'Status', 'Expiry', 'Actions'].map((label) => <th key={label} className="px-3 py-3 font-medium">{label}</th>)}</tr>
+            <tr>{['Name', 'Email', 'Role', 'Credits', 'Messages', 'Chats', 'Status', 'Created', 'Expiry', 'Actions'].map((label) => <th key={label} className="px-3 py-3 font-medium">{label}</th>)}</tr>
           </thead>
           <tbody>
             {data.actorRole === 'admin' && data.users.filter((user) => user.role !== 'user').map(renderUser)}
             {data.actorRole === 'admin' ? groups.map((group) => (
               <Fragment key={group.id}>
                 <tr className="border-b border-white/[0.05] bg-white/[0.015]">
-                  <td colSpan={9}>
+                  <td colSpan={10}>
                     <button className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-gray-300" onClick={() => setExpandedGroups({ ...expandedGroups, [group.id]: !expandedGroups[group.id] })}>
                       {expandedGroups[group.id] ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                       {group.label} <span className="text-xs text-gray-600">({group.users.length})</span>
