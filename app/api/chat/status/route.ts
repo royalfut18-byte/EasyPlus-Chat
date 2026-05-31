@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getAccountEntitlement, getEntitlementBlockResponse } from '@/lib/account-entitlements.server'
+import { parseGeneratedZipFromResponse } from '@/lib/generated-zip'
 
 const MARKER_CONTENTS = new Set([
   '__ARTIFACT_LOADING__',
@@ -52,7 +53,7 @@ export async function GET(request: NextRequest) {
           return NextResponse.json({
             found: true,
             status: messages.status || 'completed',
-            content: content,
+            content: parseGeneratedZipFromResponse(content).cleanContent,
             messageId: messages.id,
           })
         }
@@ -82,7 +83,7 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({
           found: true,
           status: messages.status || 'completed',
-          content: messages.content,
+          content: parseGeneratedZipFromResponse(messages.content).cleanContent,
           messageId: messages.id,
         })
       }

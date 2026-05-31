@@ -19,6 +19,7 @@ import { parseArtifactFromResponse } from '@/lib/artifact-parser'
 import { sortMessagesChronologically, dedupeMessages, processMessages, processLoadedMessages, getStoredArtifact } from '@/lib/chat/message-utils'
 import { useR2Upload } from '@/hooks/use-r2-upload'
 import { parsePageRangeRequest } from '@/lib/ai/document-requests'
+import { hideGeneratedZipManifestFromDisplay, parseGeneratedZipFromResponse, type GeneratedZipManifest } from '@/lib/generated-zip'
 import type { Conversation, Message, ChatAttachment, Artifact, ReasoningMode } from '@/types/models'
 
 const DEFAULT_PANEL_WIDTH = 560
@@ -95,6 +96,37 @@ function saveProjectArtifact(projectId: string | null, artifact: Artifact, conve
       console.warn('[Artifact] Failed to save project artifact:', error)
     }
   })
+}
+
+async function createGeneratedZip(
+  manifest: GeneratedZipManifest,
+  conversationId: string,
+  projectId: string | null,
+  requestId: string
+): Promise<ChatAttachment | null> {
+  try {
+    const response = await fetch('/api/generated-files/zip', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        filename: manifest.filename,
+        files: manifest.files,
+        conversationId,
+        projectId,
+        requestId,
+      }),
+    })
+    const data = await response.json()
+    if (!response.ok) throw new Error(data.error || 'Failed to generate ZIP. Please try again.')
+    return data.attachment as ChatAttachment
+  } catch (error: any) {
+    toast({
+      title: 'Failed to generate ZIP',
+      description: error.message || 'Please try again.',
+      variant: 'destructive',
+    })
+    return null
+  }
 }
 
 // Load artifact from localStorage
@@ -1106,7 +1138,7 @@ Rules:
         }
 
         // Strip <thinking> tags before displaying to user
-        const displayContent = stripThinkingTags(assistantContent)
+        const displayContent = hideGeneratedZipManifestFromDisplay(stripThinkingTags(assistantContent))
 
         // Update by ID only - clear statusLabel so real content shows
         if (contentStarted && displayContent && selectedConversationIdRef.current === sendConversationId) {
@@ -1148,10 +1180,21 @@ Rules:
         return
       }
 
+      const {
+        cleanContent: zipCleanContent,
+        manifest: generatedZipManifest,
+      } = parseGeneratedZipFromResponse(finalAssistantContent)
+      const generatedZipAttachment = generatedZipManifest
+        ? await createGeneratedZip(generatedZipManifest, sendConversationId, projectId, requestId)
+        : null
+      const withGeneratedZip = (message: Message) => generatedZipAttachment
+        ? { attachments: [...(message.attachments || []), generatedZipAttachment] }
+        : {}
+
       // 10. Parse artifact if enabled and update final message
       if (requestArtifactMode) {
         const { artifact, cleanContent } = parseArtifactFromResponse(
-          finalAssistantContent,
+          zipCleanContent,
           requestArtifactMode,
           lastUserPromptRef.current
         )
@@ -1172,7 +1215,7 @@ Rules:
               processMessages(
                 prev.map((m) =>
                   m.id === clientAssistantMessageId
-                    ? { ...m, content: finalContent, artifact, status: 'completed' as const, statusLabel: null }
+                    ? { ...m, ...withGeneratedZip(m), content: finalContent, artifact, status: 'completed' as const, statusLabel: null }
                     : m
                 ),
                 sendConversationId
@@ -1199,7 +1242,7 @@ Rules:
               processMessages(
                 prev.map((m) =>
                   m.id === clientAssistantMessageId
-                    ? { ...m, content: finalAssistantContent || 'I could not create an artifact from this response.', status: 'completed' as const, statusLabel: null }
+                    ? { ...m, ...withGeneratedZip(m), content: zipCleanContent || 'I could not create an artifact from this response.', status: 'completed' as const, statusLabel: null }
                     : m
                 ),
                 sendConversationId
@@ -1213,7 +1256,7 @@ Rules:
         // Try to parse artifact metadata and attach it so the UI can offer "Open Artifact".
         try {
           const { artifact, cleanContent } = parseArtifactFromResponse(
-            finalAssistantContent,
+            zipCleanContent,
             true,
             lastUserPromptRef.current
           )
@@ -1233,7 +1276,7 @@ Rules:
                 processMessages(
                   prev.map((m) =>
                     m.id === clientAssistantMessageId
-                      ? { ...m, content: finalContent, artifact, status: 'completed' as const, statusLabel: null }
+                      ? { ...m, ...withGeneratedZip(m), content: finalContent, artifact, status: 'completed' as const, statusLabel: null }
                       : m
                   ),
                   sendConversationId
@@ -1255,7 +1298,7 @@ Rules:
                 processMessages(
                   prev.map((m) =>
                     m.id === clientAssistantMessageId
-                      ? { ...m, content: finalAssistantContent || 'I received an empty response.', status: 'completed' as const, statusLabel: null }
+                      ? { ...m, ...withGeneratedZip(m), content: zipCleanContent || 'I received an empty response.', status: 'completed' as const, statusLabel: null }
                       : m
                   ),
                   sendConversationId
@@ -1270,7 +1313,7 @@ Rules:
               processMessages(
                 prev.map((m) =>
                   m.id === clientAssistantMessageId
-                    ? { ...m, content: finalAssistantContent || 'I received an empty response.', status: 'completed' as const, statusLabel: null }
+                    ? { ...m, ...withGeneratedZip(m), content: zipCleanContent || 'I received an empty response.', status: 'completed' as const, statusLabel: null }
                     : m
                 ),
                 sendConversationId
@@ -1646,7 +1689,7 @@ Default to artifact:html with a complete single-file HTML document. Do NOT outpu
           assistantContent += chunk
         }
 
-        const displayContent = stripThinkingTags(assistantContent)
+        const displayContent = hideGeneratedZipManifestFromDisplay(stripThinkingTags(assistantContent))
         if (displayContent && selectedConversationIdRef.current === conversationId) {
           setMessages((prev) =>
             processMessages(
@@ -1666,19 +1709,33 @@ Default to artifact:html with a complete single-file HTML document. Do NOT outpu
         throw new Error('Received empty response from AI.')
       }
 
+      const {
+        cleanContent: zipCleanContent,
+        manifest: generatedZipManifest,
+      } = parseGeneratedZipFromResponse(finalAssistantContent)
+      const generatedZipAttachment = generatedZipManifest
+        ? await createGeneratedZip(generatedZipManifest, conversationId, projectId, requestId)
+        : null
       const { artifact, cleanContent } = parseArtifactFromResponse(
-        finalAssistantContent,
+        zipCleanContent,
         true,
         trimmedContent
       )
-      const finalContent = artifact ? cleanContent : finalAssistantContent
+      const finalContent = artifact ? cleanContent : zipCleanContent
 
       if (selectedConversationIdRef.current === conversationId) {
         setMessages((prev) =>
           processMessages(
             prev.map((message) =>
               message.id === clientAssistantMessageId
-                ? { ...message, content: finalContent, artifact, status: 'completed' as const, statusLabel: null }
+                ? {
+                    ...message,
+                    ...(generatedZipAttachment ? { attachments: [...(message.attachments || []), generatedZipAttachment] } : {}),
+                    content: finalContent,
+                    artifact,
+                    status: 'completed' as const,
+                    statusLabel: null,
+                  }
                 : message
             ),
             conversationId

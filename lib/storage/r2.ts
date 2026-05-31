@@ -71,3 +71,23 @@ export async function createPresignedDownloadUrl(
 
   return getSignedUrl(client, command, { expiresIn })
 }
+
+export async function uploadObjectToR2(params: {
+  key: string
+  body: Buffer | Uint8Array
+  mimeType: string
+}): Promise<{ key: string; bucket: string }> {
+  const client = getR2Client()
+
+  await client.send(new PutObjectCommand({
+    Bucket: R2_BUCKET_NAME,
+    Key: params.key,
+    Body: params.body,
+    ContentType: params.mimeType,
+  }))
+
+  return {
+    key: params.key,
+    bucket: R2_BUCKET_NAME,
+  }
+}

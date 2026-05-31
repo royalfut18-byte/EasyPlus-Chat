@@ -51,6 +51,9 @@ export interface ChatAttachment {
   uploadProgress?: number
   uploadStatus?: 'pending' | 'compressing' | 'uploading' | 'processing' | 'uploaded' | 'failed'
   uploadError?: string
+  generated?: boolean
+  generatedFiles?: string[]
+  createdAt?: string
 }
 
 export interface ChatMessage {

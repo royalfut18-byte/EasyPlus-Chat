@@ -1200,6 +1200,13 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
             <Download className="h-4 w-4 mr-2" />
             Download
           </Button>
+          <Button
+            onClick={handleDownloadZip}
+            className="flex-1 bg-violet-600/80 hover:bg-violet-600 text-white"
+          >
+            <Download className="h-4 w-4 mr-2" />
+            Download ZIP
+          </Button>
         </div>
       )}
     </div>
@@ -1262,6 +1269,50 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
       title: 'Downloaded',
       description: `Artifact saved as ${filename}`,
     })
+  }
+
+  const handleDownloadZip = async () => {
+    if (!artifact?.code) return
+
+    const extensions: Record<string, string> = {
+      html: 'html',
+      tsx: 'tsx',
+      jsx: 'jsx',
+      javascript: 'js',
+      css: 'css',
+      python: 'py',
+      markdown: 'md',
+      text: 'txt',
+      docx: 'txt',
+      gdoc: 'txt',
+      xlsx: 'csv',
+      gsheet: 'csv',
+      pptx: 'txt',
+      gslides: 'txt',
+      canva: 'html',
+    }
+    const baseName = artifact.title.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase() || 'artifact'
+    const extension = extensions[artifact.language] || 'txt'
+
+    try {
+      const response = await fetch('/api/generated-files/zip', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          filename: `${baseName}.zip`,
+          files: [{ path: `${baseName}.${extension}`, content: artifact.code }],
+        }),
+      })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error || 'Failed to generate ZIP. Please try again.')
+      window.open(data.downloadUrl, '_blank', 'noopener,noreferrer')
+    } catch (error: any) {
+      toast({
+        title: 'Failed to generate ZIP',
+        description: error.message || 'Please try again.',
+        variant: 'destructive',
+      })
+    }
   }
 
   return (

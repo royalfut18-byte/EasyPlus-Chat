@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { motion } from 'framer-motion'
-import { Copy, ThumbsUp, ThumbsDown, RotateCw, FileCode, Sparkles, PanelRightOpen, Download, FileText, FileSpreadsheet, FileJson, File as FileIcon, ImageIcon, ScanText, ExternalLink } from 'lucide-react'
+import { Copy, ThumbsUp, ThumbsDown, RotateCw, FileCode, Sparkles, PanelRightOpen, Download, FileText, FileSpreadsheet, FileJson, File as FileIcon, ImageIcon, ScanText, ExternalLink, FileArchive } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism'
@@ -207,7 +207,9 @@ export function MessageBubble({ role, content, model, onRegenerate, attachments,
                         }
                       }}
                     >
-                    {attachment.type === 'image' ? (
+                    {attachment.mimeType === 'application/zip' ? (
+                      <FileArchive className="h-5 w-5 text-violet-400 shrink-0" />
+                    ) : attachment.type === 'image' ? (
                       <ImageIcon className="h-5 w-5 text-purple-400 shrink-0" />
                     ) : attachment.mimeType === 'application/pdf' ? (
                       <FileText className="h-5 w-5 text-red-400 shrink-0" />
@@ -223,7 +225,8 @@ export function MessageBubble({ role, content, model, onRegenerate, attachments,
                     <div className="min-w-0">
                       <p className="max-w-[220px] truncate text-xs font-medium text-gray-100">{attachment.name || (attachment.type === 'image' ? 'Image' : 'Document')}</p>
                       <p className="text-[10px] text-gray-400 mt-0.5">
-                        {attachment.type === 'image' ? 'Image file' :
+                        {attachment.mimeType === 'application/zip' ? 'ZIP package' :
+                         attachment.type === 'image' ? 'Image file' :
                          attachment.mimeType === 'application/pdf' ? 'PDF document' :
                          attachment.mimeType === 'text/csv' ? 'CSV file' :
                          attachment.mimeType === 'application/json' ? 'JSON file' :
@@ -231,8 +234,13 @@ export function MessageBubble({ role, content, model, onRegenerate, attachments,
                          attachment.mimeType === 'text/plain' ? 'Text file' :
                          'Document attached'}
                         {attachment.size ? ` · ${attachment.size < 1024 * 1024 ? `${(attachment.size / 1024).toFixed(0)} KB` : `${(attachment.size / (1024 * 1024)).toFixed(1)} MB`}` : ''}
-                        {attachment.storagePath ? ' · Stored' : ''}
+                        {attachment.generated ? ' · Generated' : attachment.storagePath ? ' · Stored' : ''}
                       </p>
+                      {attachment.generatedFiles && attachment.generatedFiles.length > 0 && (
+                        <p className="mt-1 text-[11px] leading-4 text-gray-500">
+                          {attachment.generatedFiles.length} generated file{attachment.generatedFiles.length === 1 ? '' : 's'}
+                        </p>
+                      )}
                       {(attachment.processingStatus === 'needs_ocr' || attachment.ocrStatus === 'needs_ocr') && (
                         <p className="mt-1 text-[11px] leading-4 text-amber-200">Text extraction failed - scanned PDF detected. OCR needed.</p>
                       )}
@@ -252,7 +260,7 @@ export function MessageBubble({ role, content, model, onRegenerate, attachments,
                           onClick={() => window.open(openUrl, '_blank', 'noopener,noreferrer')}
                         >
                           <ExternalLink className="h-3.5 w-3.5 mr-1.5" />
-                          Open file
+                          {attachment.mimeType === 'application/zip' ? 'View package' : 'Open file'}
                         </Button>
                         <Button
                           type="button"
@@ -265,7 +273,7 @@ export function MessageBubble({ role, content, model, onRegenerate, attachments,
                           }}
                         >
                           <Download className="h-3.5 w-3.5 mr-1.5" />
-                          Download
+                          {attachment.mimeType === 'application/zip' ? 'Download ZIP' : 'Download'}
                         </Button>
                       </div>
                     )}
