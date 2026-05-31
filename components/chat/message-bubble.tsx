@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { motion } from 'framer-motion'
-import { Copy, ThumbsUp, ThumbsDown, RotateCw, FileCode, Sparkles, PanelRightOpen, Sparkles as GeminiIcon, Download, FileText, FileSpreadsheet, FileJson, File as FileIcon, ImageIcon, ScanText, ExternalLink } from 'lucide-react'
+import { Copy, ThumbsUp, ThumbsDown, RotateCw, FileCode, Sparkles, PanelRightOpen, Download, FileText, FileSpreadsheet, FileJson, File as FileIcon, ImageIcon, ScanText, ExternalLink } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism'
@@ -133,23 +133,15 @@ export function MessageBubble({ role, content, model, onRegenerate, attachments,
       >
         {!isUser && modelData && (
           <div className="flex items-center gap-2 mb-2 md:mb-3 pb-2 md:pb-3 border-b border-white/10">
-            {modelData.provider === 'anthropic' ? (
-              modelData.id === 'claude-haiku-4.5' ? (
-                <div className="w-5 h-5 md:w-6 md:h-6 rounded-lg bg-gradient-to-br from-[#10a37f]/20 to-[#10a37f]/10 flex items-center justify-center">
-                  <ChatGPTIcon className="w-3 h-3 md:w-3.5 md:h-3.5 text-[#10a37f]" />
-                </div>
+            <div className="w-5 h-5 md:w-6 md:h-6 rounded-lg bg-white/5 flex items-center justify-center">
+              {modelData.id === 'chat-gpt-5.5' ? (
+                <ChatGPTIcon className="w-3 h-3 md:w-3.5 md:h-3.5 text-[#10a37f]" />
+              ) : modelData.id === 'claude-opus-4.7' ? (
+                <AnthropicIcon className="w-3 h-3 md:w-3.5 md:h-3.5 text-[#d97757]" />
               ) : (
-                <div className="w-5 h-5 md:w-6 md:h-6 rounded-lg bg-gradient-to-br from-[#d97757]/20 to-[#d97757]/10 flex items-center justify-center">
-                  <AnthropicIcon className="w-3 h-3 md:w-3.5 md:h-3.5 text-[#d97757]" />
-                </div>
-              )
-            ) : modelData.provider === 'google' ? (
-              <div className="w-5 h-5 md:w-6 md:h-6 rounded-lg bg-gradient-to-br from-blue-500/20 to-blue-500/10 flex items-center justify-center">
-                <GeminiIcon className="w-3 h-3 md:w-3.5 md:h-3.5 text-blue-400" />
-              </div>
-            ) : (
-              <span className="text-base md:text-lg">{modelData.icon || '🤖'}</span>
-            )}
+                <Sparkles className="w-3 h-3 md:w-3.5 md:h-3.5 text-blue-400" />
+              )}
+            </div>
             <span className="text-xs font-medium text-gray-400">{modelData.name}</span>
           </div>
         )}

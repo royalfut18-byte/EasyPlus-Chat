@@ -1973,13 +1973,7 @@ Default to artifact:html with a complete single-file HTML document. Do NOT outpu
   const isEmptyDraft = !currentConversation && displayedMessages.length === 0
 
   const currentModelData = AI_MODELS.find(m => m.id === selectedModel)
-  const modelFamily = (() => {
-    const name = currentModelData?.name || ''
-    if (name.includes('Claude')) return 'Claude'
-    if (name.includes('GPT') || name.includes('Chat GPT')) return 'Chat GPT'
-    if (name.includes('Gemini')) return 'Gemini'
-    return name
-  })()
+  const modelFamily = currentModelData?.name || ''
 
   return (
     <div className="h-[100dvh] md:h-screen bg-[#08070d] flex overflow-hidden">

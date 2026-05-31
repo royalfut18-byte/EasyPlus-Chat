@@ -1,4 +1,5 @@
-import { AI_MODELS, type ChatMessage } from '@/types/models'
+import type { ChatMessage } from '@/types/models'
+import { getInternalModel } from '@/lib/ai/model-routing.server'
 
 /**
  * Convert data URL to Bedrock Converse image format
@@ -55,11 +56,11 @@ export async function streamBedrockResponse(
   temperature: number = 0.7,
   maxTokens: number = 16384
 ): Promise<ReadableStream> {
-  const model = AI_MODELS.find((m) => m.id === modelId)
+  const model = getInternalModel(modelId)
 
   if (!model) {
     console.error('[Bedrock] Unknown model ID:', modelId)
-    throw new Error(`Unknown model: ${modelId}`)
+    throw new Error('This EasyPlus tier is unavailable')
   }
 
   const apiKey = process.env.AWS_BEARER_TOKEN_BEDROCK
@@ -67,7 +68,7 @@ export async function streamBedrockResponse(
 
   if (!apiKey) {
     console.error('[Bedrock] FATAL: AWS_BEARER_TOKEN_BEDROCK is not set')
-    throw new Error('Missing AWS_BEARER_TOKEN_BEDROCK')
+    throw new Error('Inference backend is unavailable')
   }
 
   const bedrockMessages = messages
@@ -167,7 +168,7 @@ export async function streamBedrockResponse(
             modelId: model.id,
             error: errorText.substring(0, 200),
           })
-          controller.enqueue(encoder.encode(`[Error: Bedrock API failed (${response.status})]`))
+          controller.enqueue(encoder.encode(`[Error: This EasyPlus tier could not respond (${response.status})]`))
           controller.close()
           return
         }
@@ -198,7 +199,7 @@ export async function streamBedrockResponse(
         bedrockDone = true
         clearInterval(heartbeat)
         console.error('[Bedrock] Request failed:', err.message)
-        controller.enqueue(encoder.encode(`[Error: ${err.message}]`))
+        controller.enqueue(encoder.encode('[Error: This EasyPlus tier could not respond]'))
         controller.close()
       }
     },
@@ -206,6 +207,6 @@ export async function streamBedrockResponse(
 }
 
 export function getModelCost(modelId: string): number {
-  const model = AI_MODELS.find((m) => m.id === modelId)
+  const model = getInternalModel(modelId)
   return model?.costPerMessage || 0
 }

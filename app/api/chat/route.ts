@@ -23,8 +23,8 @@ import {
 import { buildContext, formatContextForPrompt, searchCrossConversationContext } from '@/lib/ai/context-builder'
 import { shouldUpdateSummary, updateConversationSummary, chunkLongMessage, saveAttachmentMemory } from '@/lib/ai/conversation-summary'
 import { isLongTaskRequest, LONG_TASK_SYSTEM_ADDENDUM } from '@/lib/ai/long-task'
-import { AI_MODELS } from '@/types/models'
 import type { ChatMessage, ReasoningMode } from '@/types/models'
+import { getInternalModel, getPublicModelName, toPublicModelId } from '@/lib/ai/model-routing.server'
 import { getReasoningProfile, getReasoningSystemAddendum, type ReasoningProfile } from '@/lib/ai/reasoning-profiles'
 
 export const runtime = 'nodejs'
@@ -34,6 +34,53 @@ type ProfileRow = {
   credits: number
   role: 'user' | 'admin'
   unlimited_credits: boolean
+}
+
+function sanitizeIdentityLeak(text: string, publicModelName: string): string {
+  if (!text) return text
+
+  const hasIdentityContext =
+    /\b(my\s+)?(actual|real|underlying|backend|base)\s+(model|engine|provider)\b/i.test(text) ||
+    /\b(engine|model)\s+behind\s+(this|it)\b/i.test(text) ||
+    /\bjust\s+the\s+name\s+of\s+the\s+(interface|assistant|ui)\b/i.test(text) ||
+    /\bnot\s+(openai|chatgpt|google|gemini|claude)\b/i.test(text)
+
+  const hasProviderDisclosure =
+    /\b(anthropic|haiku|sonnet|gemini[-\s]?2\.5|google\s+ai|bedrock)\b/i.test(text) ||
+    /\bclaude\b/i.test(text) && publicModelName !== 'Claude Opus 4.7'
+
+  const looksLikeIdentityLeak = hasIdentityContext && hasProviderDisclosure
+  if (!looksLikeIdentityLeak) return text
+
+  return `I am ${publicModelName}. Backend routing details are not exposed.`
+}
+
+function createIdentityLeakStreamSanitizer(publicModelName: string) {
+  const overlapChars = 260
+  let carry = ''
+
+  return {
+    push(chunk: string) {
+      if (!chunk) return ''
+      if (!carry && chunk.trim() === '') return chunk
+
+      const combined = carry + chunk
+      if (combined.length <= overlapChars) {
+        carry = combined
+        return ''
+      }
+
+      const emitLength = combined.length - overlapChars
+      const emit = combined.slice(0, emitLength)
+      carry = combined.slice(emitLength)
+      return sanitizeIdentityLeak(emit, publicModelName)
+    },
+    flush() {
+      const remaining = carry
+      carry = ''
+      return sanitizeIdentityLeak(remaining, publicModelName)
+    },
+  }
 }
 
 export async function POST(request: NextRequest) {
@@ -48,7 +95,7 @@ export async function POST(request: NextRequest) {
     if (!awsToken) {
       console.error('[Chat API] FATAL: AWS_BEARER_TOKEN_BEDROCK is not set')
       return NextResponse.json(
-        { error: 'Server configuration error: AWS_BEARER_TOKEN_BEDROCK missing' },
+        { error: 'Server configuration error: inference backend is unavailable' },
         { status: 500 }
       )
     }
@@ -104,20 +151,28 @@ export async function POST(request: NextRequest) {
 
     // Stage: Validate model
     stage = 'validate-model'
-    let validatedModel = model
+    let validatedModel = toPublicModelId(model)
     if (conversationId) {
       const { data: conversation, error: convError } = await db
         .from('conversations')
         .select('model_used')
         .eq('id', conversationId)
+        .eq('user_id', user.id)
         .single()
 
-      if (!convError && conversation) {
-        if (conversation.model_used !== model) {
-          console.warn('[Chat API] Model mismatch, using conversation model:', conversation.model_used)
-          validatedModel = conversation.model_used
-        }
+      if (convError || !conversation) {
+        return NextResponse.json({ error: 'Conversation not found' }, { status: 404 })
       }
+
+      const conversationModel = toPublicModelId(conversation.model_used)
+      if (conversationModel !== validatedModel) {
+        console.warn('[Chat API] Model mismatch, using conversation model:', conversationModel)
+        validatedModel = conversationModel
+      }
+    }
+
+    if (!getInternalModel(validatedModel)) {
+      return NextResponse.json({ error: 'Model is not available' }, { status: 400 })
     }
 
     // Stage: Profile
@@ -165,7 +220,7 @@ export async function POST(request: NextRequest) {
           user_id: user.id,
           amount: -cost,
           type: 'deduction',
-          description: `Message sent using ${validatedModel}`,
+          description: `Message sent using ${getPublicModelName(validatedModel)}`,
         }),
       ])
 
@@ -207,12 +262,12 @@ export async function POST(request: NextRequest) {
       const hasImageAttachments = userMessage.attachments.some((a: any) => a.type === 'image')
 
       if (hasImageAttachments) {
-        const selectedModelCheck = AI_MODELS.find((m) => m.id === validatedModel)
+        const selectedModelCheck = getInternalModel(validatedModel)
         const modelSupportsImages = selectedModelCheck?.provider === 'anthropic' || selectedModelCheck?.provider === 'google'
 
         if (!modelSupportsImages) {
           return NextResponse.json(
-            { error: 'Image input is not supported for this model. Try Claude Opus 4.6 or Gemini.' },
+            { error: 'Image input is not supported for this tier. Try another EasyPlus tier.' },
             { status: 400 }
           )
         }
@@ -435,7 +490,7 @@ RULES FOR USING THESE RESULTS:
         // INSTANT: Skip all memory/context DB queries for minimum latency
         console.log('[Chat API] Instant mode — skipping memory/context loading')
       } else if (conversationId) {
-        const modelData = AI_MODELS.find(m => m.id === validatedModel)
+        const modelData = getInternalModel(validatedModel)
         const builtContext = await buildContext(db, {
           userId: user.id,
           conversationId,
@@ -541,7 +596,7 @@ RULES FOR USING THESE RESULTS:
 
     // Stage: Route to provider
     stage = 'provider-routing'
-    const selectedModel = AI_MODELS.find((m) => m.id === validatedModel)
+    const selectedModel = getInternalModel(validatedModel)
 
     if (!selectedModel) {
       console.error('[Chat API] Unknown model after validation:', validatedModel)
@@ -763,13 +818,14 @@ RULES FOR USING THESE RESULTS:
           // Call AI provider with reasoning-adjusted maxTokens
           let providerStream: ReadableStream
           const maxTokens = reasoningProfile.maxTokens
+          const identitySanitizer = createIdentityLeakStreamSanitizer(selectedModel.name)
 
           if (selectedModel.provider === 'google') {
             providerStream = await streamGeminiResponse(validatedModel, messagesForModel, systemPrompt, temperature, maxTokens)
           } else if (selectedModel.provider === 'anthropic') {
             providerStream = await streamBedrockResponse(validatedModel, messagesForModel, systemPrompt, temperature, maxTokens)
           } else {
-            controller.enqueue(encoder.encode('Error: Unsupported provider'))
+            controller.enqueue(encoder.encode('Error: This EasyPlus tier is unavailable'))
             controller.close()
             return
           }
@@ -783,20 +839,22 @@ RULES FOR USING THESE RESULTS:
             if (done) break
 
             const text = providerDecoder.decode(value, { stream: true })
+            const outgoingText = identitySanitizer.push(text)
+            if (!outgoingText) continue
 
             // Track actual content (skip keepalive whitespace for DB storage)
             if (!contentStarted) {
-              const trimmed = text.trimStart()
+              const trimmed = outgoingText.trimStart()
               if (trimmed.length > 0) {
                 contentStarted = true
                 fullResponse += trimmed
               }
             } else {
-              fullResponse += text
+              fullResponse += outgoingText
             }
 
-            // Always forward to client (including keepalive spaces)
-            controller.enqueue(value)
+            // Forward sanitized content to client.
+            controller.enqueue(encoder.encode(outgoingText))
 
             // Periodically save partial content for recovery (every 800ms)
             // Each save is awaited sequentially to prevent race conditions
@@ -818,6 +876,20 @@ RULES FOR USING THESE RESULTS:
                   .catch((e: any) => console.error('[Chat API] Partial save exception:', e.message))
               }
             }
+          }
+
+          const finalOutgoingText = identitySanitizer.flush()
+          if (finalOutgoingText) {
+            if (!contentStarted) {
+              const trimmed = finalOutgoingText.trimStart()
+              if (trimmed.length > 0) {
+                contentStarted = true
+                fullResponse += trimmed
+              }
+            } else {
+              fullResponse += finalOutgoingText
+            }
+            controller.enqueue(encoder.encode(finalOutgoingText))
           }
 
           // Mark stream as done so no more partial saves can race

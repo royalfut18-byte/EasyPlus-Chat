@@ -1,10 +1,10 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { createPresignedDownloadUrl, isR2Configured } from '@/lib/storage/r2'
-import { AI_MODELS } from '@/types/models'
+import { getInternalModel } from '@/lib/ai/model-routing.server'
 
 const MAX_OCR_PAGES_PER_REQUEST = 10
 const MAX_RENDER_DIMENSION = 1800
-const OCR_MODEL_ID = 'claude-opus-4.6'
+const OCR_MODEL_ID = 'claude-opus-4.7'
 
 interface RenderedPageImage {
   pageNumber: number
@@ -107,7 +107,7 @@ async function renderPdfPages(pdfBuffer: Buffer, pageStart: number, pageEnd: num
 }
 
 async function ocrImageWithBedrock(page: RenderedPageImage, fileName: string): Promise<string> {
-  const model = AI_MODELS.find((m) => m.id === OCR_MODEL_ID)
+  const model = getInternalModel(OCR_MODEL_ID)
   const apiKey = process.env.AWS_BEARER_TOKEN_BEDROCK
   const region = process.env.AWS_REGION || 'ap-southeast-2'
 
@@ -115,7 +115,7 @@ async function ocrImageWithBedrock(page: RenderedPageImage, fileName: string): P
     throw new Error('OCR model is not configured')
   }
   if (!apiKey) {
-    throw new Error('AWS_BEARER_TOKEN_BEDROCK is not configured')
+    throw new Error('OCR backend is unavailable')
   }
 
   const endpoint = `https://bedrock-runtime.${region}.amazonaws.com/model/${model.bedrockModelId}/converse`
@@ -153,7 +153,8 @@ async function ocrImageWithBedrock(page: RenderedPageImage, fileName: string): P
 
   if (!response.ok) {
     const errorText = await response.text().catch(() => '')
-    throw new Error(`Bedrock OCR failed (${response.status}): ${errorText.substring(0, 200)}`)
+    console.error('[OCR] Backend request failed:', response.status, errorText.substring(0, 200))
+    throw new Error(`OCR backend failed (${response.status})`)
   }
 
   const data = await response.json()

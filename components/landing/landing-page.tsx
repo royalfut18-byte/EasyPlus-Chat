@@ -211,7 +211,7 @@ export function LandingPage() {
           <div className="text-center mb-12 md:mb-16 space-y-3 md:space-y-4">
             <h2 className="text-3xl md:text-4xl lg:text-5xl font-bold">One workspace. Multiple AI powers.</h2>
             <p className="text-base md:text-lg lg:text-xl text-gray-400 max-w-3xl mx-auto">
-              Use ChatGPT 5.5, Claude Opus 4.6, Gemini 3.1 Pro, live web search, image understanding, and interactive artifacts — all inside one private EasyPlus workspace.
+              Use Chat GPT 5.5, Claude Opus 4.7, Gemini 3.1 Pro, live web search, image understanding, and interactive artifacts — all inside one private EasyPlus workspace.
             </p>
           </div>
 
@@ -219,14 +219,14 @@ export function LandingPage() {
             {[
               {
                 icon: <ChatGPTIcon className="h-5 w-5" />,
-                title: 'ChatGPT 5.5',
-                description: 'A powerful OpenAI-style assistant experience for fast answers, writing, reasoning, and everyday tasks.',
+                title: 'Chat GPT 5.5',
+                description: 'Fast answers, writing help, reasoning, and everyday tasks.',
                 color: 'text-[#10a37f]',
                 bgGradient: 'from-[#10a37f]/20 to-[#10a37f]/5',
               },
               {
                 icon: <AnthropicIcon className="h-5 w-5" />,
-                title: 'Claude Opus 4.6',
+                title: 'Claude Opus 4.7',
                 description: 'Premium reasoning, coding, research, and artifact creation for complex work.',
                 color: 'text-[#d97757]',
                 bgGradient: 'from-[#d97757]/20 to-[#d97757]/5',
@@ -234,7 +234,7 @@ export function LandingPage() {
               {
                 icon: <Sparkles className="h-5 w-5" />,
                 title: 'Gemini 3.1 Pro',
-                description: 'A Google-powered AI experience for fast answers, multimodal help, and lightweight reasoning.',
+                description: 'Fast answers, multimodal help, and lightweight reasoning.',
                 color: 'text-blue-400',
                 bgGradient: 'from-blue-500/20 to-blue-500/5',
               },
@@ -339,7 +339,7 @@ export function LandingPage() {
             </div>
             <div className="flex items-center gap-2 text-sm text-gray-500">
               <Sparkles className="h-3.5 w-3.5 text-violet-400/60" />
-              <span>Powered by Claude Opus 4.6</span>
+              <span>Powered by Claude Opus 4.7</span>
             </div>
           </div>
         </div>

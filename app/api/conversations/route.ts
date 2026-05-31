@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { getInternalModel, sanitizeConversation, toPublicModelId } from '@/lib/ai/model-routing.server'
 
 export async function GET(request: NextRequest) {
   try {
@@ -21,7 +22,7 @@ export async function GET(request: NextRequest) {
 
     if (error) throw error
 
-    return NextResponse.json(conversations)
+    return NextResponse.json((conversations || []).map(sanitizeConversation))
   } catch (error: any) {
     console.error('Conversations GET error:', error)
     return NextResponse.json({ error: error.message }, { status: 500 })
@@ -41,6 +42,11 @@ export async function POST(request: NextRequest) {
     }
 
     const { title, model, reasoningMode } = await request.json()
+    const publicModelId = toPublicModelId(model)
+
+    if (!getInternalModel(publicModelId)) {
+      return NextResponse.json({ error: 'Model is not available' }, { status: 400 })
+    }
 
     // Try with reasoning_mode first, fall back without it if column doesn't exist
     let conversation: any = null
@@ -49,7 +55,7 @@ export async function POST(request: NextRequest) {
     const insertPayload: any = {
       user_id: user.id,
       title: title || 'New Conversation',
-      model_used: model,
+      model_used: publicModelId,
     }
 
     if (reasoningMode) {
@@ -69,7 +75,7 @@ export async function POST(request: NextRequest) {
         .insert({
           user_id: user.id,
           title: title || 'New Conversation',
-          model_used: model,
+          model_used: publicModelId,
         })
         .select()
         .single()
@@ -87,7 +93,7 @@ export async function POST(request: NextRequest) {
       conversation.reasoning_mode = reasoningMode
     }
 
-    return NextResponse.json(conversation)
+    return NextResponse.json(sanitizeConversation(conversation))
   } catch (error: any) {
     console.error('Conversations POST error:', error)
     return NextResponse.json({ error: error.message }, { status: 500 })

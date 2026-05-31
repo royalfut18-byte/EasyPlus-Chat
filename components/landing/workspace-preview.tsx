@@ -14,9 +14,9 @@ const conversations = [
 ]
 
 const models = [
-  { name: 'Claude Opus 4.6', icon: <AnthropicIcon className="h-4 w-4" />, color: '#d97757', active: true },
-  { name: 'ChatGPT 5.5', icon: <ChatGPTIcon className="h-4 w-4" />, color: '#10a37f', active: false },
-  { name: 'Gemini 3.1', icon: <Sparkles className="h-4 w-4" />, color: '#4285f4', active: false },
+  { name: 'Claude Opus 4.7', icon: <AnthropicIcon className="h-4 w-4" />, color: '#d97757', active: true },
+  { name: 'Chat GPT 5.5', icon: <ChatGPTIcon className="h-4 w-4" />, color: '#10a37f', active: false },
+  { name: 'Gemini 3.1 Pro', icon: <Sparkles className="h-4 w-4" />, color: '#4285f4', active: false },
 ]
 
 export function WorkspacePreview() {
@@ -156,7 +156,7 @@ export function WorkspacePreview() {
                       <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-[#d97757]/20 to-[#d97757]/10 flex items-center justify-center">
                         <AnthropicIcon className="w-3.5 h-3.5 text-[#d97757]" />
                       </div>
-                      <span className="text-xs font-medium text-gray-400">Claude Opus 4.6</span>
+                      <span className="text-xs font-medium text-gray-400">Claude Opus 4.7</span>
                     </div>
 
                     <div className="space-y-2">
@@ -174,7 +174,7 @@ export function WorkspacePreview() {
                           </li>
                           <li className="flex items-start gap-2">
                             <span className="text-violet-400/80 mt-1">•</span>
-                            <span>Claude 4.6 advances in reasoning capabilities</span>
+                            <span>Claude Opus 4.7 advances in reasoning capabilities</span>
                           </li>
                           <li className="flex items-start gap-2">
                             <span className="text-violet-400/80 mt-1">•</span>
@@ -200,7 +200,7 @@ export function WorkspacePreview() {
                     <div className="w-1.5 h-1.5 bg-violet-400/60 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
                     <div className="w-1.5 h-1.5 bg-violet-400/60 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
                   </div>
-                  <span className="text-xs">Claude is responding...</span>
+                  <span className="text-xs">Claude Opus 4.7 is responding...</span>
                 </div>
               </div>
 

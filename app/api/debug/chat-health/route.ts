@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { AI_MODELS } from '@/types/models'
 
 export const runtime = 'nodejs'
 
@@ -11,21 +10,10 @@ export async function GET() {
   }
 
   // Env checks (no secrets exposed)
-  checks.hasAwsToken = !!process.env.AWS_BEARER_TOKEN_BEDROCK
-  checks.awsRegion = process.env.AWS_REGION || 'ap-southeast-2 (default)'
-  checks.hasGeminiKey = !!process.env.GEMINI_API_KEY
-  checks.hasTavilyKey = !!process.env.TAVILY_API_KEY
+  checks.inferenceConfigured = !!process.env.AWS_BEARER_TOKEN_BEDROCK
+  checks.searchConfigured = !!process.env.TAVILY_API_KEY
   checks.hasSupabaseUrl = !!process.env.NEXT_PUBLIC_SUPABASE_URL
   checks.hasSupabaseAnonKey = !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-
-  // Models
-  checks.models = AI_MODELS.map((m) => ({
-    id: m.id,
-    name: m.name,
-    provider: m.provider,
-    bedrockModelId: m.bedrockModelId || null,
-    geminiModelId: m.geminiModelId || null,
-  }))
 
   // Auth check
   try {
@@ -57,7 +45,7 @@ export async function GET() {
   // Node version
   checks.nodeVersion = process.version
 
-  checks.ok = checks.hasAwsToken && checks.hasSupabaseUrl && checks.userFound && checks.profileFound
+  checks.ok = checks.inferenceConfigured && checks.hasSupabaseUrl && checks.userFound && checks.profileFound
 
   return NextResponse.json(checks, { status: checks.ok ? 200 : 500 })
 }

@@ -16,65 +16,38 @@ interface ModelSelectorProps {
 
 export function ModelSelector({ selectedModel, onSelectModel, disabled = false, disabledReason }: ModelSelectorProps) {
   const getShortName = (name: string) => {
-    // Show shorter names on mobile
     return name
       .replace('Claude Opus', 'Claude')
-      .replace('Claude Sonnet', 'Claude')
       .replace('Chat GPT 5.5', 'GPT 5.5')
-      .replace('Gemini 2.5 Flash', 'Gemini 2.5')
       .replace('Gemini 3.1 Pro', 'Gemini 3.1')
   }
 
   const getModelIcon = (model: AIModel) => {
-    if (model.provider === 'anthropic') {
-      // Special icon for Chat GPT 5.5 (Claude Haiku 4.5)
-      if (model.id === 'claude-haiku-4.5') {
-        return (
-          <div className={cn(
-            'w-5 h-5 md:w-7 md:h-7 rounded-lg flex items-center justify-center transition-colors',
-            selectedModel === model.id
-              ? 'bg-white/10'
-              : 'bg-white/5'
-          )}>
-            <ChatGPTIcon className={cn(
-              'w-3 h-3 md:w-4 md:h-4 transition-colors',
-              selectedModel === model.id ? 'text-[#10a37f]' : 'text-gray-400'
-            )} />
-          </div>
-        )
-      }
+    const iconClassName = cn(
+      'w-3 h-3 md:w-4 md:h-4 transition-colors',
+      selectedModel === model.id
+        ? model.id === 'chat-gpt-5.5'
+          ? 'text-[#10a37f]'
+          : model.id === 'claude-opus-4.7'
+            ? 'text-[#d97757]'
+            : 'text-blue-400'
+        : 'text-gray-400'
+    )
 
-      // Regular Claude icon
-      const iconColor = 'text-[#d97757]'
-      return (
-        <div className={cn(
-          'w-5 h-5 md:w-7 md:h-7 rounded-lg flex items-center justify-center transition-colors',
-          selectedModel === model.id
-            ? 'bg-white/10'
-            : 'bg-white/5'
-        )}>
-          <AnthropicIcon className={cn(
-            'w-3 h-3 md:w-4 md:h-4 transition-colors',
-            selectedModel === model.id ? iconColor : 'text-gray-400'
-          )} />
-        </div>
-      )
-    } else if (model.provider === 'google') {
-      return (
-        <div className={cn(
-          'w-5 h-5 md:w-7 md:h-7 rounded-lg flex items-center justify-center transition-colors',
-          selectedModel === model.id
-            ? `bg-gradient-to-br from-[${model.color}]/20 to-[${model.color}]/10`
-            : 'bg-white/5'
-        )}>
-          <Sparkles className={cn(
-            'w-3 h-3 md:w-4 md:h-4 transition-colors',
-            selectedModel === model.id ? 'text-blue-400' : 'text-gray-400'
-          )} />
-        </div>
-      )
-    }
-    return <span className="text-base md:text-lg">{model.icon}</span>
+    return (
+      <div className={cn(
+        'w-5 h-5 md:w-7 md:h-7 rounded-lg flex items-center justify-center transition-colors',
+        selectedModel === model.id ? 'bg-white/10' : 'bg-white/5'
+      )}>
+        {model.id === 'chat-gpt-5.5' ? (
+          <ChatGPTIcon className={iconClassName} />
+        ) : model.id === 'claude-opus-4.7' ? (
+          <AnthropicIcon className={iconClassName} />
+        ) : (
+          <Sparkles className={iconClassName} />
+        )}
+      </div>
+    )
   }
 
   return (

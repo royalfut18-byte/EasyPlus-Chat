@@ -1,5 +1,6 @@
 import { GoogleGenerativeAI } from '@google/generative-ai'
-import { AI_MODELS, type ChatMessage } from '@/types/models'
+import type { ChatMessage } from '@/types/models'
+import { getInternalModel } from '@/lib/ai/model-routing.server'
 
 /**
  * Stream Gemini response using Google AI Studio API
@@ -11,18 +12,18 @@ export async function streamGeminiResponse(
   temperature: number = 0.7,
   maxTokens: number = 16384
 ): Promise<ReadableStream> {
-  const model = AI_MODELS.find((m) => m.id === modelId)
+  const model = getInternalModel(modelId)
 
   if (!model || !model.geminiModelId) {
     console.error('[Gemini] Unknown model ID or missing geminiModelId:', modelId)
-    throw new Error(`Unknown Gemini model: ${modelId}`)
+    throw new Error('This EasyPlus tier is unavailable')
   }
 
   const apiKey = process.env.GEMINI_API_KEY
 
   if (!apiKey) {
     console.error('[Gemini] GEMINI_API_KEY is not set')
-    throw new Error('Gemini API key is not configured')
+    throw new Error('Inference backend is unavailable')
   }
 
   // Initialize Gemini
@@ -134,7 +135,7 @@ export async function streamGeminiResponse(
       console.log('[Gemini] Sending last message with', lastMessage.parts?.length || 0, 'parts')
     }
 
-    const finalSystemPrompt = systemPromptText || `You are ${model.name}, powered by Google. You are a helpful assistant.`
+    const finalSystemPrompt = systemPromptText || `You are ${model.name}. You are a helpful assistant.`
 
     // Start chat with history and system instruction
     const chat = geminiModel.startChat({
@@ -177,15 +178,15 @@ export async function streamGeminiResponse(
 
     // Handle quota/rate limit errors gracefully
     if (error.message?.includes('quota') || error.message?.includes('rate limit') || error.message?.includes('429')) {
-      throw new Error('Gemini API quota exhausted. Try again later or switch to Claude.')
+      throw new Error('This EasyPlus tier is temporarily unavailable. Try again later or switch tiers.')
     }
 
     // Handle resource exhausted
     if (error.message?.includes('RESOURCE_EXHAUSTED') || error.message?.includes('Resource has been exhausted')) {
-      throw new Error('Gemini API quota exhausted. Try again later or switch to Claude.')
+      throw new Error('This EasyPlus tier is temporarily unavailable. Try again later or switch tiers.')
     }
 
     // Generic error message
-    throw new Error('Gemini API request failed. Try again or switch to Claude.')
+    throw new Error('This EasyPlus tier could not respond. Try again or switch tiers.')
   }
 }

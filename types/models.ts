@@ -1,38 +1,32 @@
 export interface AIModel {
   id: string
   name: string
-  provider: 'anthropic' | 'google' | 'openai'
-  bedrockModelId?: string // Optional: only for Bedrock/Claude models
-  geminiModelId?: string // Optional: only for Gemini models
+  tier: 'max' | 'fast' | 'pro'
   costPerMessage: number
   color: string
-  icon?: string // Optional: for non-Anthropic models that use emoji
 }
 
 export const AI_MODELS: AIModel[] = [
   {
-    id: 'claude-opus-4.6',
-    name: 'Claude Opus 4.6',
-    provider: 'anthropic',
-    bedrockModelId: 'au.anthropic.claude-opus-4-6-v1',
+    id: 'claude-opus-4.7',
+    name: 'Claude Opus 4.7',
+    tier: 'max',
     costPerMessage: 50,
-    color: '#d97757', // Anthropic warm neutral
+    color: '#d97757',
   },
   {
-    id: 'claude-haiku-4.5',
+    id: 'chat-gpt-5.5',
     name: 'Chat GPT 5.5',
-    provider: 'anthropic',
-    bedrockModelId: 'global.anthropic.claude-opus-4-5-20251101-v1:0',
+    tier: 'fast',
     costPerMessage: 15,
-    color: '#10b981', // Green for fast/cheaper
+    color: '#10b981',
   },
   {
-    id: 'gemini-2.5-flash',
+    id: 'gemini-3.1-pro',
     name: 'Gemini 3.1 Pro',
-    provider: 'google',
-    geminiModelId: 'gemini-2.5-flash',
+    tier: 'pro',
     costPerMessage: 15,
-    color: '#4285f4', // Google blue
+    color: '#4285f4',
   },
 ]
 

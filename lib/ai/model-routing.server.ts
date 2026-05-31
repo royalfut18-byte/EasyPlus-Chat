@@ -1,0 +1,69 @@
+import 'server-only'
+
+import { AI_MODELS, type AIModel } from '@/types/models'
+
+export type AIProvider = 'anthropic' | 'google'
+
+export interface InternalAIModel extends AIModel {
+  provider: AIProvider
+  bedrockModelId?: string
+  geminiModelId?: string
+}
+
+const INTERNAL_AI_MODELS: InternalAIModel[] = [
+  {
+    ...AI_MODELS[0],
+    provider: 'anthropic',
+    bedrockModelId: 'au.anthropic.claude-opus-4-6-v1',
+  },
+  {
+    ...AI_MODELS[1],
+    provider: 'anthropic',
+    bedrockModelId: 'global.anthropic.claude-opus-4-5-20251101-v1:0',
+  },
+  {
+    ...AI_MODELS[2],
+    provider: 'google',
+    geminiModelId: 'gemini-2.5-flash',
+  },
+]
+
+const LEGACY_MODEL_IDS: Record<string, string> = {
+  'claude-opus-4.6': 'claude-opus-4.7',
+  'claude-haiku-4.5': 'chat-gpt-5.5',
+  'gemini-2.5-flash': 'gemini-3.1-pro',
+  'easyplus-max': 'claude-opus-4.7',
+  'easyplus-fast': 'chat-gpt-5.5',
+  'easyplus-pro': 'gemini-3.1-pro',
+  'epm-7f3a9c': 'claude-opus-4.7',
+  'epm-b1d4e8': 'chat-gpt-5.5',
+  'epm-c6a275': 'gemini-3.1-pro',
+}
+
+export function toPublicModelId(modelId: unknown): string {
+  if (typeof modelId !== 'string') return ''
+  return LEGACY_MODEL_IDS[modelId] || modelId
+}
+
+export function getInternalModel(modelId: string): InternalAIModel | undefined {
+  const publicId = toPublicModelId(modelId)
+  return INTERNAL_AI_MODELS.find((model) => model.id === publicId)
+}
+
+export function getPublicModelName(modelId: string): string {
+  return getInternalModel(modelId)?.name || 'EasyPlus'
+}
+
+export function sanitizeConversation<T extends Record<string, any>>(conversation: T): T {
+  return {
+    ...conversation,
+    model_used: toPublicModelId(conversation.model_used),
+  }
+}
+
+export function sanitizeMessage<T extends Record<string, any>>(message: T): T {
+  return {
+    ...message,
+    model: toPublicModelId(message.model),
+  }
+}

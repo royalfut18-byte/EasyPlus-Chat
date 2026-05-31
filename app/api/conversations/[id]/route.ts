@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import type { Message } from '@/types/models'
+import { sanitizeMessage } from '@/lib/ai/model-routing.server'
 
 const MARKER_CONTENTS = new Set([
   '__ARTIFACT_LOADING__',
@@ -169,7 +170,7 @@ export async function GET(
       })
     }
 
-    return NextResponse.json(cleaned)
+    return NextResponse.json(cleaned.map(sanitizeMessage))
   } catch (error: any) {
     console.error('Messages GET error:', error)
     return NextResponse.json({ error: error.message }, { status: 500 })
