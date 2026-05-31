@@ -54,10 +54,10 @@ export async function getScopedProfiles(access: AdminAccess): Promise<AccountPro
 
     if (!missingNewEntitlementColumns) throw error
 
-    // Legacy fallback: select older columns and synthesize missing fields
+    // Legacy fallback: select older, safe columns and synthesize missing fields
     let legacyQuery = access.db
       .from('profiles')
-      .select('id, user_id, display_name, avatar_url, role, credits, unlimited_credits, subscription_tier, created_at')
+      .select('id, user_id, display_name, avatar_url, role, credits, subscription_tier, created_at')
       .order('created_at', { ascending: false })
 
     if (filter) legacyQuery = legacyQuery.eq(filter.column, filter.value)
@@ -67,6 +67,11 @@ export async function getScopedProfiles(access: AdminAccess): Promise<AccountPro
 
     const rows = (legacyData || []).map((row: any) => ({
       ...row,
+      // Ensure newly-introduced columns are present with safe defaults
+      role: row.role || 'user',
+      credits: typeof row.credits === 'number' ? row.credits : 0,
+      unlimited_credits: Boolean(row.unlimited_credits) || false,
+      subscription_tier: row.subscription_tier || 'free',
       account_status: 'active',
       account_expires_at: null,
       owner_sub_admin_id: null,
