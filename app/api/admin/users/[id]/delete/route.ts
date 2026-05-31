@@ -28,8 +28,11 @@ export async function DELETE(request: NextRequest) {
 
     if (profileError) return NextResponse.json({ error: 'Profile not found' }, { status: 404 })
 
-    // Ensure sub-admins cannot delete outside their scope
-    if (!canManageTarget(access, profile)) {
+    // Ensure sub-admins can delete only users assigned to them; main admin can delete any
+    const isAllowed = access.isMainAdmin || (
+      access.isSubAdmin && profile.role === 'user' && String(profile.owner_sub_admin_id) === String(access.actor.userId)
+    )
+    if (!isAllowed) {
       return NextResponse.json({ error: 'Insufficient permissions to delete this account' }, { status: 403 })
     }
 
