@@ -13,6 +13,7 @@ import {
   User,
   Shield,
   Brain,
+  FolderOpen,
 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
@@ -104,6 +105,10 @@ export function Sidebar({
               <Button onClick={onNewChat} className="mt-3 h-9 w-full justify-start rounded-lg border border-white/[0.07] bg-white/[0.02] px-3 text-sm text-gray-200 hover:bg-white/[0.06] hover:text-white">
                 <Plus className="mr-2 h-4 w-4 text-violet-400" />
                 New Chat
+              </Button>
+              <Button onClick={() => router.push('/projects')} className="mt-2 h-9 w-full justify-start rounded-lg border border-white/[0.07] bg-transparent px-3 text-sm text-gray-300 hover:bg-white/[0.05] hover:text-white">
+                <FolderOpen className="mr-2 h-4 w-4 text-violet-300" />
+                Projects
               </Button>
             </div>
 

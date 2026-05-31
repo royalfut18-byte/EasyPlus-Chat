@@ -14,7 +14,7 @@ export async function GET(request: NextRequest) {
     const id = parts[parts.length - 1]
 
     const project = await getProjectById(id)
-    if (!project || project.user_id !== user.id) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    if (!project || project.user_id !== user.id || project.archived_at) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
     return NextResponse.json({ project })
   } catch (error: any) {
@@ -31,8 +31,11 @@ export async function PATCH(request: NextRequest) {
 
     const id = request.url.split('/').filter(Boolean).pop() as string
     const payload = await request.json()
+    if ('name' in payload && (!payload.name || !payload.name.trim())) {
+      return NextResponse.json({ error: 'Project name is required' }, { status: 400 })
+    }
     const project = await getProjectById(id)
-    if (!project || project.user_id !== user.id) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    if (!project || project.user_id !== user.id || project.archived_at) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
     await ensureUserActive(user.id)
 
@@ -57,7 +60,7 @@ export async function DELETE(request: NextRequest) {
 
     const id = request.url.split('/').filter(Boolean).pop() as string
     const project = await getProjectById(id)
-    if (!project || project.user_id !== user.id) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    if (!project || project.user_id !== user.id || project.archived_at) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
     await ensureUserActive(user.id)
     await archiveProject(id, user.id)

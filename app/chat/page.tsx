@@ -1,9 +1,9 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Sparkles, Box, PanelRightOpen, Globe, Paperclip, Send, Loader2, X, FileText } from 'lucide-react'
+import { Sparkles, Box, PanelRightOpen, Globe, Paperclip, Send, Loader2, X, FileText, FolderOpen, ArrowLeft } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { ensureProfile } from '@/lib/supabase/ensure-profile'
 import { ModelSelector } from '@/components/chat/model-selector'
@@ -74,6 +74,27 @@ function saveArtifact(artifact: Artifact, conversationId?: string, messageId?: s
   } catch (e) {
     console.error('[Artifact] Failed to save to localStorage:', e)
   }
+}
+
+function saveProjectArtifact(projectId: string | null, artifact: Artifact, conversationId?: string, messageId?: string) {
+  if (!projectId || !conversationId) return
+
+  fetch(`/api/projects/${projectId}/artifacts`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      title: artifact.title,
+      language: artifact.language,
+      code: artifact.code,
+      explanation: artifact.explanation,
+      conversationId,
+      messageId,
+    }),
+  }).catch((error) => {
+    if (process.env.NODE_ENV !== 'production') {
+      console.warn('[Artifact] Failed to save project artifact:', error)
+    }
+  })
 }
 
 // Load artifact from localStorage
@@ -201,6 +222,13 @@ type PendingResponse = {
   loadingMarker: string
 }
 
+type ActiveProject = {
+  id: string
+  name: string
+  description?: string | null
+  instructions?: string | null
+}
+
 export default function ChatPage() {
   const [selectedModel, setSelectedModel] = useState(AI_MODELS[0].id)
   const [reasoningMode, setReasoningMode] = useState<ReasoningMode>('thinking')
@@ -220,6 +248,7 @@ export default function ChatPage() {
   const [pendingResponses, setPendingResponses] = useState<Record<string, PendingResponse>>({})
   const [heroInput, setHeroInput] = useState('')
   const [heroAttachments, setHeroAttachments] = useState<ChatAttachment[]>([])
+  const [activeProject, setActiveProject] = useState<ActiveProject | null>(null)
   const [heroUploading, setHeroUploading] = useState(false)
   const [heroIsDragging, setHeroIsDragging] = useState(false)
   const heroTextareaRef = useRef<HTMLTextAreaElement>(null)
@@ -236,6 +265,9 @@ export default function ChatPage() {
   const conversationRequestSeqRef = useRef(0)
   const pendingResponsesRef = useRef<Record<string, PendingResponse>>({})
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const projectId = searchParams.get('projectId')
+  const queryConversationId = searchParams.get('conversationId')
   const supabase = createClient()
 
   const setPendingResponse = (conversationId: string, pending: PendingResponse) => {
@@ -254,7 +286,6 @@ export default function ChatPage() {
 
   useEffect(() => {
     loadUserProfile()
-    loadConversations()
 
     // Load panel width from localStorage
     try {
@@ -271,6 +302,19 @@ export default function ChatPage() {
 
     // Don't restore any artifact on page load - wait for conversation selection
   }, [])
+
+  useEffect(() => {
+    loadConversations()
+    loadActiveProject()
+    handleNewChat()
+  }, [projectId])
+
+  useEffect(() => {
+    if (!queryConversationId || conversations.length === 0) return
+    if (selectedConversationIdRef.current === queryConversationId) return
+    if (!conversations.some(conversation => conversation.id === queryConversationId)) return
+    handleSelectConversation(queryConversationId)
+  }, [queryConversationId, conversations])
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -297,7 +341,8 @@ export default function ChatPage() {
 
   const loadConversations = async () => {
     try {
-      const response = await fetch('/api/conversations', {
+      const url = projectId ? `/api/conversations?projectId=${encodeURIComponent(projectId)}` : '/api/conversations'
+      const response = await fetch(url, {
         signal: AbortSignal.timeout(10000),
       })
       if (response.ok) {
@@ -306,6 +351,25 @@ export default function ChatPage() {
       }
     } catch (error) {
       setConversations([])
+    }
+  }
+
+  const loadActiveProject = async () => {
+    if (!projectId) {
+      setActiveProject(null)
+      return
+    }
+
+    try {
+      const response = await fetch(`/api/projects/${projectId}`)
+      if (!response.ok) {
+        setActiveProject(null)
+        return
+      }
+      const data = await response.json()
+      setActiveProject(data.project || null)
+    } catch {
+      setActiveProject(null)
     }
   }
 
@@ -768,6 +832,7 @@ export default function ChatPage() {
             title,
             model: modelToUse,
             reasoningMode: requestReasoningMode,
+            projectId: projectId || undefined,
           }),
         })
 
@@ -1121,6 +1186,7 @@ Rules:
 
           // Save artifact to localStorage
           saveArtifact(artifact, sendConversationId, clientAssistantMessageId)
+          saveProjectArtifact(projectId, artifact, sendConversationId, clientAssistantMessageId)
         } else {
           // No artifact found - update with normal response
           if (process.env.NODE_ENV !== 'production') {
@@ -1181,6 +1247,7 @@ Rules:
 
             // Save artifact to localStorage for persistence
             saveArtifact(artifact, sendConversationId, clientAssistantMessageId)
+            saveProjectArtifact(projectId, artifact, sendConversationId, clientAssistantMessageId)
           } else {
             // No artifact found - update with normal response
             if (selectedConversationIdRef.current === sendConversationId) {
@@ -1623,6 +1690,7 @@ Default to artifact:html with a complete single-file HTML document. Do NOT outpu
           setArtifactMessageId(clientAssistantMessageId)
           setIsArtifactOpen(true)
           saveArtifact(artifact, conversationId, clientAssistantMessageId)
+          saveProjectArtifact(projectId, artifact, conversationId, clientAssistantMessageId)
         }
       }
     } catch (error: any) {
@@ -2021,6 +2089,20 @@ Default to artifact:html with a complete single-file HTML document. Do NOT outpu
                 disabledReason="Start a new chat to switch models"
               />
             </div>
+            {activeProject && (
+              <div className="hidden min-w-0 items-center gap-2 rounded-full border border-white/[0.08] bg-white/[0.03] px-3 py-1.5 text-xs text-gray-300 md:flex">
+                <FolderOpen className="h-3.5 w-3.5 text-violet-300" />
+                <span className="truncate">Project: {activeProject.name}</span>
+                <button
+                  type="button"
+                  onClick={() => router.push(`/projects/${activeProject.id}`)}
+                  className="ml-1 rounded-full px-1.5 py-0.5 text-gray-500 transition-colors hover:bg-white/[0.06] hover:text-gray-200"
+                  title="Back to project"
+                >
+                  <ArrowLeft className="h-3 w-3" />
+                </button>
+              </div>
+            )}
             <div className="flex items-center gap-2 shrink-0">
               {showReopenButton && (
                 <motion.button

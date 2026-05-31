@@ -15,12 +15,17 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { data: conversations, error } = await db
+    const projectId = request.nextUrl.searchParams.get('projectId')
+    let query = db
       .from('conversations')
       .select('*')
       .eq('user_id', user.id)
       .order('updated_at', { ascending: false, nullsFirst: false })
       .order('created_at', { ascending: false, nullsFirst: false })
+
+    query = projectId ? query.eq('project_id', projectId) : query.is('project_id', null)
+
+    const { data: conversations, error } = await query
 
     if (error) throw error
 

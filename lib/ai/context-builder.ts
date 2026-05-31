@@ -14,6 +14,7 @@ export interface ContextBuildOptions {
   maxTokenBudget?: number
   currentMessages: ChatMessage[]
   includeUserMemories?: boolean
+  projectId?: string | null
 }
 
 export interface BuiltContext {
@@ -474,6 +475,7 @@ export async function buildContext(
     maxTokenBudget = DEFAULT_TOKEN_BUDGET,
     currentMessages,
     includeUserMemories = true,
+    projectId = null,
   } = options
 
   const result: BuiltContext = {
@@ -751,14 +753,22 @@ export async function buildContext(
         .limit(sameConvLimit)
 
       // Second: cross-conversation chunks (different conversations, same user)
-      const { data: crossConvChunksRaw } = keywords.length > 0
-        ? await db
+      let crossConvChunksQuery = keywords.length > 0
+        ? db
             .from('memory_chunks')
-            .select('id, content, summary, source_type, source_id, chunk_index, metadata, conversation_id')
+            .select('id, content, summary, source_type, source_id, chunk_index, metadata, conversation_id, project_id')
             .eq('user_id', userId)
             .neq('conversation_id', conversationId)
             .order('created_at', { ascending: false })
             .limit(40)
+        : null
+      if (crossConvChunksQuery && projectId) {
+        crossConvChunksQuery = crossConvChunksQuery.eq('project_id', projectId)
+      } else if (crossConvChunksQuery) {
+        crossConvChunksQuery = crossConvChunksQuery.is('project_id', null)
+      }
+      const { data: crossConvChunksRaw } = crossConvChunksQuery
+        ? await crossConvChunksQuery
         : { data: [] }
 
       const sameConvChunks = (sameConvChunksRaw || []) as MemoryChunkRow[]
@@ -890,14 +900,18 @@ export async function buildContext(
   try {
     if (keywords.length > 0 && remainingBudget > 1000) {
       // Search conversation_memories across ALL user conversations (not just current)
-      const { data: crossMemories } = await db
+      let crossMemoriesQuery = db
         .from('conversation_memories')
-        .select('title, content, scope, importance, conversation_id')
+        .select('title, content, scope, importance, conversation_id, project_id')
         .eq('user_id', userId)
         .neq('conversation_id', conversationId)
         .order('importance', { ascending: false })
         .order('created_at', { ascending: false })
         .limit(50)
+      crossMemoriesQuery = projectId
+        ? crossMemoriesQuery.eq('project_id', projectId)
+        : crossMemoriesQuery.is('project_id', null)
+      const { data: crossMemories } = await crossMemoriesQuery
 
       if (crossMemories && crossMemories.length > 0) {
         const scored = crossMemories
@@ -926,7 +940,7 @@ export async function buildContext(
 
       // Also search conversation purpose_summary and rolling_summary from other conversations
       if (remainingBudget > 500) {
-        const { data: otherConvs } = await db
+        let otherConvsQuery = db
           .from('conversations')
           .select('id, title, purpose_summary, rolling_summary')
           .eq('user_id', userId)
@@ -934,6 +948,10 @@ export async function buildContext(
           .not('purpose_summary', 'is', null)
           .order('updated_at', { ascending: false })
           .limit(30)
+        otherConvsQuery = projectId
+          ? otherConvsQuery.eq('project_id', projectId)
+          : otherConvsQuery.is('project_id', null)
+        const { data: otherConvs } = await otherConvsQuery
 
         if (otherConvs && otherConvs.length > 0) {
           const scoredConvs = otherConvs

@@ -14,6 +14,25 @@ interface MessageRow {
   created_at: string
 }
 
+async function getConversationProjectId(
+  db: SupabaseClient,
+  conversationId: string,
+  userId: string
+): Promise<string | null> {
+  try {
+    const { data } = await db
+      .from('conversations')
+      .select('project_id')
+      .eq('id', conversationId)
+      .eq('user_id', userId)
+      .single()
+
+    return (data as any)?.project_id || null
+  } catch {
+    return null
+  }
+}
+
 export async function shouldUpdateSummary(
   db: SupabaseClient,
   conversationId: string,
@@ -184,6 +203,7 @@ async function extractConversationMemories(
   latestContent: string
 ): Promise<void> {
   try {
+    const projectId = await getConversationProjectId(db, conversationId, userId)
     // Check how many memories we already have for this conversation
     const { count } = await db
       .from('conversation_memories')
@@ -265,6 +285,7 @@ async function extractConversationMemories(
           toInsert.map(mem => ({
             user_id: userId,
             conversation_id: conversationId,
+            project_id: projectId,
             scope: mem.scope,
             title: mem.title,
             content: mem.content,
@@ -324,6 +345,7 @@ export async function ensureTextChunks(
   }
 
   try {
+    const projectId = await getConversationProjectId(db, conversationId, userId)
     const chunks: Array<{ content: string; summary: string; chunk_index: number }> = []
 
     for (let i = 0; i < content.length; i += MEMORY_CHUNK_SIZE) {
@@ -349,6 +371,7 @@ export async function ensureTextChunks(
         batch.map(c => ({
           user_id: userId,
           conversation_id: conversationId,
+          project_id: projectId,
           source_type: sourceType,
           source_id: sourceId,
           chunk_index: c.chunk_index,
@@ -404,10 +427,12 @@ export async function saveAttachmentMemory(
     const isImage = attachment.type === 'image'
     const storagePath = attachment.storagePath || attachment.storageKey || null
     let attachmentId: string | null = null
+    const projectId = await getConversationProjectId(db, conversationId, userId)
 
     const attRow: Record<string, any> = {
       user_id: userId,
       conversation_id: conversationId,
+      project_id: projectId,
       message_id: messageId,
       file_name: attachment.name || 'unknown',
       file_type: attachment.type || 'document',
@@ -516,6 +541,7 @@ export async function saveAttachmentMemory(
       await db.from('conversation_memories').insert({
         user_id: userId,
         conversation_id: conversationId,
+        project_id: projectId,
         scope: 'attachment',
         title: `File: ${attachment.name}`,
         content: memContent,

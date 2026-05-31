@@ -67,6 +67,7 @@ export interface Conversation {
   title: string
   model_used: string
   reasoning_mode?: ReasoningMode
+  project_id?: string | null
   created_at: string
   updated_at: string
 }

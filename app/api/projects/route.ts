@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getAccountEntitlement, getEntitlementBlockResponse } from '@/lib/account-entitlements.server'
-import { createProjectForUser, getProjectsForUser, ensureUserActive } from '@/lib/projects.server'
+import { createProjectForUser, getProjectsWithStatsForUser, ensureUserActive } from '@/lib/projects.server'
 
 export async function GET(request: NextRequest) {
   try {
@@ -9,7 +9,7 @@ export async function GET(request: NextRequest) {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-    const projects = await getProjectsForUser(user.id)
+    const projects = await getProjectsWithStatsForUser(user.id)
     return NextResponse.json({ projects })
   } catch (error: any) {
     console.error('[Projects API] GET failed:', error)

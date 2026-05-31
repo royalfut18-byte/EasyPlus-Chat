@@ -27,6 +27,7 @@ import type { ChatMessage, ReasoningMode } from '@/types/models'
 import { getInternalModel, getPublicModelName, toPublicModelId } from '@/lib/ai/model-routing.server'
 import { getReasoningProfile, getReasoningSystemAddendum, type ReasoningProfile } from '@/lib/ai/reasoning-profiles'
 import { getAccountEntitlement, getEntitlementBlockResponse } from '@/lib/account-entitlements.server'
+import { createProjectMemory, getRelevantProjectContext } from '@/lib/projects.server'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
@@ -147,10 +148,11 @@ export async function POST(request: NextRequest) {
     // Stage: Validate model
     stage = 'validate-model'
     let validatedModel = toPublicModelId(model)
+    let conversationProjectId: string | null = null
     if (conversationId) {
       const { data: conversation, error: convError } = await db
         .from('conversations')
-        .select('model_used')
+        .select('model_used, project_id')
         .eq('id', conversationId)
         .eq('user_id', user.id)
         .single()
@@ -160,6 +162,7 @@ export async function POST(request: NextRequest) {
       }
 
       const conversationModel = toPublicModelId(conversation.model_used)
+      conversationProjectId = conversation.project_id || null
       if (conversationModel !== validatedModel) {
         console.warn('[Chat API] Model mismatch, using conversation model:', conversationModel)
         validatedModel = conversationModel
@@ -477,9 +480,19 @@ RULES FOR USING THESE RESULTS:
           maxTokenBudget: reasoningProfile.contextBudget,
           currentMessages: cleanedMessages,
           includeUserMemories: reasoningMode === 'extended',
+          projectId: conversationProjectId,
         })
         fullContextPrompt = formatContextForPrompt(builtContext)
         contextDebugInfo = builtContext.debugInfo
+
+        if (conversationProjectId) {
+          const projectContext = await getRelevantProjectContext(conversationProjectId, user.id, latestUserMessage.content)
+          if (projectContext) {
+            fullContextPrompt = fullContextPrompt
+              ? `${projectContext}\n\n${fullContextPrompt}`
+              : projectContext
+          }
+        }
 
         console.log('[Chat API] Context built:', {
           ...builtContext.debugInfo,
@@ -543,9 +556,22 @@ RULES FOR USING THESE RESULTS:
           const memText = extractMemoryText(latestUserMessage.content)
           if (memText) {
             memorySaveResult = { saved: true, memoryText: memText }
-            saveMemory(db, user.id, memText, conversationId).catch((err: any) => {
-              console.warn('[Chat API] Deferred memory save failed:', err.message)
-            })
+            if (conversationProjectId) {
+              createProjectMemory(conversationProjectId, user.id, {
+                content: memText,
+                title: 'Saved instruction',
+                memory_type: 'instruction',
+                importance: 4,
+                source_type: 'conversation',
+                source_id: conversationId || null,
+              }).catch((err: any) => {
+                console.warn('[Chat API] Deferred project memory save failed:', err.message)
+              })
+            } else {
+              saveMemory(db, user.id, memText, conversationId).catch((err: any) => {
+                console.warn('[Chat API] Deferred memory save failed:', err.message)
+              })
+            }
           }
         } else if (isForgetRequest(latestUserMessage.content)) {
           const forgetText = latestUserMessage.content
@@ -914,6 +940,18 @@ RULES FOR USING THESE RESULTS:
                   const needsSummary = await shouldUpdateSummary(db, conversationId!, user.id)
                   if (needsSummary) {
                     await updateConversationSummary(db, conversationId!, user.id, finalContent)
+                    if (conversationProjectId && latestUserMessage.content.trim().length > 30) {
+                      await createProjectMemory(conversationProjectId, user.id, {
+                        title: 'Recent project work',
+                        content: latestUserMessage.content.substring(0, 500),
+                        memory_type: 'task',
+                        importance: 2,
+                        source_type: 'conversation',
+                        source_id: conversationId!,
+                      }).catch((err: any) => {
+                        console.warn('[Chat API] Project task memory save failed:', err.message)
+                      })
+                    }
                   }
 
                   if (latestUserMessage.content.length > 1500 && savedUserMessageId) {
