@@ -117,7 +117,24 @@ export function AdminUserTable() {
       <td className="px-3 py-3"><Status value={user.account_status} /></td>
       <td className="px-3 py-3 text-gray-400">{user.created_at ? formatDate(user.created_at) : 'Unknown'}</td>
       <td className="px-3 py-3 text-gray-500">{user.account_expires_at ? formatDate(user.account_expires_at) : 'No expiry'}</td>
-      <td className="px-3 py-3"><Button size="sm" variant="outline" className="border-white/[0.10]" onClick={() => openEdit(user)}><Settings className="mr-1 h-3 w-3" />Edit</Button></td>
+      <td className="px-3 py-3 flex items-center gap-2">
+        <Button size="sm" variant="outline" className="border-white/[0.10]" onClick={() => openEdit(user)}><Settings className="mr-1 h-3 w-3" />Edit</Button>
+        {data.actorRole === 'admin' && (
+          <Button size="sm" variant="destructive" onClick={async () => {
+            if (!confirm(`Delete account ${user.display_name || user.email}? This will remove the profile and auth user.`)) return
+            const res = await fetch(`/api/admin/users/${user.user_id}/delete`, { method: 'DELETE' })
+            const json = await res.json()
+            if (!res.ok) {
+              toast({ title: 'Delete failed', description: json.error || 'Unknown error', variant: 'destructive' })
+              return
+            }
+            toast({ title: 'Account deleted' })
+            await loadUsers()
+          }}>
+            Delete
+          </Button>
+        )}
+      </td>
     </tr>
   )
 

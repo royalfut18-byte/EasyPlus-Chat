@@ -23,6 +23,11 @@ export async function POST(request: NextRequest) {
     const role = sanitizeRequestedRole(access, body.role)
     // Default to unlimited credits for new accounts unless explicitly set false
     const unlimitedCredits = body.unlimitedCredits === undefined ? true : body.unlimitedCredits === true
+
+    // Do not allow creating accounts with finite credits in this deployment.
+    if (unlimitedCredits === false) {
+      return NextResponse.json({ error: 'New accounts must be created with Unlimited credits enabled.' }, { status: 400 })
+    }
     const accountExpiresAt = body.accountExpiresAt ? new Date(body.accountExpiresAt).toISOString() : null
     const ownerSubAdminId = role === 'user'
       ? access.isSubAdmin
