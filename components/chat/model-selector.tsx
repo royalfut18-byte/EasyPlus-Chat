@@ -24,7 +24,7 @@ export function ModelSelector({ selectedModel, onSelectModel, disabled = false, 
 
   const getModelIcon = (model: AIModel) => {
     const iconClassName = cn(
-      'w-3 h-3 md:w-4 md:h-4 transition-colors',
+      'h-3 w-3 transition-colors md:h-3.5 md:w-3.5',
       selectedModel === model.id
         ? model.id === 'chat-gpt-5.5'
           ? 'text-[#10a37f]'
@@ -36,8 +36,8 @@ export function ModelSelector({ selectedModel, onSelectModel, disabled = false, 
 
     return (
       <div className={cn(
-        'w-5 h-5 md:w-7 md:h-7 rounded-lg flex items-center justify-center transition-colors',
-        selectedModel === model.id ? 'bg-white/10' : 'bg-white/5'
+        'flex h-5 w-5 items-center justify-center rounded-md transition-colors',
+        selectedModel === model.id ? 'bg-white/[0.08]' : 'bg-transparent'
       )}>
         {model.id === 'chat-gpt-5.5' ? (
           <ChatGPTIcon className={iconClassName} />
@@ -51,7 +51,7 @@ export function ModelSelector({ selectedModel, onSelectModel, disabled = false, 
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-1.5">
+    <div className="flex flex-wrap items-center gap-1">
       {disabled && (
         <div className="flex items-center gap-2 text-xs text-gray-400 px-2 py-1">
           <Lock className="w-3 h-3" />
@@ -65,10 +65,10 @@ export function ModelSelector({ selectedModel, onSelectModel, disabled = false, 
           disabled={disabled}
           title={disabled ? (disabledReason || 'Start a new chat to switch models') : undefined}
           className={cn(
-            'relative flex h-9 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-medium transition-colors md:px-3 md:text-sm',
+            'relative flex h-8 items-center gap-1.5 rounded-full border px-2.5 text-xs font-medium transition-colors md:px-3',
             selectedModel === model.id
-              ? 'border-white/[0.12] bg-white/[0.08]'
-              : 'border-transparent bg-transparent hover:bg-white/[0.05]',
+              ? 'border-white/[0.10] bg-white/[0.06]'
+              : 'border-transparent bg-transparent hover:bg-white/[0.045]',
             disabled && 'opacity-60 cursor-not-allowed'
           )}
           whileTap={disabled ? {} : { scale: 0.98 }}

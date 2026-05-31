@@ -112,19 +112,19 @@ export function MessageBubble({ role, content, model, onRegenerate, attachments,
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3 }}
-      className={cn('mb-5 md:mb-7', isUser ? 'flex justify-end' : 'flex justify-start')}
+      className={cn('mb-4 md:mb-6', isUser ? 'flex justify-end' : 'flex justify-start')}
     >
       <div
         className={cn(
           'relative group min-w-0',
           isUser
-            ? 'mb-5 max-w-[85%] rounded-3xl bg-[#303030] text-white md:max-w-[72%]'
+            ? 'mb-5 max-w-[85%] rounded-3xl bg-violet-600/85 text-white md:max-w-[72%]'
             : 'w-full'
         )}
       >
         {!isUser && modelData && (
-          <div className="mb-2 flex items-center gap-2">
-            <div className="flex h-5 w-5 items-center justify-center rounded-md bg-white/[0.05]">
+          <div className="mb-2 flex items-center gap-2 text-xs text-gray-500">
+            <div className="flex h-5 w-5 items-center justify-center rounded-md bg-white/[0.04]">
               {modelData.id === 'chat-gpt-5.5' ? (
                 <ChatGPTIcon className="w-3 h-3 md:w-3.5 md:h-3.5 text-[#10a37f]" />
               ) : modelData.id === 'claude-opus-4.7' ? (
@@ -133,14 +133,14 @@ export function MessageBubble({ role, content, model, onRegenerate, attachments,
                 <Sparkles className="w-3 h-3 md:w-3.5 md:h-3.5 text-blue-400" />
               )}
             </div>
-            <span className="text-xs font-medium text-gray-500">{modelData.name}</span>
+            <span className="font-medium">{modelData.name}</span>
           </div>
         )}
 
         {attachments && attachments.length > 0 && (
           <div className={cn(
             'flex flex-wrap gap-2',
-            isUser ? 'px-3 pt-3 pb-1 md:px-4 md:pt-4' : 'mb-3'
+            isUser ? 'px-3 pb-1 pt-3 md:px-4 md:pt-4' : 'mb-3'
           )}>
             {attachments.map((attachment, index) => {
               const openUrl = getAttachmentOpenUrl(attachment)
@@ -152,7 +152,7 @@ export function MessageBubble({ role, content, model, onRegenerate, attachments,
                       src={attachment.dataUrl}
                       alt={attachment.name || 'Uploaded image'}
                       className={cn(
-                        'rounded-xl border object-contain',
+                        'rounded-lg border object-contain',
                         isUser
                           ? 'max-w-full max-h-[220px] md:max-h-[280px] border-white/20'
                           : 'max-w-full md:max-w-lg max-h-96 border-white/20'
@@ -185,10 +185,10 @@ export function MessageBubble({ role, content, model, onRegenerate, attachments,
                   </>
                 ) : (
                   <div className={cn(
-                    'flex max-w-sm flex-col gap-2.5 rounded-lg border px-3 py-2.5',
+                    'flex max-w-sm flex-col gap-2 rounded-lg border px-3 py-2',
                     isUser
                       ? 'border-white/[0.10] bg-black/10'
-                      : 'border-white/[0.08] bg-[#292929]'
+                      : 'border-white/[0.07] bg-[#202020]'
                   )}>
                     <div
                       className={cn(
@@ -340,28 +340,28 @@ export function MessageBubble({ role, content, model, onRegenerate, attachments,
                 remarkPlugins={[remarkGfm, [remarkMath, { singleDollarTextMath: true }]]}
                 rehypePlugins={[rehypeKatex]}
                 components={{
-                  h1: ({ children }) => <h1 className="text-xl md:text-2xl font-bold mt-4 md:mt-6 mb-3 md:mb-4 text-white">{children}</h1>,
-                  h2: ({ children }) => <h2 className="text-lg md:text-xl font-bold mt-4 md:mt-5 mb-2 md:mb-3 text-white">{children}</h2>,
-                  h3: ({ children }) => <h3 className="text-base md:text-lg font-semibold mt-3 md:mt-4 mb-2 text-white">{children}</h3>,
-                  p: ({ children }) => <p className="mb-3 md:mb-4 leading-6 md:leading-7 text-gray-100 last:mb-0">{children}</p>,
+                  h1: ({ children }) => <h1 className="mb-3 mt-5 text-xl font-semibold text-white md:text-2xl">{children}</h1>,
+                  h2: ({ children }) => <h2 className="mb-2.5 mt-4 text-lg font-semibold text-white md:text-xl">{children}</h2>,
+                  h3: ({ children }) => <h3 className="mb-2 mt-3 text-base font-semibold text-white md:text-lg">{children}</h3>,
+                  p: ({ children }) => <p className="mb-3 leading-7 text-gray-100 last:mb-0">{children}</p>,
                   strong: ({ children }) => <strong className="font-semibold text-white">{children}</strong>,
                   table: ({ children }) => (
-                    <div className="my-4 overflow-x-auto">
-                      <table className="w-full border-collapse border border-white/20 rounded-lg overflow-hidden">
+                    <div className="my-4 overflow-x-auto rounded-lg border border-white/[0.10]">
+                      <table className="w-full border-collapse">
                         {children}
                       </table>
                     </div>
                   ),
-                  thead: ({ children }) => <thead className="bg-white/10">{children}</thead>,
+                  thead: ({ children }) => <thead className="bg-white/[0.06]">{children}</thead>,
                   tbody: ({ children }) => <tbody>{children}</tbody>,
-                  tr: ({ children }) => <tr className="border-b border-white/10 last:border-0">{children}</tr>,
+                  tr: ({ children }) => <tr className="border-b border-white/[0.08] last:border-0">{children}</tr>,
                   th: ({ children }) => (
-                    <th className="px-4 py-2 text-left font-semibold text-white border-r border-white/10 last:border-0">
+                    <th className="border-r border-white/[0.08] px-4 py-2 text-left font-semibold text-white last:border-0">
                       {children}
                     </th>
                   ),
                   td: ({ children }) => (
-                    <td className="px-4 py-2 text-gray-200 border-r border-white/10 last:border-0">
+                    <td className="border-r border-white/[0.08] px-4 py-2 text-gray-200 last:border-0">
                       {children}
                     </td>
                   ),
@@ -370,7 +370,7 @@ export function MessageBubble({ role, content, model, onRegenerate, attachments,
                 {safeContent}
               </ReactMarkdown>
               {artifact && artifact.title && (
-                <div className="mt-4 rounded-xl border border-white/[0.08] bg-[#292929] p-4 transition-colors hover:border-white/[0.14]">
+                <div className="mt-4 rounded-xl border border-white/[0.08] bg-[#202020] p-4 transition-colors hover:border-white/[0.14]">
                   <div className="flex items-center justify-between gap-3">
                     <div className="flex items-center gap-3 flex-1 min-w-0">
                       <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-violet-500/20 bg-violet-500/10">
@@ -422,36 +422,36 @@ export function MessageBubble({ role, content, model, onRegenerate, attachments,
                   </a>
                 ),
                 table: ({ children }) => (
-                  <div className="my-4 overflow-x-auto">
-                    <table className="w-full border-collapse border border-white/20 rounded-lg overflow-hidden">
+                  <div className="my-4 overflow-x-auto rounded-lg border border-white/[0.10]">
+                    <table className="w-full border-collapse">
                       {children}
                     </table>
                   </div>
                 ),
-                thead: ({ children }) => <thead className="bg-white/10">{children}</thead>,
+                thead: ({ children }) => <thead className="bg-white/[0.06]">{children}</thead>,
                 tbody: ({ children }) => <tbody>{children}</tbody>,
-                tr: ({ children }) => <tr className="border-b border-white/10 last:border-0">{children}</tr>,
+                tr: ({ children }) => <tr className="border-b border-white/[0.08] last:border-0">{children}</tr>,
                 th: ({ children }) => (
-                  <th className="px-4 py-2 text-left font-semibold text-white border-r border-white/10 last:border-0">
+                  <th className="border-r border-white/[0.08] px-4 py-2 text-left font-semibold text-white last:border-0">
                     {children}
                   </th>
                 ),
                 td: ({ children }) => (
-                  <td className="px-4 py-2 text-gray-200 border-r border-white/10 last:border-0">
+                  <td className="border-r border-white/[0.08] px-4 py-2 text-gray-200 last:border-0">
                     {children}
                   </td>
                 ),
                 code({ node, inline, className, children, ...props }: any) {
                   const match = /language-(\w+)/.exec(className || '')
                   return !inline && match ? (
-                    <div className="my-4">
+                    <div className="my-4 overflow-hidden rounded-lg border border-white/[0.08] bg-[#1f1f1f]">
                       <SyntaxHighlighter
                         style={vscDarkPlus}
                         language={match[1]}
                         PreTag="div"
                         customStyle={{
                           margin: 0,
-                          borderRadius: '0.5rem',
+                          borderRadius: '0',
                           fontSize: '0.875rem',
                           padding: '1rem',
                         }}
@@ -461,14 +461,14 @@ export function MessageBubble({ role, content, model, onRegenerate, attachments,
                       </SyntaxHighlighter>
                     </div>
                   ) : (
-                    <code className={cn('text-xs bg-white/20 px-1.5 py-0.5 rounded font-mono text-blue-300', className)} {...props}>
+                    <code className={cn('rounded bg-white/[0.08] px-1.5 py-0.5 font-mono text-xs text-blue-200', className)} {...props}>
                       {children}
                     </code>
                   )
                 },
                 strong: ({ children }) => <strong className="font-semibold text-white">{children}</strong>,
                 em: ({ children }) => <em className="italic text-gray-200">{children}</em>,
-                hr: () => <hr className="my-6 border-white/20" />,
+                hr: () => <hr className="my-6 border-white/[0.10]" />,
               }}
             >
               {safeContent}

@@ -83,7 +83,7 @@ export function Sidebar({
         onClick={() => setIsOpen(!isOpen)}
         variant="ghost"
         size="icon"
-        className="fixed top-3 left-3 z-50 h-9 w-9 rounded-lg border border-white/[0.08] bg-[#171717] text-gray-300 hover:bg-[#202020] md:hidden"
+        className="fixed left-3 top-3 z-50 h-9 w-9 rounded-lg border border-white/[0.07] bg-[#171717] text-gray-300 hover:bg-[#202020] md:hidden"
       >
         {isOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
       </Button>
@@ -91,7 +91,7 @@ export function Sidebar({
       <aside
         className={cn(
           'fixed left-0 top-0 z-40 flex h-[100dvh] w-72 flex-col',
-          'border-r border-white/[0.06] bg-[#171717]',
+          'border-r border-white/[0.05] bg-[#171717]',
           'transition-transform duration-200',
           isOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
         )}
@@ -100,16 +100,16 @@ export function Sidebar({
               <div className="px-2 py-1">
                 <Logo size="sm" showText />
               </div>
-              <Button onClick={onNewChat} className="mt-3 h-10 w-full justify-start rounded-lg border border-white/[0.08] bg-transparent px-3 text-gray-200 hover:bg-white/[0.06] hover:text-white">
+              <Button onClick={onNewChat} className="mt-3 h-9 w-full justify-start rounded-lg border border-white/[0.07] bg-white/[0.02] px-3 text-sm text-gray-200 hover:bg-white/[0.06] hover:text-white">
                 <Plus className="mr-2 h-4 w-4 text-violet-400" />
                 New Chat
               </Button>
             </div>
 
-            <div className="px-4 pb-1 pt-3 text-[11px] font-medium uppercase tracking-[0.12em] text-gray-500">
+            <div className="px-4 pb-1 pt-2 text-[10px] font-medium uppercase tracking-[0.14em] text-gray-500">
               Recent
             </div>
-            <div className="flex-1 space-y-0.5 overflow-y-auto px-2 pb-3 scrollbar-thin">
+            <div className="flex-1 space-y-px overflow-y-auto px-2 pb-3 scrollbar-thin">
               {conversations.length === 0 ? (
                 <div className="text-center py-8 text-gray-400 text-sm">
                   <MessageSquare className="h-8 w-8 mx-auto mb-2 opacity-50" />
@@ -122,10 +122,10 @@ export function Sidebar({
                     key={conv.id}
                     onClick={() => onSelectConversation(conv.id)}
                     className={cn(
-                      'group relative w-full rounded-lg px-2.5 py-2 text-left transition-colors',
+                      'group relative w-full rounded-lg px-2.5 py-1.5 text-left transition-colors',
                       currentConversationId === conv.id
-                        ? 'bg-white/[0.08]'
-                        : 'hover:bg-white/[0.05]'
+                        ? 'bg-white/[0.07]'
+                        : 'hover:bg-white/[0.045]'
                     )}
                   >
                     <div className="flex items-start gap-2.5 pr-7">
@@ -159,7 +159,7 @@ export function Sidebar({
                       }}
                       variant="ghost"
                       size="icon"
-                      className="absolute top-2 right-2 h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-500/20"
+                      className="absolute right-2 top-1.5 h-7 w-7 opacity-0 transition-opacity hover:bg-red-500/15 group-hover:opacity-100"
                     >
                       <Trash2 className="h-3 w-3 text-red-400" />
                     </Button>
@@ -168,10 +168,10 @@ export function Sidebar({
               )}
             </div>
 
-            <div className="border-t border-white/[0.06] p-2">
+            <div className="border-t border-white/[0.05] p-2">
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <button className="flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left transition-colors hover:bg-white/[0.06]">
+                  <button className="flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left transition-colors hover:bg-white/[0.05]">
                     <Avatar className="h-8 w-8">
                       <AvatarImage src={userProfile.avatar_url || undefined} />
                       <AvatarFallback className="bg-violet-600/80 text-xs text-white">

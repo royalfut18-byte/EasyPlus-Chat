@@ -19,7 +19,7 @@ const MODE_CONFIG: { mode: ReasoningMode; icon: typeof Zap; activeColor: string 
 
 export function ReasoningSelector({ selectedMode, onSelectMode, disabled = false }: ReasoningSelectorProps) {
   return (
-    <div className="flex items-center gap-0.5 rounded-lg border border-white/[0.06] bg-black/10 p-0.5">
+    <div className="flex items-center gap-0.5 rounded-full border border-white/[0.06] bg-black/10 p-0.5">
       {MODE_CONFIG.map(({ mode, icon: Icon, activeColor }) => {
         const profile = REASONING_PROFILES[mode]
         const isSelected = selectedMode === mode
@@ -30,7 +30,7 @@ export function ReasoningSelector({ selectedMode, onSelectMode, disabled = false
             disabled={disabled}
             title={`${profile.label}: ${profile.description}`}
             className={cn(
-              'relative rounded-md px-2 py-1.5 text-[10px] font-medium transition-colors md:px-2.5 md:text-xs',
+              'relative rounded-full px-2 py-1 text-[10px] font-medium transition-colors md:px-2.5 md:text-[11px]',
               'flex items-center gap-1 md:gap-1.5 whitespace-nowrap',
               isSelected ? 'text-white' : 'text-gray-500 hover:text-gray-300',
               disabled && 'opacity-40 cursor-not-allowed'
@@ -39,7 +39,7 @@ export function ReasoningSelector({ selectedMode, onSelectMode, disabled = false
           >
             {isSelected && (
               <motion.div
-                className="absolute inset-0 rounded-md border border-violet-400/20 bg-violet-500/10"
+                className="absolute inset-0 rounded-full border border-violet-400/15 bg-violet-500/10"
                 layoutId="reasoning-pill"
                 transition={{ type: 'spring', stiffness: 400, damping: 28 }}
               />

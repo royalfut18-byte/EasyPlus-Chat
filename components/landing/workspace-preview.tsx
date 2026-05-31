@@ -46,7 +46,7 @@ export function WorkspacePreview() {
       >
         <div className="absolute -inset-x-6 -inset-y-4 rounded-3xl bg-[linear-gradient(115deg,rgba(124,58,237,0.08),rgba(255,255,255,0.02),rgba(6,182,212,0.05))] blur-3xl" />
 
-        <div className="relative overflow-hidden rounded-2xl border border-white/[0.08] bg-[#212121] shadow-2xl shadow-black/50">
+        <div className="relative overflow-hidden rounded-2xl border border-white/[0.08] bg-[#0f0f0f] shadow-2xl shadow-black/50">
           <div className="flex items-center gap-3 border-b border-white/[0.06] bg-[#171717] px-3 py-3 md:px-4">
             <div className="flex gap-1.5">
               <div className="h-3 w-3 rounded-full bg-red-500/45" />
@@ -112,14 +112,14 @@ export function WorkspacePreview() {
               </div>
             </aside>
 
-            <main className="flex min-w-0 flex-1 flex-col bg-[#212121]">
-              <div className="border-b border-white/[0.06] bg-[#212121]/95 px-3 py-3 md:px-5">
+            <main className="flex min-w-0 flex-1 flex-col bg-[#0f0f0f]">
+              <div className="border-b border-white/[0.06] bg-[#0f0f0f]/95 px-3 py-2 md:px-5">
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex min-w-0 flex-wrap items-center gap-1.5">
                     {models.map((model) => (
                       <div
                         key={model.name}
-                        className={`flex h-9 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-medium ${
+                        className={`flex h-8 items-center gap-1.5 rounded-full border px-2.5 text-xs font-medium ${
                           model.active
                             ? 'border-white/[0.12] bg-white/[0.08] text-white'
                             : 'border-transparent text-gray-400'
@@ -134,11 +134,11 @@ export function WorkspacePreview() {
                   </div>
 
                   <div className="flex shrink-0 items-center gap-1.5">
-                    <div className="flex h-9 items-center gap-1.5 rounded-lg border border-white/[0.08] bg-white/[0.03] px-2.5 text-xs text-gray-300">
+                    <div className="flex h-8 items-center gap-1.5 rounded-full border border-white/[0.07] bg-white/[0.02] px-2.5 text-xs text-gray-300">
                       <Globe className="h-3.5 w-3.5" />
                       <span className="hidden sm:inline">Search</span>
                     </div>
-                    <div className="flex h-9 items-center gap-1.5 rounded-lg border border-white/[0.08] bg-white/[0.03] px-2.5 text-xs text-gray-300">
+                    <div className="flex h-8 items-center gap-1.5 rounded-full border border-white/[0.07] bg-white/[0.02] px-2.5 text-xs text-gray-300">
                       <Box className="h-3.5 w-3.5" />
                       <span className="hidden sm:inline">Artifacts</span>
                     </div>
@@ -149,7 +149,7 @@ export function WorkspacePreview() {
               <div className="flex-1 overflow-hidden px-4 py-5 md:px-8">
                 <div className="mx-auto flex h-full max-w-3xl flex-col justify-end gap-5">
                   <div className="flex justify-end">
-                    <div className="max-w-[84%] rounded-3xl bg-[#303030] px-4 py-3 text-sm leading-6 text-gray-100 md:max-w-[70%]">
+                    <div className="max-w-[84%] rounded-3xl bg-violet-600/85 px-4 py-3 text-sm leading-6 text-white md:max-w-[70%]">
                       What's the latest news about AI today? Search the web.
                     </div>
                   </div>
@@ -192,9 +192,9 @@ export function WorkspacePreview() {
                 </div>
               </div>
 
-              <div className="bg-gradient-to-t from-[#212121] via-[#212121] to-[#212121]/80 px-4 pb-4 md:px-8 md:pb-6">
+              <div className="bg-gradient-to-t from-[#0f0f0f] via-[#0f0f0f] to-[#0f0f0f]/80 px-4 pb-4 md:px-8 md:pb-6">
                 <div className="mx-auto max-w-3xl">
-                  <div className="rounded-[26px] border border-white/[0.10] bg-[#2f2f2f] p-2.5">
+                  <div className="rounded-[24px] border border-white/[0.10] bg-[#2b2b2b] p-2">
                     <div className="flex items-end gap-2">
                       <button className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-gray-400">
                         <Paperclip className="h-4 w-4" />

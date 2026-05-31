@@ -402,15 +402,15 @@ export function ChatInput({ onSend, disabled, isLoading, conversationId, reasoni
 
   return (
     <div
-      className="sticky bottom-0 bg-gradient-to-t from-[#212121] via-[#212121] to-[#212121]/80 px-3 pb-3 pt-2 md:px-4 md:pb-4"
+      className="sticky bottom-0 bg-gradient-to-t from-[#0f0f0f] via-[#0f0f0f] to-[#0f0f0f]/80 px-3 pb-3 pt-2 md:px-4 md:pb-4"
       onDragEnter={handleDragEnter}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
       {isDragging && (
-        <div className="fixed inset-0 z-[80] bg-violet-500/10 backdrop-blur-md flex items-center justify-center p-4 pointer-events-none">
-          <div className="w-full max-w-lg rounded-3xl border-2 border-dashed border-violet-400/60 bg-[#0b0a12]/95 p-8 text-center shadow-2xl shadow-violet-950/40">
+        <div className="pointer-events-none fixed inset-0 z-[80] flex items-center justify-center bg-black/55 p-4 backdrop-blur-md">
+          <div className="w-full max-w-lg rounded-3xl border border-dashed border-violet-400/45 bg-[#181818]/95 p-8 text-center shadow-2xl shadow-black/40">
             <Paperclip className="h-12 w-12 text-violet-300 mx-auto mb-3" />
             <p className="text-lg font-semibold text-white">Drop files to attach</p>
             <p className="text-gray-400 text-sm mt-1">
@@ -422,8 +422,8 @@ export function ChatInput({ onSend, disabled, isLoading, conversationId, reasoni
           </div>
         </div>
       )}
-      <div className="mx-auto max-w-3xl">
-        <div className="rounded-[26px] border border-white/[0.10] bg-[#2f2f2f] p-2.5 transition-colors focus-within:border-white/[0.18]">
+      <div className="mx-auto max-w-[820px]">
+        <div className="rounded-[24px] border border-white/[0.10] bg-[#2b2b2b] p-2 transition-colors focus-within:border-white/[0.18] md:p-2.5">
           {attachments.length > 0 && (
             <>
             <div className="text-xs text-gray-400 mb-2 px-1">
@@ -433,7 +433,7 @@ export function ChatInput({ onSend, disabled, isLoading, conversationId, reasoni
               {attachments.map((attachment, index) => (
                 <div key={index} className="relative group shrink-0">
                   {attachment.type === 'image' && attachment.dataUrl ? (
-                    <div className="h-20 w-20 md:h-24 md:w-24 rounded-xl border-2 border-white/20 bg-black/20 overflow-hidden relative">
+                    <div className="relative h-16 w-16 overflow-hidden rounded-lg border border-white/[0.12] bg-black/20 md:h-20 md:w-20">
                       <img
                         src={attachment.dataUrl}
                         alt={attachment.name}
@@ -453,7 +453,7 @@ export function ChatInput({ onSend, disabled, isLoading, conversationId, reasoni
                       )}
                     </div>
                   ) : (
-                    <div className="flex h-16 w-44 flex-col justify-between rounded-lg border border-white/[0.10] bg-[#252525] p-2.5 md:w-52">
+                    <div className="flex h-14 w-44 flex-col justify-between rounded-lg border border-white/[0.09] bg-[#242424] p-2 md:h-16 md:w-52">
                       <div className="flex items-start gap-2">
                         {attachment.uploadStatus === 'uploading' || attachment.uploadStatus === 'processing' || attachment.uploadStatus === 'pending' ? (
                           <Upload className="h-5 w-5 text-violet-400 animate-pulse shrink-0" />
@@ -478,7 +478,7 @@ export function ChatInput({ onSend, disabled, isLoading, conversationId, reasoni
                         </div>
                       </div>
                       <div className="flex items-center gap-1">
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-white/10 text-gray-300 uppercase tracking-wider">
+                        <span className="rounded bg-white/[0.07] px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-gray-400">
                           {attachment.name.split('.').pop()}
                         </span>
                         {(attachment.uploadStatus === 'uploading' || attachment.uploadStatus === 'processing') && (
@@ -527,7 +527,7 @@ export function ChatInput({ onSend, disabled, isLoading, conversationId, reasoni
               variant="ghost"
               onClick={() => fileInputRef.current?.click()}
               disabled={disabled || isLoading}
-              className="h-9 w-9 shrink-0 rounded-full text-gray-400 transition-colors hover:bg-white/[0.08] hover:text-white disabled:cursor-not-allowed disabled:opacity-50 md:h-10 md:w-10"
+              className="h-8 w-8 shrink-0 rounded-full text-gray-400 transition-colors hover:bg-white/[0.08] hover:text-white disabled:cursor-not-allowed disabled:opacity-50 md:h-9 md:w-9"
               title="Attach files"
             >
               <Paperclip className="h-4 w-4 md:h-5 md:w-5" />
@@ -541,8 +541,8 @@ export function ChatInput({ onSend, disabled, isLoading, conversationId, reasoni
               placeholder="Ask anything..."
               disabled={isComposerUnavailable}
               className={cn(
-                'flex-1 bg-transparent border-none outline-none resize-none text-white placeholder:text-gray-400 text-sm md:text-base',
-                'min-h-[38px] max-h-[160px] px-1 py-2.5 md:max-h-[200px] md:px-2',
+                'flex-1 resize-none border-none bg-transparent text-sm text-white outline-none placeholder:text-gray-500 md:text-base',
+                'min-h-[34px] max-h-[150px] px-1 py-2 md:max-h-[180px] md:px-2',
                 'scrollbar-thin',
                 'disabled:opacity-50 disabled:cursor-not-allowed'
               )}
@@ -554,19 +554,19 @@ export function ChatInput({ onSend, disabled, isLoading, conversationId, reasoni
               onMouseDown={(event) => event.preventDefault()}
               disabled={(!message.trim() && attachments.length === 0) || isComposerUnavailable || hasActiveUpload}
               size="icon"
-              className="h-9 w-9 shrink-0 rounded-full bg-violet-600 transition-colors hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-40 md:h-10 md:w-10"
+              className="h-8 w-8 shrink-0 rounded-full bg-violet-600 transition-colors hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-40 md:h-9 md:w-9"
             >
               {isLoading ? (
-                <Loader2 className="h-4 w-4 md:h-5 md:w-5 animate-spin" />
+                <Loader2 className="h-4 w-4 animate-spin" />
               ) : hasActiveUpload ? (
-                <Loader2 className="h-4 w-4 md:h-5 md:w-5 animate-spin text-violet-300" />
+                <Loader2 className="h-4 w-4 animate-spin text-violet-300" />
               ) : (
-                <Send className="h-4 w-4 md:h-5 md:w-5" />
+                <Send className="h-4 w-4" />
               )}
             </Button>
           </div>
           {reasoningMode && onReasoningModeChange && (
-            <div className="mt-2 flex items-center justify-between border-t border-white/[0.06] pt-2">
+            <div className="mt-1.5 flex items-center justify-between border-t border-white/[0.05] pt-1.5">
               <ReasoningSelector
                 selectedMode={reasoningMode}
                 onSelectMode={onReasoningModeChange}

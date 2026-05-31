@@ -1065,7 +1065,7 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-hidden flex flex-col min-h-0 bg-[#212121]">
+      <div className="flex-1 overflow-hidden flex flex-col min-h-0 bg-[#0f0f0f]">
         {!artifact ? (
           <div className="flex items-center justify-center h-full p-8 text-center">
             <div className="max-w-md space-y-4">
@@ -1275,7 +1275,7 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
             animate={{ x: 0 }}
             exit={{ x: '100%' }}
             transition={{ type: 'spring', damping: 30, stiffness: 300 }}
-            className="fixed inset-0 z-50 bg-[#212121] md:hidden"
+            className="fixed inset-0 z-50 bg-[#0f0f0f] md:hidden"
           >
             {renderPanelContent()}
           </motion.div>
