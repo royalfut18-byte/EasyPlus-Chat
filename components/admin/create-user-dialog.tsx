@@ -1,49 +1,43 @@
 'use client'
 
 import { useState } from 'react'
+import { Loader2, UserPlus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { toast } from '@/components/ui/use-toast'
-import { UserPlus, Loader2 } from 'lucide-react'
+
+interface SubAdminOption {
+  user_id: string
+  display_name: string
+}
 
 interface CreateUserDialogProps {
+  actorRole: 'admin' | 'sub_admin'
+  subAdmins: SubAdminOption[]
   onUserCreated: () => void
 }
 
-export function CreateUserDialog({ onUserCreated }: CreateUserDialogProps) {
+const INITIAL_FORM = {
+  email: '',
+  password: '',
+  displayName: '',
+  role: 'user',
+  unlimitedCredits: false,
+  accountExpiresAt: '',
+  ownerSubAdminId: 'unassigned',
+}
+
+export function CreateUserDialog({ actorRole, subAdmins, onUserCreated }: CreateUserDialogProps) {
   const [open, setOpen] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
-  const [formData, setFormData] = useState({
-    email: '',
-    password: '',
-    displayName: '',
-    role: 'user',
-    credits: '1000',
-    unlimitedCredits: false,
-  })
+  const [formData, setFormData] = useState(INITIAL_FORM)
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-
-    // Prevent double submission
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault()
     if (isLoading) return
-
     setIsLoading(true)
 
     try {
@@ -51,48 +45,19 @@ export function CreateUserDialog({ onUserCreated }: CreateUserDialogProps) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          email: formData.email,
-          password: formData.password,
-          displayName: formData.displayName || formData.email.split('@')[0],
-          role: formData.role,
-          credits: parseInt(formData.credits) || 1000,
-          unlimitedCredits: formData.unlimitedCredits,
+          ...formData,
+          ownerSubAdminId: formData.ownerSubAdminId === 'unassigned' ? null : formData.ownerSubAdminId,
         }),
       })
-
       const result = await response.json()
+      if (!response.ok) throw new Error(result.error || `Server error (${response.status})`)
 
-      if (!response.ok) {
-        // Show detailed error from API
-        throw new Error(result.error || `Server error (${response.status})`)
-      }
-
-      toast({
-        title: 'Success',
-        description: `User account created: ${result.email}`,
-      })
-
-      // Reset form only on success
-      setFormData({
-        email: '',
-        password: '',
-        displayName: '',
-        role: 'user',
-        credits: '1000',
-        unlimitedCredits: false,
-      })
-
+      toast({ title: 'Account created', description: result.email })
+      setFormData(INITIAL_FORM)
       setOpen(false)
-
-      // Refresh user list
       onUserCreated()
     } catch (error: any) {
-      console.error('[CreateUser] Failed:', error)
-      toast({
-        title: 'Failed to create user',
-        description: error.message || 'Unknown error occurred',
-        variant: 'destructive',
-      })
+      toast({ title: 'Failed to create account', description: error.message, variant: 'destructive' })
     } finally {
       setIsLoading(false)
     }
@@ -101,129 +66,67 @@ export function CreateUserDialog({ onUserCreated }: CreateUserDialogProps) {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button className="bg-violet-600/80 hover:bg-violet-600 text-white">
+        <Button className="bg-violet-600 text-white hover:bg-violet-500">
           <UserPlus className="mr-2 h-4 w-4" />
-          Create User
+          Create account
         </Button>
       </DialogTrigger>
-      <DialogContent className="bg-[#111018] border-white/[0.08] max-w-md">
+      <DialogContent className="max-w-md border-white/[0.08] bg-[#181818]">
         <DialogHeader>
-          <DialogTitle>Create New User Account</DialogTitle>
-          <DialogDescription className="text-gray-400">
-            Create a new user account with custom settings
-          </DialogDescription>
+          <DialogTitle>Create account</DialogTitle>
+          <DialogDescription className="text-gray-400">Set entitlement and optional expiration at creation.</DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="email">Email *</Label>
-            <Input
-              id="email"
-              type="email"
-              value={formData.email}
-              onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-              placeholder="user@example.com"
-              className="glass"
-              required
-            />
-          </div>
+          <Field label="Email"><Input type="email" required value={formData.email} onChange={(event) => setFormData({ ...formData, email: event.target.value })} /></Field>
+          <Field label="Password"><Input type="password" required minLength={6} value={formData.password} onChange={(event) => setFormData({ ...formData, password: event.target.value })} /></Field>
+          <Field label="Display name"><Input value={formData.displayName} onChange={(event) => setFormData({ ...formData, displayName: event.target.value })} /></Field>
 
-          <div className="space-y-2">
-            <Label htmlFor="password">Password *</Label>
-            <Input
-              id="password"
-              type="password"
-              value={formData.password}
-              onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-              placeholder="Minimum 6 characters"
-              className="glass"
-              required
-              minLength={6}
-            />
-          </div>
+          {actorRole === 'admin' && (
+            <Field label="Role">
+              <Select value={formData.role} onValueChange={(role) => setFormData({ ...formData, role, ownerSubAdminId: role === 'user' ? formData.ownerSubAdminId : 'unassigned' })}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent className="border-white/[0.08] bg-[#202020]">
+                  <SelectItem value="user">User</SelectItem>
+                  <SelectItem value="sub_admin">Sub-admin</SelectItem>
+                  <SelectItem value="admin">Main admin</SelectItem>
+                </SelectContent>
+              </Select>
+            </Field>
+          )}
 
-          <div className="space-y-2">
-            <Label htmlFor="displayName">Display Name</Label>
-            <Input
-              id="displayName"
-              type="text"
-              value={formData.displayName}
-              onChange={(e) => setFormData({ ...formData, displayName: e.target.value })}
-              placeholder="Optional, defaults to email"
-              className="glass"
-            />
-          </div>
+          {actorRole === 'admin' && formData.role === 'user' && (
+            <Field label="Assigned panel">
+              <Select value={formData.ownerSubAdminId} onValueChange={(ownerSubAdminId) => setFormData({ ...formData, ownerSubAdminId })}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent className="border-white/[0.08] bg-[#202020]">
+                  <SelectItem value="unassigned">Main admin / unassigned</SelectItem>
+                  {subAdmins.map((subAdmin) => <SelectItem key={subAdmin.user_id} value={subAdmin.user_id}>{subAdmin.display_name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </Field>
+          )}
 
-          <div className="space-y-2">
-            <Label htmlFor="role">Role</Label>
-            <Select
-              value={formData.role}
-              onValueChange={(value) => setFormData({ ...formData, role: value })}
-            >
-              <SelectTrigger className="glass">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent className="bg-[#111018] border-white/[0.08]">
-                <SelectItem value="user">User</SelectItem>
-                <SelectItem value="admin">Admin</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+          <Field label="Expiry date">
+            <Input type="date" value={formData.accountExpiresAt} onChange={(event) => setFormData({ ...formData, accountExpiresAt: event.target.value })} />
+          </Field>
 
-          <div className="space-y-2">
-            <Label htmlFor="credits">Initial Credits</Label>
-            <Input
-              id="credits"
-              type="number"
-              value={formData.credits}
-              onChange={(e) => setFormData({ ...formData, credits: e.target.value })}
-              placeholder="1000"
-              className="glass"
-              min="0"
-            />
-          </div>
+          <label className="flex items-center gap-2 text-sm text-gray-200">
+            <input type="checkbox" checked={formData.unlimitedCredits} onChange={(event) => setFormData({ ...formData, unlimitedCredits: event.target.checked })} />
+            Unlimited credits
+          </label>
 
-          <div className="flex items-center gap-2">
-            <input
-              id="unlimitedCredits"
-              type="checkbox"
-              checked={formData.unlimitedCredits}
-              onChange={(e) =>
-                setFormData({ ...formData, unlimitedCredits: e.target.checked })
-              }
-              className="w-4 h-4 rounded border-white/20 bg-white/10 text-primary focus:ring-primary"
-            />
-            <Label htmlFor="unlimitedCredits" className="cursor-pointer">
-              Unlimited Credits
-            </Label>
-          </div>
-
-          <div className="flex gap-3 pt-4">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setOpen(false)}
-              className="flex-1"
-              disabled={isLoading}
-            >
-              Cancel
-            </Button>
-            <Button
-              type="submit"
-              className="flex-1 bg-violet-600/80 hover:bg-violet-600 text-white"
-              disabled={isLoading}
-            >
-              {isLoading ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Creating...
-                </>
-              ) : (
-                'Create User'
-              )}
+          <div className="flex gap-3 pt-2">
+            <Button type="button" variant="outline" className="flex-1 border-white/[0.10]" onClick={() => setOpen(false)}>Cancel</Button>
+            <Button type="submit" className="flex-1 bg-violet-600 text-white hover:bg-violet-500" disabled={isLoading}>
+              {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Create'}
             </Button>
           </div>
         </form>
       </DialogContent>
     </Dialog>
   )
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return <div className="space-y-2"><Label>{label}</Label>{children}</div>
 }

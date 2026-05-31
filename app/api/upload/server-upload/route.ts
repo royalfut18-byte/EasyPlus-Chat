@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3'
 import { createClient } from '@/lib/supabase/server'
+import { getAccountEntitlement, getEntitlementBlockResponse } from '@/lib/account-entitlements.server'
 
 export const runtime = 'nodejs'
 
@@ -46,6 +47,9 @@ export async function POST(request: NextRequest) {
     if (authError || !user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+
+    const entitlementBlock = getEntitlementBlockResponse(await getAccountEntitlement(supabase as any, user.id))
+    if (entitlementBlock) return entitlementBlock
 
     // Check R2 configuration
     const R2_ACCOUNT_ID = process.env.R2_ACCOUNT_ID

@@ -1,56 +1,61 @@
-'use client'
+import Link from 'next/link'
+import { redirect } from 'next/navigation'
+import { ArrowLeft, Brain, CalendarDays, CreditCard, Infinity } from 'lucide-react'
+import { createClient, createServiceClient } from '@/lib/supabase/server'
+import { formatDate } from '@/lib/utils'
+import { formatEntitlementCredits, getAccountEntitlement } from '@/lib/account-entitlements.server'
 
-import { useRouter } from 'next/navigation'
-import { useEffect } from 'react'
-import { createClient } from '@/lib/supabase/client'
-import { Brain, ArrowLeft } from 'lucide-react'
+export default async function SettingsPage() {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) redirect('/login')
 
-export default function SettingsPage() {
-  const router = useRouter()
-  const supabase = createClient()
-
-  useEffect(() => {
-    const checkAuth = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) router.push('/login')
-    }
-    checkAuth()
-  }, [])
+  const db = await createServiceClient() as any
+  const entitlement = await getAccountEntitlement(db, user.id)
+  if (!entitlement) redirect('/login')
 
   return (
-    <div className="min-h-screen bg-[#08070d] p-4 md:p-8">
-      <div className="max-w-3xl mx-auto space-y-6">
+    <div className="min-h-screen bg-[#0f0f0f] p-4 text-white md:p-8">
+      <div className="mx-auto max-w-3xl space-y-6">
         <div className="flex items-center gap-4">
-          <button
-            onClick={() => router.push('/chat')}
-            className="p-2 rounded-lg bg-white/[0.03] border border-white/[0.06] hover:bg-white/[0.06] transition-colors"
-          >
+          <Link href="/chat" className="rounded-lg border border-white/[0.07] bg-white/[0.02] p-2 transition-colors hover:bg-white/[0.06]">
             <ArrowLeft className="h-5 w-5 text-gray-400" />
-          </button>
-          <h1 className="text-2xl font-semibold text-white/90">Settings</h1>
+          </Link>
+          <div>
+            <h1 className="text-2xl font-semibold">Settings</h1>
+            <p className="mt-1 text-sm text-gray-500">Account details and workspace preferences.</p>
+          </div>
         </div>
 
-        <div className="space-y-3">
-          <button
-            onClick={() => router.push('/settings/memory')}
-            className="w-full bg-white/[0.02] border border-white/[0.06] rounded-xl p-5 text-left hover:bg-white/[0.04] hover:border-white/[0.1] transition-colors group"
-          >
-            <div className="flex items-center gap-4">
-              <div className="p-2.5 rounded-xl bg-violet-500/10 border border-violet-500/20">
-                <Brain className="h-5 w-5 text-violet-400" />
-              </div>
-              <div>
-                <h3 className="text-base font-medium text-white group-hover:text-violet-300 transition-colors">
-                  Memory
-                </h3>
-                <p className="text-sm text-gray-500">
-                  View and manage what EasyPlus remembers about you
-                </p>
-              </div>
+        <section className="rounded-2xl border border-white/[0.08] bg-[#181818] p-5">
+          <h2 className="text-lg font-semibold">Account</h2>
+          <div className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
+            <Detail icon={entitlement.unlimitedCredits ? <Infinity /> : <CreditCard />} label="Credits" value={entitlement.unlimitedCredits ? 'Unlimited credits' : `${formatEntitlementCredits(entitlement)} credits`} />
+            <Detail icon={<CalendarDays />} label="Created" value={formatDate(entitlement.createdAt)} />
+            <Detail icon={<CalendarDays />} label="Expiry" value={entitlement.expiresAt ? formatDate(entitlement.expiresAt) : 'No expiry date'} />
+            <Detail icon={<CreditCard />} label="Subscription" value={entitlement.subscriptionTier === 'free' ? 'Free' : 'Premium'} />
+          </div>
+        </section>
+
+        <Link href="/settings/memory" className="group block rounded-2xl border border-white/[0.08] bg-[#181818] p-5 transition-colors hover:bg-[#202020]">
+          <div className="flex items-center gap-4">
+            <div className="rounded-xl border border-violet-500/20 bg-violet-500/10 p-2.5"><Brain className="h-5 w-5 text-violet-400" /></div>
+            <div>
+              <h3 className="font-medium transition-colors group-hover:text-violet-300">Memory</h3>
+              <p className="mt-1 text-sm text-gray-500">View and manage what EasyPlus remembers about you.</p>
             </div>
-          </button>
-        </div>
+          </div>
+        </Link>
       </div>
+    </div>
+  )
+}
+
+function Detail({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
+  return (
+    <div className="flex gap-3 rounded-lg border border-white/[0.06] bg-white/[0.02] p-3">
+      <span className="h-4 w-4 text-violet-400">{icon}</span>
+      <div><p className="text-xs text-gray-500">{label}</p><p className="mt-1 text-gray-200">{value}</p></div>
     </div>
   )
 }

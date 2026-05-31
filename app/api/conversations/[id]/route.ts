@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import type { Message } from '@/types/models'
 import { sanitizeMessage } from '@/lib/ai/model-routing.server'
+import { getAccountEntitlement, getEntitlementBlockResponse } from '@/lib/account-entitlements.server'
 
 const MARKER_CONTENTS = new Set([
   '__ARTIFACT_LOADING__',
@@ -26,6 +27,8 @@ export async function GET(
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+    const entitlementBlock = getEntitlementBlockResponse(await getAccountEntitlement(supabase as any, user.id))
+    if (entitlementBlock) return entitlementBlock
 
     const { data: rawMessages, error } = await supabase
       .from('messages')
@@ -191,6 +194,8 @@ export async function DELETE(
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+    const entitlementBlock = getEntitlementBlockResponse(await getAccountEntitlement(supabase as any, user.id))
+    if (entitlementBlock) return entitlementBlock
 
     await supabase.from('messages').delete().eq('conversation_id', id)
 

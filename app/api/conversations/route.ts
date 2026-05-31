@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getInternalModel, sanitizeConversation, toPublicModelId } from '@/lib/ai/model-routing.server'
+import { getAccountEntitlement, getEntitlementBlockResponse } from '@/lib/account-entitlements.server'
 
 export async function GET(request: NextRequest) {
   try {
@@ -13,6 +14,9 @@ export async function GET(request: NextRequest) {
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+
+    const entitlementBlock = getEntitlementBlockResponse(await getAccountEntitlement(db, user.id))
+    if (entitlementBlock) return entitlementBlock
 
     const { data: conversations, error } = await db
       .from('conversations')
@@ -40,6 +44,9 @@ export async function POST(request: NextRequest) {
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+
+    const entitlementBlock = getEntitlementBlockResponse(await getAccountEntitlement(db, user.id))
+    if (entitlementBlock) return entitlementBlock
 
     const { title, model, reasoningMode } = await request.json()
     const publicModelId = toPublicModelId(model)

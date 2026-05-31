@@ -1,0 +1,1 @@
+export const DEFAULT_FINITE_CREDITS = 1000

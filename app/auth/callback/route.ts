@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
+import { DEFAULT_FINITE_CREDITS } from '@/lib/account-entitlements'
 
 export async function GET(request: NextRequest) {
   const requestUrl = new URL(request.url)
@@ -27,7 +28,7 @@ export async function GET(request: NextRequest) {
           user_id: data.user.id,
           display_name: data.user.user_metadata.full_name || data.user.email?.split('@')[0],
           avatar_url: data.user.user_metadata.avatar_url,
-          credits: 1000,
+          credits: DEFAULT_FINITE_CREDITS,
           subscription_tier: 'free',
           role: 'user',
         })

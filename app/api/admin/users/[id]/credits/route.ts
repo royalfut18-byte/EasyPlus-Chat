@@ -1,18 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { canManageTarget, getAdminAccess } from '@/lib/admin-access.server'
 
 type RouteContext = {
   params: Promise<{ id: string }>
-}
-
-type AdminProfile = {
-  role: string
 }
 
 type TargetProfile = {
   id: string
   user_id: string
   credits: number
+  role: 'user' | 'sub_admin' | 'admin'
+  owner_sub_admin_id: string | null
+  unlimited_credits: boolean
 }
 
 export async function PATCH(request: NextRequest, context: RouteContext) {
@@ -25,8 +25,6 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     }
 
     const supabase = await createClient()
-    const db = supabase as any
-
     const {
       data: { user },
       error: userError,
@@ -36,19 +34,14 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { data: profile, error: profileError } = await db
-      .from('profiles')
-      .select('role')
-      .eq('user_id', user.id)
-      .single()
-
-    if (profileError || !profile || (profile as AdminProfile).role !== 'admin') {
+    const access = await getAdminAccess(user.id)
+    if (!access) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
-    const { data: targetProfile, error: targetError } = await db
+    const { data: targetProfile, error: targetError } = await access.db
       .from('profiles')
-      .select('id, user_id, credits')
+      .select('id, user_id, credits, role, owner_sub_admin_id, unlimited_credits')
       .eq('id', id)
       .single()
 
@@ -57,9 +50,15 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     }
 
     const typedTarget = targetProfile as TargetProfile
+    if (!canManageTarget(access, typedTarget)) {
+      return NextResponse.json({ error: 'You cannot manage this account' }, { status: 403 })
+    }
+    if (typedTarget.unlimited_credits) {
+      return NextResponse.json({ error: 'Unlimited accounts do not use finite credit adjustments' }, { status: 400 })
+    }
     const newCredits = typedTarget.credits + amount
 
-    const { error: updateError } = await db
+    const { error: updateError } = await access.db
       .from('profiles')
       .update({ credits: newCredits })
       .eq('id', id)
@@ -68,7 +67,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       throw updateError
     }
 
-    const { error: transactionError } = await db.from('credit_transactions').insert({
+    const { error: transactionError } = await access.db.from('credit_transactions').insert({
       user_id: typedTarget.user_id,
       amount,
       type: amount > 0 ? 'grant' : 'deduction',

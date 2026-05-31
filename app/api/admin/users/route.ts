@@ -1,171 +1,109 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { createClient as createSupabaseClient } from '@supabase/supabase-js'
+import { getAdminAccess, getScopedProfiles } from '@/lib/admin-access.server'
+import { normalizeEntitlement } from '@/lib/account-entitlements.server'
 
-type AdminProfile = {
-  role: string
-}
-
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
-    // Step 1: Authenticate requesting user
     const supabase = await createClient()
-    const {
-      data: { user },
-      error: userError,
-    } = await supabase.auth.getUser()
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
 
     if (userError || !user) {
-      console.error('[Admin Users API] Unauthorized:', userError)
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Step 2: Verify admin role
-    const { data: profile, error: profileError } = await supabase
-      .from('profiles')
-      .select('role')
-      .eq('user_id', user.id)
-      .single()
-
-    const typedProfile = profile as AdminProfile | null
-
-    if (!typedProfile || typedProfile.role !== 'admin') {
-      console.error('[Admin Users API] Forbidden: user is not admin')
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    const access = await getAdminAccess(user.id)
+    if (!access) {
+      return NextResponse.json({ error: 'Admin access required' }, { status: 403 })
     }
 
-    // Step 3: Create service role client (server-side only)
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-
-    if (!supabaseUrl || !serviceRoleKey) {
-      console.error('[Admin Users API] Missing Supabase environment variables')
-      return NextResponse.json(
-        { error: 'Server configuration error' },
-        { status: 500 }
-      )
-    }
-
-    const adminClient = createSupabaseClient(supabaseUrl, serviceRoleKey, {
-      auth: {
-        autoRefreshToken: false,
-        persistSession: false,
-      },
-    })
-
-    // Step 4: Fetch all auth users using service role
-    console.log('[Admin Users API] Fetching all users with service role')
-    const { data: authData, error: authError } = await adminClient.auth.admin.listUsers()
-
-    if (authError) {
-      console.error('[Admin Users API] Failed to list auth users:', authError)
-      throw new Error(`Failed to fetch auth users: ${authError.message}`)
-    }
+    const profiles = await getScopedProfiles(access)
+    const { data: authData, error: authError } = await access.db.auth.admin.listUsers()
+    if (authError) throw authError
 
     const authUsers = authData?.users || []
-    console.log('[Admin Users API] Found', authUsers.length, 'auth users')
+    const visibleUserIds = new Set(profiles.map((profile) => profile.user_id))
+    const visibleAuthUsers = authUsers.filter((authUser: any) => visibleUserIds.has(authUser.id))
 
-    // Step 5: Fetch all profiles
-    const { data: profiles, error: profilesError } = await adminClient
-      .from('profiles')
-      .select('*')
-      .order('created_at', { ascending: false })
-
-    if (profilesError) {
-      console.error('[Admin Users API] Failed to fetch profiles:', profilesError)
-      throw new Error(`Failed to fetch profiles: ${profilesError.message}`)
+    let conversations: Array<{ id: string; user_id: string }> = []
+    if (visibleUserIds.size > 0) {
+      const { data, error } = await access.db
+        .from('conversations')
+        .select('id, user_id')
+        .in('user_id', Array.from(visibleUserIds))
+      if (error) throw error
+      conversations = data || []
     }
 
-    console.log('[Admin Users API] Found', profiles?.length || 0, 'profiles')
+    const conversationOwner = new Map<string, string>()
+    const conversationCounts = new Map<string, number>()
+    for (const conversation of conversations || []) {
+      conversationOwner.set(conversation.id, conversation.user_id)
+      conversationCounts.set(conversation.user_id, (conversationCounts.get(conversation.user_id) || 0) + 1)
+    }
 
-    // Step 6: Fetch conversations and message counts
-    const { data: conversations } = await adminClient
-      .from('conversations')
-      .select('id, user_id')
+    const conversationIds = Array.from(conversationOwner.keys())
+    let messages: Array<{ conversation_id: string; role: string }> = []
+    if (conversationIds.length > 0) {
+      const { data, error } = await access.db
+        .from('messages')
+        .select('conversation_id, role')
+        .in('conversation_id', conversationIds)
+      if (error) throw error
+      messages = data || []
+    }
 
-    const { data: messages } = await adminClient
-      .from('messages')
-      .select('conversation_id, role')
+    const messageCounts = new Map<string, number>()
+    for (const message of messages) {
+      const ownerId = conversationOwner.get(message.conversation_id)
+      if (ownerId) messageCounts.set(ownerId, (messageCounts.get(ownerId) || 0) + 1)
+    }
 
-    // Build conversation map: user_id -> conversation_ids[]
-    const userConversations = new Map<string, string[]>()
-    conversations?.forEach((conv: any) => {
-      if (!userConversations.has(conv.user_id)) {
-        userConversations.set(conv.user_id, [])
+    const authById = new Map(visibleAuthUsers.map((authUser: any) => [authUser.id, authUser]))
+    const users = profiles.map((profile) => {
+      const authUser: any = authById.get(profile.user_id)
+      const entitlement = normalizeEntitlement(profile)
+      return {
+        id: profile.id,
+        user_id: profile.user_id,
+        email: authUser?.email || 'N/A',
+        display_name: profile.display_name || authUser?.user_metadata?.display_name || authUser?.email?.split('@')[0] || 'User',
+        role: profile.role,
+        credits: entitlement.credits,
+        unlimited_credits: entitlement.unlimitedCredits,
+        subscription_tier: entitlement.subscriptionTier,
+        account_status: entitlement.status,
+        account_expires_at: entitlement.expiresAt,
+        owner_sub_admin_id: profile.owner_sub_admin_id,
+        created_at: profile.created_at || authUser?.created_at,
+        last_sign_in_at: authUser?.last_sign_in_at || null,
+        message_count: messageCounts.get(profile.user_id) || 0,
+        conversation_count: conversationCounts.get(profile.user_id) || 0,
       }
-      userConversations.get(conv.user_id)!.push(conv.id)
     })
 
-    // Build message counts per user
-    const userMessageCounts = new Map<string, number>()
-    const userConversationCounts = new Map<string, number>()
+    const finiteProfiles = profiles.filter((profile) => !normalizeEntitlement(profile).unlimitedCredits)
+    const stats = {
+      totalUsers: profiles.filter((profile) => profile.role === 'user').length,
+      totalMessages: messages.length,
+      unlimitedAccounts: profiles.filter((profile) => normalizeEntitlement(profile).unlimitedCredits).length,
+      finiteCreditsRemaining: finiteProfiles.reduce((sum, profile) => sum + Math.max(0, profile.credits || 0), 0),
+    }
 
-    authUsers.forEach(authUser => {
-      const convIds = userConversations.get(authUser.id) || []
-      userConversationCounts.set(authUser.id, convIds.length)
-
-      const messageCount = messages?.filter(
-        (msg: any) => msg.role === 'user' && convIds.includes(msg.conversation_id)
-      ).length || 0
-      userMessageCounts.set(authUser.id, messageCount)
+    return NextResponse.json({
+      actorRole: access.actor.role,
+      users,
+      stats,
+      subAdmins: access.isMainAdmin
+        ? users.filter((entry) => entry.role === 'sub_admin').map((entry) => ({
+            user_id: entry.user_id,
+            display_name: entry.display_name,
+            email: entry.email,
+          }))
+        : [],
     })
-
-    // Step 7: Merge auth users with profiles and stats
-    const usersWithDetails = await Promise.all(
-      authUsers.map(async (authUser: any) => {
-        // Find matching profile
-        let userProfile = profiles?.find((p: any) => p.user_id === authUser.id)
-
-        // If no profile exists, create one with defaults
-        if (!userProfile) {
-          console.warn('[Admin Users API] Creating missing profile for user:', authUser.id)
-          const { data: newProfile, error: createError } = await adminClient
-            .from('profiles')
-            .upsert({
-              user_id: authUser.id,
-              display_name: authUser.user_metadata?.full_name || authUser.email?.split('@')[0] || 'User',
-              role: 'user',
-              credits: 1000,
-              unlimited_credits: false,
-              subscription_tier: 'free',
-            }, {
-              onConflict: 'user_id',
-              ignoreDuplicates: false,
-            })
-            .select()
-            .single()
-
-          if (createError) {
-            console.error('[Admin Users API] Failed to create missing profile:', createError)
-          } else {
-            userProfile = newProfile
-          }
-        }
-
-        return {
-          id: userProfile?.id || authUser.id,
-          user_id: authUser.id,
-          email: authUser.email || 'N/A',
-          display_name: userProfile?.display_name || authUser.user_metadata?.full_name || authUser.email?.split('@')[0] || 'N/A',
-          role: userProfile?.role || 'user',
-          credits: userProfile?.credits || 0,
-          unlimited_credits: userProfile?.unlimited_credits || false,
-          subscription_tier: userProfile?.subscription_tier || 'free',
-          created_at: userProfile?.created_at || authUser.created_at,
-          last_sign_in_at: authUser.last_sign_in_at,
-          message_count: userMessageCounts.get(authUser.id) || 0,
-          conversation_count: userConversationCounts.get(authUser.id) || 0,
-        }
-      })
-    )
-
-    console.log('[Admin Users API] Returning', usersWithDetails.length, 'users with details')
-    return NextResponse.json(usersWithDetails)
   } catch (error: any) {
-    console.error('[Admin Users API] Fatal error:', {
-      message: error.message,
-      stack: error.stack,
-    })
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    console.error('[Admin Users API] Failed:', error.message)
+    return NextResponse.json({ error: 'Failed to load admin users' }, { status: 500 })
   }
 }

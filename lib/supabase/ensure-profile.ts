@@ -16,7 +16,7 @@ export async function ensureProfile(
       .from('profiles')
       .insert({
         user_id: userId,
-        credits: 1000,
+        credits: DEFAULT_FINITE_CREDITS,
         subscription_tier: 'free',
         role: 'user',
       })
@@ -38,3 +38,4 @@ export async function ensureProfile(
 
   return profile
 }
+import { DEFAULT_FINITE_CREDITS } from '@/lib/account-entitlements'

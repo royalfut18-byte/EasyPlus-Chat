@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createPresignedDownloadUrl, isR2Configured } from '@/lib/storage/r2'
+import { getAccountEntitlement, getEntitlementBlockResponse } from '@/lib/account-entitlements.server'
 
 export const runtime = 'nodejs'
 
@@ -26,6 +27,9 @@ export async function GET(request: NextRequest) {
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+
+    const entitlementBlock = getEntitlementBlockResponse(await getAccountEntitlement(supabase as any, user.id))
+    if (entitlementBlock) return entitlementBlock
 
     const { searchParams } = new URL(request.url)
     const attachmentId = firstValue(searchParams.get('attachmentId'))

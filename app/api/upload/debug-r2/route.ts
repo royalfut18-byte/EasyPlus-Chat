@@ -1,8 +1,16 @@
 import { NextResponse } from 'next/server'
+import { createClient } from '@/lib/supabase/server'
+import { getAdminAccess } from '@/lib/admin-access.server'
 
 export const runtime = 'nodejs'
 
 export async function GET() {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user || !(await getAdminAccess(user.id))?.isMainAdmin) {
+    return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  }
+
   const accountId = process.env.R2_ACCOUNT_ID
   const accessKeyId = process.env.R2_ACCESS_KEY_ID || process.env.R2_ACCESS_KEY
   const hasSecret = !!process.env.R2_SECRET_ACCESS_KEY

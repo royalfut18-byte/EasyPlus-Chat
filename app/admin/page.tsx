@@ -1,103 +1,60 @@
 import { redirect } from 'next/navigation'
+import { CreditCard, Infinity, MessageSquare, Users } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { getAdminAccess } from '@/lib/admin-access.server'
+import { getAdminStatistics } from '@/lib/admin-statistics.server'
 import { AdminUserTable } from '@/components/admin/admin-user-table'
 import { BackfillPanel } from '@/components/admin/backfill-panel'
-import { Users, CreditCard, TrendingUp } from 'lucide-react'
 
 export default async function AdminPage() {
   const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) redirect('/login')
 
-  if (!user) {
-    redirect('/login')
-  }
-
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('role')
-    .eq('user_id', user.id)
-    .single()
-
-  if ((profile as any)?.role !== 'admin') {
-    redirect('/chat')
-  }
-
-  const { count: userCount } = await supabase
-    .from('profiles')
-    .select('*', { count: 'exact', head: true })
-
-  const { data: totalCredits } = await supabase
-    .from('profiles')
-    .select('credits')
-
-  const totalCreditsSum = totalCredits?.reduce((sum, p: any) => sum + p.credits, 0) || 0
-
-  const { count: messageCount } = await supabase
-    .from('messages')
-    .select('*', { count: 'exact', head: true })
+  const access = await getAdminAccess(user.id)
+  if (!access) redirect('/chat')
+  const stats = await getAdminStatistics(access)
 
   return (
-    <div className="min-h-screen bg-[#08070d] p-6">
-      <div className="max-w-7xl mx-auto space-y-8">
+    <div className="min-h-screen bg-[#0f0f0f] p-4 text-white md:p-8">
+      <div className="mx-auto max-w-7xl space-y-6">
         <div>
-          <h1 className="text-3xl font-semibold text-white/90">Admin Panel</h1>
-          <p className="text-gray-500 mt-2">Manage users and monitor platform usage</p>
+          <p className="text-xs font-medium uppercase tracking-[0.16em] text-violet-300">
+            {access.isMainAdmin ? 'EasyPlus Administration' : 'EasyPlus Sub-admin'}
+          </p>
+          <h1 className="mt-2 text-3xl font-semibold">{access.isMainAdmin ? 'Admin Panel' : 'Your User Panel'}</h1>
+          <p className="mt-2 text-sm text-gray-400">
+            {access.isMainAdmin ? 'Manage accounts and review trustworthy global totals.' : 'Manage your assigned users and review scoped totals.'}
+          </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <Card className="bg-white/[0.02] border-white/[0.06]">
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium text-gray-400">
-                Total Users
-              </CardTitle>
-              <Users className="h-4 w-4 text-blue-400" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold text-white">{userCount || 0}</div>
-            </CardContent>
-          </Card>
-
-          <Card className="bg-white/[0.02] border-white/[0.06]">
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium text-gray-400">
-                Total Credits
-              </CardTitle>
-              <CreditCard className="h-4 w-4 text-yellow-400" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold text-white">
-                {totalCreditsSum.toLocaleString()}
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="bg-white/[0.02] border-white/[0.06]">
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium text-gray-400">
-                Total Messages
-              </CardTitle>
-              <TrendingUp className="h-4 w-4 text-green-400" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold text-white">{messageCount || 0}</div>
-            </CardContent>
-          </Card>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <Stat icon={<Users />} label={access.isMainAdmin ? 'Total users' : 'Assigned users'} value={stats.totalUsers.toLocaleString()} />
+          <Stat icon={<Infinity />} label="Unlimited accounts" value={stats.unlimitedAccounts.toLocaleString()} />
+          <Stat icon={<CreditCard />} label="Finite credits remaining" value={stats.finiteCreditsRemaining.toLocaleString()} />
+          <Stat icon={<MessageSquare />} label={access.isMainAdmin ? 'Total messages' : 'Scoped messages'} value={stats.totalMessages.toLocaleString()} />
         </div>
 
-        <BackfillPanel />
+        {access.isMainAdmin && <BackfillPanel />}
 
-        <Card className="bg-white/[0.02] border-white/[0.06]">
-          <CardHeader>
-            <CardTitle>All Users</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <AdminUserTable />
-          </CardContent>
-        </Card>
+        <section className="rounded-2xl border border-white/[0.08] bg-[#181818] p-4 md:p-5">
+          <h2 className="text-lg font-semibold">{access.isMainAdmin ? 'Accounts' : 'Assigned accounts'}</h2>
+          <p className="mt-1 text-sm text-gray-500">
+            {access.isMainAdmin ? 'Sub-admin groups and unassigned users are managed here.' : 'Only users assigned to your panel are visible.'}
+          </p>
+          <div className="mt-5"><AdminUserTable /></div>
+        </section>
       </div>
     </div>
+  )
+}
+
+function Stat({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
+  return (
+    <section className="rounded-2xl border border-white/[0.08] bg-[#181818] p-5">
+      <div className="h-5 w-5 text-violet-400">{icon}</div>
+      <p className="mt-4 text-xs uppercase tracking-[0.12em] text-gray-500">{label}</p>
+      <p className="mt-2 text-2xl font-semibold">{value}</p>
+    </section>
   )
 }

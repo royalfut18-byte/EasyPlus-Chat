@@ -26,15 +26,10 @@ import { isLongTaskRequest, LONG_TASK_SYSTEM_ADDENDUM } from '@/lib/ai/long-task
 import type { ChatMessage, ReasoningMode } from '@/types/models'
 import { getInternalModel, getPublicModelName, toPublicModelId } from '@/lib/ai/model-routing.server'
 import { getReasoningProfile, getReasoningSystemAddendum, type ReasoningProfile } from '@/lib/ai/reasoning-profiles'
+import { getAccountEntitlement, getEntitlementBlockResponse } from '@/lib/account-entitlements.server'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
-
-type ProfileRow = {
-  credits: number
-  role: 'user' | 'admin'
-  unlimited_credits: boolean
-}
 
 function sanitizeIdentityLeak(text: string, publicModelName: string): string {
   if (!text) return text
@@ -177,36 +172,19 @@ export async function POST(request: NextRequest) {
 
     // Stage: Profile
     stage = 'profile'
-    const { data: profile, error: profileError } = await db
-      .from('profiles')
-      .select('credits, role, unlimited_credits')
-      .eq('user_id', user.id)
-      .single()
-
-    if (profileError) {
-      console.error('[Chat API] Profile query error:', profileError.message)
-      return NextResponse.json(
-        { error: `Profile error: ${profileError.message}` },
-        { status: 500 }
-      )
-    }
-
-    const typedProfile = profile as ProfileRow | null
-
-    if (!typedProfile) {
-      console.error('[Chat API] Profile not found for user:', user.id)
-      return NextResponse.json({ error: 'Profile not found. Please contact support.' }, { status: 404 })
-    }
+    const entitlement = await getAccountEntitlement(db, user.id)
+    const entitlementBlock = getEntitlementBlockResponse(entitlement)
+    if (entitlementBlock) return entitlementBlock
 
     // Stage: Credits
     stage = 'credits'
     const cost = getModelCost(validatedModel)
-    const hasUnlimitedCredits = typedProfile.role === 'admin' || typedProfile.unlimited_credits === true
+    const hasUnlimitedCredits = entitlement!.unlimitedCredits
 
     if (!hasUnlimitedCredits) {
-      if (typedProfile.credits < cost) {
+      if (entitlement!.credits < cost) {
         return NextResponse.json(
-          { error: 'Insufficient credits', credits: typedProfile.credits },
+          { error: 'Insufficient credits', credits: entitlement!.credits },
           { status: 402 }
         )
       }
@@ -214,7 +192,7 @@ export async function POST(request: NextRequest) {
       const [updateResult, transactionResult] = await Promise.allSettled([
         db
           .from('profiles')
-          .update({ credits: typedProfile.credits - cost })
+          .update({ credits: entitlement!.credits - cost })
           .eq('user_id', user.id),
         db.from('credit_transactions').insert({
           user_id: user.id,

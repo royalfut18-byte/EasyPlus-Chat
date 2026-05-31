@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { GoogleGenerativeAI } from '@google/generative-ai'
+import { getAccountEntitlement, getEntitlementBlockResponse } from '@/lib/account-entitlements.server'
 
 export const runtime = 'nodejs'
 export const maxDuration = 30
@@ -94,6 +95,9 @@ export async function POST(
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+
+    const entitlementBlock = getEntitlementBlockResponse(await getAccountEntitlement(db, user.id))
+    if (entitlementBlock) return entitlementBlock
 
     // Verify conversation belongs to user
     const { data: conversation, error: convError } = await db

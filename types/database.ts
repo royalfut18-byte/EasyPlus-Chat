@@ -15,9 +15,14 @@ export interface Database {
           user_id: string
           display_name: string | null
           avatar_url: string | null
-          role: 'user' | 'admin'
+          role: 'user' | 'sub_admin' | 'admin'
           credits: number
+          unlimited_credits: boolean
           subscription_tier: 'free' | 'pro' | 'unlimited'
+          account_status: 'active' | 'disabled'
+          account_expires_at: string | null
+          owner_sub_admin_id: string | null
+          created_by: string | null
           created_at: string
         }
         Insert: {
@@ -25,9 +30,14 @@ export interface Database {
           user_id: string
           display_name?: string | null
           avatar_url?: string | null
-          role?: 'user' | 'admin'
+          role?: 'user' | 'sub_admin' | 'admin'
           credits?: number
+          unlimited_credits?: boolean
           subscription_tier?: 'free' | 'pro' | 'unlimited'
+          account_status?: 'active' | 'disabled'
+          account_expires_at?: string | null
+          owner_sub_admin_id?: string | null
+          created_by?: string | null
           created_at?: string
         }
         Update: {
@@ -35,9 +45,14 @@ export interface Database {
           user_id?: string
           display_name?: string | null
           avatar_url?: string | null
-          role?: 'user' | 'admin'
+          role?: 'user' | 'sub_admin' | 'admin'
           credits?: number
+          unlimited_credits?: boolean
           subscription_tier?: 'free' | 'pro' | 'unlimited'
+          account_status?: 'active' | 'disabled'
+          account_expires_at?: string | null
+          owner_sub_admin_id?: string | null
+          created_by?: string | null
           created_at?: string
         }
       }

@@ -15,6 +15,16 @@ interface ModelSelectorProps {
 }
 
 export function ModelSelector({ selectedModel, onSelectModel, disabled = false, disabledReason }: ModelSelectorProps) {
+  const getSelectedGlow = (model: AIModel) => {
+    if (selectedModel !== model.id) return undefined
+    const color = model.id === 'chat-gpt-5.5'
+      ? '16, 163, 127'
+      : model.id === 'claude-opus-4.7'
+        ? '217, 119, 87'
+        : '96, 165, 250'
+    return { boxShadow: `0 0 18px rgba(${color}, 0.22), 0 0 0 1px rgba(${color}, 0.14)` }
+  }
+
   const getShortName = (name: string) => {
     return name
       .replace('Claude Opus', 'Claude')
@@ -71,6 +81,7 @@ export function ModelSelector({ selectedModel, onSelectModel, disabled = false, 
               : 'border-transparent bg-transparent hover:bg-white/[0.045]',
             disabled && 'opacity-60 cursor-not-allowed'
           )}
+          style={getSelectedGlow(model)}
           whileTap={disabled ? {} : { scale: 0.98 }}
         >
           {getModelIcon(model)}

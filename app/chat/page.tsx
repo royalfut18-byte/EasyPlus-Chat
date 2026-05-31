@@ -291,7 +291,7 @@ export default function ChatPage() {
       const profile = await ensureProfile(supabase, user.id)
       setUserProfile(profile)
     } catch (error) {
-      setUserProfile({ credits: 1000 })
+      setUserProfile({ credits: 0, unlimited_credits: false, role: 'user' })
     }
   }
 
@@ -1957,6 +1957,29 @@ Default to artifact:html with a complete single-file HTML document. Do NOT outpu
     return (
       <div className="flex min-h-screen items-center justify-center bg-[#0f0f0f]">
         <div className="animate-spin h-8 w-8 border-2 border-violet-500/60 border-t-transparent rounded-full" />
+      </div>
+    )
+  }
+
+  const accountExpired = Boolean(
+    userProfile.account_expires_at &&
+    new Date(userProfile.account_expires_at).getTime() <= Date.now()
+  )
+
+  if (accountExpired || userProfile.account_status === 'disabled') {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[#0f0f0f] p-4 text-white">
+        <div className="max-w-xl rounded-2xl border border-amber-400/20 bg-[#181818] p-8 text-center shadow-2xl shadow-black/30">
+          <h1 className="text-3xl font-semibold text-amber-200">
+            {accountExpired ? 'Your subscription has ended.' : 'Your account is disabled.'}
+          </h1>
+          {userProfile.account_expires_at && (
+            <p className="mt-4 text-sm text-gray-400">
+              Expiry date: {new Date(userProfile.account_expires_at).toLocaleDateString()}
+            </p>
+          )}
+          <p className="mt-3 text-gray-300">Contact support or your administrator to renew your account.</p>
+        </div>
       </div>
     )
   }

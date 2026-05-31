@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { ocrAttachmentPages } from '@/lib/ai/pdf-ocr'
+import { getAccountEntitlement, getEntitlementBlockResponse } from '@/lib/account-entitlements.server'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
@@ -17,6 +18,9 @@ export async function POST(request: NextRequest) {
     if (authError || !user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+
+    const entitlementBlock = getEntitlementBlockResponse(await getAccountEntitlement(db, user.id))
+    if (entitlementBlock) return entitlementBlock
 
     const body = await request.json()
     const attachmentId = String(body.attachmentId || '')

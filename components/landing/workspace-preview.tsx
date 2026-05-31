@@ -106,7 +106,7 @@ export function WorkspacePreview() {
                   </div>
                   <div className="min-w-0">
                     <p className="truncate text-sm font-medium text-gray-200">EasyPlus User</p>
-                    <p className="text-[11px] text-gray-500">12.4K credits</p>
+                    <p className="text-[11px] text-gray-500">Unlimited credits</p>
                   </div>
                 </div>
               </div>

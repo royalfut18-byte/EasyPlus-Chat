@@ -40,7 +40,8 @@ interface SidebarProps {
     display_name: string | null
     avatar_url: string | null
     credits: number
-    role: 'user' | 'admin'
+    unlimited_credits?: boolean
+    role: 'user' | 'sub_admin' | 'admin'
   }
 }
 
@@ -61,7 +62,7 @@ export function Sidebar({
   useEffect(() => {
     router.prefetch('/dashboard')
     router.prefetch('/billing')
-    if (userProfile.role === 'admin') {
+    if (userProfile.role === 'admin' || userProfile.role === 'sub_admin') {
       router.prefetch('/admin')
     }
   }, [router, userProfile.role])
@@ -180,14 +181,16 @@ export function Sidebar({
                     </Avatar>
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-medium text-gray-200">{userProfile.display_name || 'User'}</p>
-                      <p className="truncate text-[11px] text-gray-500">{formatCredits(userProfile.credits)} credits</p>
+                      <p className="truncate text-[11px] text-gray-500">
+                        {userProfile.unlimited_credits || userProfile.role === 'admin' ? 'Unlimited credits' : `${formatCredits(userProfile.credits)} credits`}
+                      </p>
                     </div>
                   </button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="start" side="top" className="w-64 border-white/[0.08] bg-[#202020]">
                   <DropdownMenuItem onClick={() => router.push('/dashboard')}><User className="mr-2 h-4 w-4" />Dashboard</DropdownMenuItem>
                   <DropdownMenuItem onClick={() => router.push('/billing')}><CreditCard className="mr-2 h-4 w-4" />Credits</DropdownMenuItem>
-                  {userProfile.role === 'admin' && <DropdownMenuItem onClick={() => router.push('/admin')}><Shield className="mr-2 h-4 w-4" />Admin Panel</DropdownMenuItem>}
+                  {(userProfile.role === 'admin' || userProfile.role === 'sub_admin') && <DropdownMenuItem onClick={() => router.push('/admin')}><Shield className="mr-2 h-4 w-4" />Admin Panel</DropdownMenuItem>}
                   <DropdownMenuItem onClick={() => router.push('/settings/memory')}><Brain className="mr-2 h-4 w-4" />Memory</DropdownMenuItem>
                   <DropdownMenuItem onClick={() => router.push('/settings')}><Settings className="mr-2 h-4 w-4" />Settings</DropdownMenuItem>
                   <DropdownMenuSeparator className="bg-white/10" />

@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { getAccountEntitlement, getEntitlementBlockResponse } from '@/lib/account-entitlements.server'
+
+async function getAccessBlock(db: any, userId: string) {
+  return getEntitlementBlockResponse(await getAccountEntitlement(db, userId))
+}
 
 export async function GET() {
   try {
@@ -10,6 +15,8 @@ export async function GET() {
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+    const accessBlock = await getAccessBlock(db, user.id)
+    if (accessBlock) return accessBlock
 
     const { data: memories, error } = await db
       .from('user_memories')
@@ -39,6 +46,8 @@ export async function POST(request: NextRequest) {
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+    const accessBlock = await getAccessBlock(db, user.id)
+    if (accessBlock) return accessBlock
 
     const { memory_text, category, importance } = await request.json()
 
@@ -76,6 +85,8 @@ export async function DELETE(request: NextRequest) {
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+    const accessBlock = await getAccessBlock(db, user.id)
+    if (accessBlock) return accessBlock
 
     const { searchParams } = new URL(request.url)
     const memoryId = searchParams.get('id')
@@ -117,6 +128,8 @@ export async function PATCH(request: NextRequest) {
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+    const accessBlock = await getAccessBlock(db, user.id)
+    if (accessBlock) return accessBlock
 
     const { id, memory_text, category, importance } = await request.json()
 

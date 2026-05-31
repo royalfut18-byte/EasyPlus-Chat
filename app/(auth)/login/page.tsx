@@ -41,7 +41,7 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#08070d] flex items-center justify-center p-6">
+    <div className="min-h-screen bg-[#0f0f0f] flex items-center justify-center p-6">
       <div className="absolute inset-0 bg-gradient-radial from-violet-900/10 via-transparent to-transparent" />
 
       <motion.div
