@@ -25,7 +25,7 @@ const INITIAL_FORM = {
   password: '',
   displayName: '',
   role: 'user',
-  unlimitedCredits: false,
+  unlimitedCredits: true,
   accountExpiresAt: '',
   ownerSubAdminId: 'unassigned',
 }

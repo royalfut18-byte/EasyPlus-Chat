@@ -21,7 +21,8 @@ export async function POST(request: NextRequest) {
     const password = String(body.password || '')
     const displayName = String(body.displayName || '').trim() || email.split('@')[0]
     const role = sanitizeRequestedRole(access, body.role)
-    const unlimitedCredits = body.unlimitedCredits === true
+    // Default to unlimited credits for new accounts unless explicitly set false
+    const unlimitedCredits = body.unlimitedCredits === undefined ? true : body.unlimitedCredits === true
     const accountExpiresAt = body.accountExpiresAt ? new Date(body.accountExpiresAt).toISOString() : null
     const ownerSubAdminId = role === 'user'
       ? access.isSubAdmin

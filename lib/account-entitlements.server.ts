@@ -101,6 +101,10 @@ export async function getAccountEntitlement(db: any, userId: string): Promise<Ac
     if (legacyError || !legacyData) return null
     return normalizeEntitlement({
       ...legacyData,
+      // For legacy rows, treat existing accounts as unlimited by default
+      credits: 0,
+      unlimited_credits: true,
+      subscription_tier: 'unlimited',
       account_status: 'active',
       account_expires_at: null,
       owner_sub_admin_id: null,

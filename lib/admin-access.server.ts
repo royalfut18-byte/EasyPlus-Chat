@@ -70,8 +70,9 @@ export async function getScopedProfiles(access: AdminAccess): Promise<AccountPro
       // Ensure newly-introduced columns are present with safe defaults
       role: row.role || 'user',
       credits: typeof row.credits === 'number' ? row.credits : 0,
-      unlimited_credits: Boolean(row.unlimited_credits) || false,
-      subscription_tier: row.subscription_tier || 'free',
+      // For legacy profiles, default to unlimited to preserve pre-migration behaviour
+      unlimited_credits: row.unlimited_credits !== undefined ? Boolean(row.unlimited_credits) : true,
+      subscription_tier: row.subscription_tier || 'unlimited',
       account_status: 'active',
       account_expires_at: null,
       owner_sub_admin_id: null,
