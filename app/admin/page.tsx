@@ -13,7 +13,15 @@ export default async function AdminPage() {
 
   const access = await getAdminAccess(user.id)
   if (!access) redirect('/chat')
-  const stats = await getAdminStatistics(access)
+  let stats
+  let statsError: Error | null = null
+  try {
+    stats = await getAdminStatistics(access)
+  } catch (err: any) {
+    console.error('[Admin Page] Failed to load stats:', err)
+    statsError = err
+    stats = { totalUsers: 0, totalMessages: 0, unlimitedAccounts: 0, finiteCreditsRemaining: 0 }
+  }
 
   return (
     <div className="min-h-screen bg-[#0f0f0f] p-4 text-white md:p-8">
@@ -27,6 +35,13 @@ export default async function AdminPage() {
             {access.isMainAdmin ? 'Manage accounts and review trustworthy global totals.' : 'Manage your assigned users and review scoped totals.'}
           </p>
         </div>
+
+        {statsError && (
+          <div className="rounded-2xl border border-red-600/20 bg-red-900/10 p-4 text-red-200">
+            <div className="font-semibold">Admin stats unavailable. Check server logs.</div>
+            <div className="mt-1 text-sm text-red-200">Error: {String(statsError.message || statsError)}</div>
+          </div>
+        )}
 
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <Stat icon={<Users />} label={access.isMainAdmin ? 'Total users' : 'Assigned users'} value={stats.totalUsers.toLocaleString()} />
