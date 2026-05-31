@@ -38,23 +38,14 @@ const ASSISTANT_LOADING_MARKER = '__ASSISTANT_LOADING__'
 const LONG_TASK_LOADING_MARKER = '__LONG_TASK_LOADING__'
 const RECOVERY_POLLING_MARKER = '__RECOVERY_POLLING__'
 
-// Status config: label → { dotColor, glowColor, iconColor, subtitle }
-const STATUS_CONFIG: Record<string, { dotColor: string; glowColor: string; iconColor: string; subtitle: string }> = {
-  'Thinking...': { dotColor: 'bg-blue-400', glowColor: 'bg-blue-500/20', iconColor: 'text-blue-400', subtitle: '' },
-  'Reading attached files...': { dotColor: 'bg-violet-400', glowColor: 'bg-violet-500/20', iconColor: 'text-violet-400', subtitle: 'Analyzing your files' },
-  'Searching the web...': { dotColor: 'bg-emerald-400', glowColor: 'bg-emerald-500/20', iconColor: 'text-emerald-400', subtitle: 'Finding relevant information' },
-  'Working through a larger task...': { dotColor: 'bg-amber-400', glowColor: 'bg-amber-500/20', iconColor: 'text-amber-400', subtitle: 'This may take longer than usual' },
-  'Reconnecting and recovering response...': { dotColor: 'bg-cyan-400', glowColor: 'bg-cyan-500/20', iconColor: 'text-cyan-400', subtitle: 'The AI is still generating — recovering automatically' },
-  'Writing response...': { dotColor: 'bg-blue-400', glowColor: 'bg-blue-500/20', iconColor: 'text-blue-400', subtitle: 'Streaming answer' },
-  'Creating artifact...': { dotColor: 'bg-purple-400', glowColor: 'bg-purple-500/20', iconColor: 'text-purple-400', subtitle: 'Preparing preview panel' },
-}
-
-function getStatusFromMarker(content: string): string | null {
-  if (content === ARTIFACT_LOADING_MARKER) return 'Creating artifact...'
-  if (content === ASSISTANT_LOADING_MARKER) return 'Thinking...'
-  if (content === LONG_TASK_LOADING_MARKER) return 'Working through a larger task...'
-  if (content === RECOVERY_POLLING_MARKER) return 'Reconnecting and recovering response...'
-  return null
+const STATUS_CONFIG: Record<string, { dotColor: string; iconColor: string; subtitle: string }> = {
+  'Thinking...': { dotColor: 'bg-blue-400', iconColor: 'text-blue-400', subtitle: '' },
+  'Reading attached files...': { dotColor: 'bg-violet-400', iconColor: 'text-violet-400', subtitle: 'Analyzing your files' },
+  'Searching the web...': { dotColor: 'bg-emerald-400', iconColor: 'text-emerald-400', subtitle: 'Finding relevant information' },
+  'Working through a larger task...': { dotColor: 'bg-amber-400', iconColor: 'text-amber-400', subtitle: 'This may take longer than usual' },
+  'Reconnecting and recovering response...': { dotColor: 'bg-cyan-400', iconColor: 'text-cyan-400', subtitle: 'The AI is still generating — recovering automatically' },
+  'Writing response...': { dotColor: 'bg-blue-400', iconColor: 'text-blue-400', subtitle: 'Streaming answer' },
+  'Creating artifact...': { dotColor: 'bg-purple-400', iconColor: 'text-purple-400', subtitle: 'Preparing preview panel' },
 }
 
 export function MessageBubble({ role, content, model, onRegenerate, attachments, hasArtifact, artifact, onOpenArtifact, statusLabel, onRequestOcr }: MessageBubbleProps) {
@@ -121,19 +112,19 @@ export function MessageBubble({ role, content, model, onRegenerate, attachments,
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3 }}
-      className={cn('mb-4 md:mb-6', isUser ? 'flex justify-end' : 'flex justify-start')}
+      className={cn('mb-5 md:mb-7', isUser ? 'flex justify-end' : 'flex justify-start')}
     >
       <div
         className={cn(
-          'rounded-3xl relative group',
+          'relative group min-w-0',
           isUser
-            ? 'max-w-[85%] md:max-w-[70%] mb-6 bg-gradient-to-br from-indigo-600/80 to-violet-700/70 backdrop-blur-sm text-white shadow-md shadow-indigo-500/10'
-            : 'w-full bg-white/[0.03] border border-white/[0.06] p-3 md:p-4 lg:p-6'
+            ? 'mb-5 max-w-[85%] rounded-3xl bg-[#303030] text-white md:max-w-[72%]'
+            : 'w-full'
         )}
       >
         {!isUser && modelData && (
-          <div className="flex items-center gap-2 mb-2 md:mb-3 pb-2 md:pb-3 border-b border-white/10">
-            <div className="w-5 h-5 md:w-6 md:h-6 rounded-lg bg-white/5 flex items-center justify-center">
+          <div className="mb-2 flex items-center gap-2">
+            <div className="flex h-5 w-5 items-center justify-center rounded-md bg-white/[0.05]">
               {modelData.id === 'chat-gpt-5.5' ? (
                 <ChatGPTIcon className="w-3 h-3 md:w-3.5 md:h-3.5 text-[#10a37f]" />
               ) : modelData.id === 'claude-opus-4.7' ? (
@@ -142,14 +133,14 @@ export function MessageBubble({ role, content, model, onRegenerate, attachments,
                 <Sparkles className="w-3 h-3 md:w-3.5 md:h-3.5 text-blue-400" />
               )}
             </div>
-            <span className="text-xs font-medium text-gray-400">{modelData.name}</span>
+            <span className="text-xs font-medium text-gray-500">{modelData.name}</span>
           </div>
         )}
 
         {attachments && attachments.length > 0 && (
           <div className={cn(
-            'flex flex-wrap gap-2 md:gap-3',
-            isUser ? 'px-3 pt-3 pb-2 md:px-4 md:pt-4 md:pb-3' : 'mb-3'
+            'flex flex-wrap gap-2',
+            isUser ? 'px-3 pt-3 pb-1 md:px-4 md:pt-4' : 'mb-3'
           )}>
             {attachments.map((attachment, index) => {
               const openUrl = getAttachmentOpenUrl(attachment)
@@ -194,15 +185,15 @@ export function MessageBubble({ role, content, model, onRegenerate, attachments,
                   </>
                 ) : (
                   <div className={cn(
-                    'flex flex-col gap-3 px-3.5 py-3 rounded-xl border',
+                    'flex max-w-sm flex-col gap-2.5 rounded-lg border px-3 py-2.5',
                     isUser
-                      ? 'border-white/20 bg-white/10'
-                      : 'border-white/10 bg-white/5'
+                      ? 'border-white/[0.10] bg-black/10'
+                      : 'border-white/[0.08] bg-[#292929]'
                   )}>
                     <div
                       className={cn(
                         'flex items-center gap-3 min-w-0 rounded-lg',
-                        openUrl && 'cursor-pointer hover:bg-white/5'
+                        openUrl && 'cursor-pointer hover:bg-white/[0.04]'
                       )}
                       role={openUrl ? 'button' : undefined}
                       tabIndex={openUrl ? 0 : undefined}
@@ -230,7 +221,7 @@ export function MessageBubble({ role, content, model, onRegenerate, attachments,
                       <FileIcon className="h-5 w-5 text-gray-400 shrink-0" />
                     )}
                     <div className="min-w-0">
-                      <p className="text-xs font-medium text-white truncate max-w-[200px]">{attachment.name || (attachment.type === 'image' ? 'Image' : 'Document')}</p>
+                      <p className="max-w-[220px] truncate text-xs font-medium text-gray-100">{attachment.name || (attachment.type === 'image' ? 'Image' : 'Document')}</p>
                       <p className="text-[10px] text-gray-400 mt-0.5">
                         {attachment.type === 'image' ? 'Image file' :
                          attachment.mimeType === 'application/pdf' ? 'PDF document' :
@@ -252,12 +243,12 @@ export function MessageBubble({ role, content, model, onRegenerate, attachments,
                     </div>
 
                     {openUrl && (
-                      <div className="flex flex-wrap items-center gap-2 border-t border-white/10 pt-2">
+                      <div className="flex flex-wrap items-center gap-1.5 border-t border-white/[0.08] pt-2">
                         <Button
                           type="button"
                           size="sm"
                           variant="ghost"
-                          className="h-7 px-2 text-xs bg-white/10 hover:bg-white/15"
+                          className="h-7 px-2 text-xs text-gray-300 hover:bg-white/[0.08]"
                           onClick={() => window.open(openUrl, '_blank', 'noopener,noreferrer')}
                         >
                           <ExternalLink className="h-3.5 w-3.5 mr-1.5" />
@@ -267,7 +258,7 @@ export function MessageBubble({ role, content, model, onRegenerate, attachments,
                           type="button"
                           size="sm"
                           variant="ghost"
-                          className="h-7 px-2 text-xs bg-white/10 hover:bg-white/15"
+                          className="h-7 px-2 text-xs text-gray-300 hover:bg-white/[0.08]"
                           onClick={() => {
                             const downloadUrl = openUrl.includes('?') ? `${openUrl}&download=1` : openUrl
                             window.open(downloadUrl, '_blank', 'noopener,noreferrer')
@@ -325,14 +316,11 @@ export function MessageBubble({ role, content, model, onRegenerate, attachments,
             (() => {
               const config = STATUS_CONFIG[activeStatus!] || STATUS_CONFIG['Thinking...']
               return (
-                <div className="flex items-center gap-3 py-2">
-                  <div className="relative">
-                    <Sparkles className={cn('h-5 w-5 animate-pulse', config.iconColor)} />
-                    <div className={cn('absolute inset-0 blur-lg animate-pulse', config.glowColor)} />
-                  </div>
+                <div className="flex items-center gap-2 py-1 text-sm">
+                  <Sparkles className={cn('h-4 w-4 animate-pulse', config.iconColor)} />
                   <div className="flex flex-col gap-1">
                     <div className="flex items-center gap-2">
-                      <span className="text-white font-medium">{activeStatus!.replace(/\.\.\.$/, '')}</span>
+                      <span className="font-medium text-gray-300">{activeStatus!.replace(/\.\.\.$/, '')}</span>
                       <div className="flex gap-1">
                         <div className={cn('w-1.5 h-1.5 rounded-full animate-bounce', config.dotColor)} style={{ animationDelay: '0ms' }} />
                         <div className={cn('w-1.5 h-1.5 rounded-full animate-bounce', config.dotColor)} style={{ animationDelay: '150ms' }} />
@@ -340,7 +328,7 @@ export function MessageBubble({ role, content, model, onRegenerate, attachments,
                       </div>
                     </div>
                     {config.subtitle && (
-                      <span className="text-xs text-gray-400">{config.subtitle}</span>
+                      <span className="text-xs text-gray-500">{config.subtitle}</span>
                     )}
                   </div>
                 </div>
@@ -382,10 +370,10 @@ export function MessageBubble({ role, content, model, onRegenerate, attachments,
                 {safeContent}
               </ReactMarkdown>
               {artifact && artifact.title && (
-                <div className="mt-4 bg-white/[0.03] p-4 rounded-xl border border-violet-500/20 hover:border-violet-500/30 transition-colors">
+                <div className="mt-4 rounded-xl border border-white/[0.08] bg-[#292929] p-4 transition-colors hover:border-white/[0.14]">
                   <div className="flex items-center justify-between gap-3">
                     <div className="flex items-center gap-3 flex-1 min-w-0">
-                      <div className="w-10 h-10 rounded-lg bg-violet-500/10 border border-violet-500/20 flex items-center justify-center shrink-0">
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-violet-500/20 bg-violet-500/10">
                         <FileCode className="h-5 w-5 text-violet-400" />
                       </div>
                       <div className="flex-1 min-w-0">

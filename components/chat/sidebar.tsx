@@ -1,9 +1,8 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
 import {
-  PlusCircle,
+  Plus,
   MessageSquare,
   Trash2,
   Settings,
@@ -54,7 +53,7 @@ export function Sidebar({
   onDeleteConversation,
   userProfile,
 }: SidebarProps) {
-  const [isOpen, setIsOpen] = useState(true)
+  const [isOpen, setIsOpen] = useState(false)
   const router = useRouter()
   const supabase = createClient()
 
@@ -84,87 +83,33 @@ export function Sidebar({
         onClick={() => setIsOpen(!isOpen)}
         variant="ghost"
         size="icon"
-        className="fixed top-4 left-4 z-50 md:hidden glass"
+        className="fixed top-3 left-3 z-50 h-9 w-9 rounded-lg border border-white/[0.08] bg-[#171717] text-gray-300 hover:bg-[#202020] md:hidden"
       >
         {isOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
       </Button>
 
-      <AnimatePresence>
-        {isOpen && (
-          <motion.aside
-            initial={{ x: -320 }}
-            animate={{ x: 0 }}
-            exit={{ x: -320 }}
-            transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-            className={cn(
-              'fixed left-0 top-0 h-screen w-80 z-40',
-              'bg-[#0a0a10]/95 backdrop-blur-xl border-r border-white/[0.06]',
-              'flex flex-col'
-            )}
-          >
-            <div className="p-4 border-b border-white/[0.06]">
-              <div className="flex items-center gap-3 mb-4">
-                <div className="flex-1">
-                  <Logo size="sm" showText />
-                </div>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="icon" className="rounded-full">
-                      <Avatar className="h-8 w-8">
-                        <AvatarImage src={userProfile.avatar_url || undefined} />
-                        <AvatarFallback className="bg-violet-600/80 text-white text-xs">
-                          {initials}
-                        </AvatarFallback>
-                      </Avatar>
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-56 bg-[#111018] border-white/[0.08]">
-                    <div className="px-2 py-2">
-                      <p className="text-sm font-medium text-white">
-                        {userProfile.display_name || 'User'}
-                      </p>
-                      <p className="text-xs text-gray-400">
-                        {formatCredits(userProfile.credits)} credits
-                      </p>
-                    </div>
-                    <DropdownMenuSeparator className="bg-white/10" />
-                    <DropdownMenuItem onClick={() => router.push('/dashboard')}>
-                      <User className="mr-2 h-4 w-4" />
-                      Dashboard
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => router.push('/billing')}>
-                      <CreditCard className="mr-2 h-4 w-4" />
-                      Credits
-                    </DropdownMenuItem>
-                    {userProfile.role === 'admin' && (
-                      <DropdownMenuItem onClick={() => router.push('/admin')}>
-                        <Shield className="mr-2 h-4 w-4" />
-                        Admin Panel
-                      </DropdownMenuItem>
-                    )}
-                    <DropdownMenuItem onClick={() => router.push('/settings/memory')}>
-                      <Brain className="mr-2 h-4 w-4" />
-                      Memory
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => router.push('/settings')}>
-                      <Settings className="mr-2 h-4 w-4" />
-                      Settings
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator className="bg-white/10" />
-                    <DropdownMenuItem onClick={handleSignOut}>
-                      <LogOut className="mr-2 h-4 w-4" />
-                      Sign Out
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
+      <aside
+        className={cn(
+          'fixed left-0 top-0 z-40 flex h-[100dvh] w-72 flex-col',
+          'border-r border-white/[0.06] bg-[#171717]',
+          'transition-transform duration-200',
+          isOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
+        )}
+      >
+            <div className="px-3 pb-2 pt-3">
+              <div className="px-2 py-1">
+                <Logo size="sm" showText />
               </div>
-              <Button onClick={onNewChat} className="w-full bg-violet-600/80 hover:bg-violet-600 text-white rounded-xl" size="lg">
-                <PlusCircle className="mr-2 h-4 w-4" />
+              <Button onClick={onNewChat} className="mt-3 h-10 w-full justify-start rounded-lg border border-white/[0.08] bg-transparent px-3 text-gray-200 hover:bg-white/[0.06] hover:text-white">
+                <Plus className="mr-2 h-4 w-4 text-violet-400" />
                 New Chat
               </Button>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-4 space-y-2 scrollbar-thin">
+            <div className="px-4 pb-1 pt-3 text-[11px] font-medium uppercase tracking-[0.12em] text-gray-500">
+              Recent
+            </div>
+            <div className="flex-1 space-y-0.5 overflow-y-auto px-2 pb-3 scrollbar-thin">
               {conversations.length === 0 ? (
                 <div className="text-center py-8 text-gray-400 text-sm">
                   <MessageSquare className="h-8 w-8 mx-auto mb-2 opacity-50" />
@@ -173,31 +118,29 @@ export function Sidebar({
                 </div>
               ) : (
                 conversations.map((conv) => (
-                  <motion.button
+                  <button
                     key={conv.id}
                     onClick={() => onSelectConversation(conv.id)}
                     className={cn(
-                      'w-full text-left p-3 rounded-xl transition-all group relative',
+                      'group relative w-full rounded-lg px-2.5 py-2 text-left transition-colors',
                       currentConversationId === conv.id
-                        ? 'bg-white/[0.05] border border-violet-500/20'
-                        : 'hover:bg-white/[0.03] border border-transparent hover:border-white/[0.06]'
+                        ? 'bg-white/[0.08]'
+                        : 'hover:bg-white/[0.05]'
                     )}
-                    whileHover={{ scale: 1.01 }}
-                    whileTap={{ scale: 0.99 }}
                   >
-                    <div className="flex items-start gap-3 pr-8">
+                    <div className="flex items-start gap-2.5 pr-7">
                       <MessageSquare className={cn(
-                        'h-4 w-4 mt-1 shrink-0 transition-colors',
+                        'mt-0.5 h-3.5 w-3.5 shrink-0 transition-colors',
                         currentConversationId === conv.id ? 'text-violet-400' : 'text-gray-500'
                       )} />
                       <div className="flex-1 min-w-0">
                         <p className={cn(
-                          'text-sm font-medium truncate leading-snug',
+                          'truncate text-sm leading-snug',
                           currentConversationId === conv.id ? 'text-white' : 'text-gray-200'
                         )}>
                           {conv.title}
                         </p>
-                        <p className="text-xs text-gray-500 mt-1">
+                        <p className="mt-0.5 text-[11px] text-gray-500">
                           {new Date(conv.created_at).toLocaleDateString(undefined, {
                             month: 'short',
                             day: 'numeric',
@@ -220,13 +163,39 @@ export function Sidebar({
                     >
                       <Trash2 className="h-3 w-3 text-red-400" />
                     </Button>
-                  </motion.button>
+                  </button>
                 ))
               )}
             </div>
-          </motion.aside>
-        )}
-      </AnimatePresence>
+
+            <div className="border-t border-white/[0.06] p-2">
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button className="flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left transition-colors hover:bg-white/[0.06]">
+                    <Avatar className="h-8 w-8">
+                      <AvatarImage src={userProfile.avatar_url || undefined} />
+                      <AvatarFallback className="bg-violet-600/80 text-xs text-white">
+                        {initials}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium text-gray-200">{userProfile.display_name || 'User'}</p>
+                      <p className="truncate text-[11px] text-gray-500">{formatCredits(userProfile.credits)} credits</p>
+                    </div>
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" side="top" className="w-64 border-white/[0.08] bg-[#202020]">
+                  <DropdownMenuItem onClick={() => router.push('/dashboard')}><User className="mr-2 h-4 w-4" />Dashboard</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => router.push('/billing')}><CreditCard className="mr-2 h-4 w-4" />Credits</DropdownMenuItem>
+                  {userProfile.role === 'admin' && <DropdownMenuItem onClick={() => router.push('/admin')}><Shield className="mr-2 h-4 w-4" />Admin Panel</DropdownMenuItem>}
+                  <DropdownMenuItem onClick={() => router.push('/settings/memory')}><Brain className="mr-2 h-4 w-4" />Memory</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => router.push('/settings')}><Settings className="mr-2 h-4 w-4" />Settings</DropdownMenuItem>
+                  <DropdownMenuSeparator className="bg-white/10" />
+                  <DropdownMenuItem onClick={handleSignOut}><LogOut className="mr-2 h-4 w-4" />Sign Out</DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+      </aside>
 
       {isOpen && (
         <div

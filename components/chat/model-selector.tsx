@@ -51,7 +51,7 @@ export function ModelSelector({ selectedModel, onSelectModel, disabled = false, 
   }
 
   return (
-    <div className="flex flex-wrap gap-2 md:gap-3 py-1 md:p-0">
+    <div className="flex flex-wrap items-center gap-1.5">
       {disabled && (
         <div className="flex items-center gap-2 text-xs text-gray-400 px-2 py-1">
           <Lock className="w-3 h-3" />
@@ -65,23 +65,13 @@ export function ModelSelector({ selectedModel, onSelectModel, disabled = false, 
           disabled={disabled}
           title={disabled ? (disabledReason || 'Start a new chat to switch models') : undefined}
           className={cn(
-            'relative px-2.5 md:px-4 py-1.5 md:py-2 rounded-full text-xs md:text-sm font-medium transition-all duration-200',
-            'border flex items-center gap-1.5 md:gap-2 h-9 md:h-auto',
+            'relative flex h-9 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-medium transition-colors md:px-3 md:text-sm',
             selectedModel === model.id
-              ? 'border-white/[0.12] bg-white/[0.06]'
-              : 'border-white/[0.06] hover:border-white/[0.12] bg-white/[0.02]',
+              ? 'border-white/[0.12] bg-white/[0.08]'
+              : 'border-transparent bg-transparent hover:bg-white/[0.05]',
             disabled && 'opacity-60 cursor-not-allowed'
           )}
-          style={{
-            background:
-              selectedModel === model.id
-                ? `linear-gradient(135deg, ${model.color}15, ${model.color}08)`
-                : undefined,
-            boxShadow:
-              selectedModel === model.id ? `0 0 10px ${model.color}20` : undefined,
-          }}
-          whileHover={disabled ? {} : { scale: 1.05 }}
-          whileTap={disabled ? {} : { scale: 0.95 }}
+          whileTap={disabled ? {} : { scale: 0.98 }}
         >
           {getModelIcon(model)}
           <span
@@ -93,17 +83,6 @@ export function ModelSelector({ selectedModel, onSelectModel, disabled = false, 
             <span className="md:hidden">{getShortName(model.name)}</span>
             <span className="hidden md:inline">{model.name}</span>
           </span>
-          {selectedModel === model.id && !disabled && (
-            <motion.div
-              className="absolute inset-0 rounded-full"
-              style={{
-                border: `1px solid ${model.color}50`,
-                boxShadow: `0 0 8px ${model.color}20`,
-              }}
-              layoutId="model-indicator"
-              transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-            />
-          )}
           {selectedModel === model.id && disabled && (
             <Lock className="w-3 h-3 ml-1" />
           )}

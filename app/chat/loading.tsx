@@ -1,7 +1,7 @@
 export default function ChatLoading() {
   return (
-    <div className="h-screen bg-[#08070d] flex overflow-hidden">
-      <div className="fixed left-0 top-0 h-screen w-80 bg-[#0a0a10]/95 border-r border-white/[0.06] p-4">
+    <div className="flex h-screen overflow-hidden bg-[#212121]">
+      <div className="fixed left-0 top-0 hidden h-screen w-72 border-r border-white/[0.06] bg-[#171717] p-4 md:block">
         <div className="h-10 bg-white/[0.04] rounded-lg animate-pulse mb-4" />
         <div className="space-y-2">
           {[1, 2, 3, 4, 5].map((i) => (
@@ -10,7 +10,7 @@ export default function ChatLoading() {
         </div>
       </div>
 
-      <main className="flex-1 flex flex-col ml-80">
+      <main className="ml-0 flex flex-1 flex-col md:ml-72">
         <div className="border-b border-white/[0.06] p-4">
           <div className="h-10 w-48 bg-white/[0.04] rounded-lg animate-pulse" />
         </div>

@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState, useRef, KeyboardEvent } from 'react'
-import { Send, Loader2, Image as ImageIcon, X, Paperclip, FileText, FileSpreadsheet, FileJson, File, Upload, CheckCircle2, AlertCircle } from 'lucide-react'
+import { Send, Loader2, X, Paperclip, FileText, FileSpreadsheet, FileJson, File, Upload, CheckCircle2, AlertCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { ChatAttachment, ReasoningMode } from '@/types/models'
@@ -19,14 +19,6 @@ interface ChatInputProps {
 }
 
 const IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp']
-const DOCUMENT_TYPES = [
-  'application/pdf',
-  'text/plain',
-  'text/markdown',
-  'text/csv',
-  'application/json',
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-]
 const ALLOWED_EXTENSIONS = ['.pdf', '.txt', '.md', '.csv', '.json', '.docx', '.png', '.jpg', '.jpeg', '.webp', '.mp4', '.webm', '.mp3', '.wav', '.zip', '.tar', '.gz', '.xlsx', '.pptx']
 const MAX_FILES = 30
 
@@ -410,7 +402,7 @@ export function ChatInput({ onSend, disabled, isLoading, conversationId, reasoni
 
   return (
     <div
-      className="sticky bottom-0 border-t border-white/[0.06] bg-[#08070d]/90 backdrop-blur-sm md:backdrop-blur-xl p-3 md:p-4"
+      className="sticky bottom-0 bg-gradient-to-t from-[#212121] via-[#212121] to-[#212121]/80 px-3 pb-3 pt-2 md:px-4 md:pb-4"
       onDragEnter={handleDragEnter}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
@@ -430,14 +422,14 @@ export function ChatInput({ onSend, disabled, isLoading, conversationId, reasoni
           </div>
         </div>
       )}
-      <div className="max-w-4xl mx-auto">
-        <div className="bg-white/[0.03] border border-white/[0.08] rounded-2xl md:rounded-3xl p-2.5 md:p-3 transition-colors hover:border-white/[0.12]">
+      <div className="mx-auto max-w-3xl">
+        <div className="rounded-[26px] border border-white/[0.10] bg-[#2f2f2f] p-2.5 transition-colors focus-within:border-white/[0.18]">
           {attachments.length > 0 && (
             <>
             <div className="text-xs text-gray-400 mb-2 px-1">
               {attachments.length} / {MAX_FILES} attachments
             </div>
-            <div className="flex gap-2 mb-2 md:mb-3 pb-2 md:pb-3 border-b border-white/10 overflow-x-auto">
+            <div className="mb-2 flex gap-2 overflow-x-auto border-b border-white/[0.08] pb-2">
               {attachments.map((attachment, index) => (
                 <div key={index} className="relative group shrink-0">
                   {attachment.type === 'image' && attachment.dataUrl ? (
@@ -461,7 +453,7 @@ export function ChatInput({ onSend, disabled, isLoading, conversationId, reasoni
                       )}
                     </div>
                   ) : (
-                    <div className="h-20 w-48 md:h-24 md:w-56 rounded-xl border-2 border-white/15 bg-white/5 backdrop-blur-sm p-2.5 md:p-3 flex flex-col justify-between">
+                    <div className="flex h-16 w-44 flex-col justify-between rounded-lg border border-white/[0.10] bg-[#252525] p-2.5 md:w-52">
                       <div className="flex items-start gap-2">
                         {attachment.uploadStatus === 'uploading' || attachment.uploadStatus === 'processing' || attachment.uploadStatus === 'pending' ? (
                           <Upload className="h-5 w-5 text-violet-400 animate-pulse shrink-0" />
@@ -510,7 +502,7 @@ export function ChatInput({ onSend, disabled, isLoading, conversationId, reasoni
                   )}
                   <button
                     onClick={() => removeAttachment(index)}
-                    className="absolute -top-2 -right-2 h-6 w-6 bg-red-500 hover:bg-red-600 rounded-full flex items-center justify-center shadow-lg transition-all"
+                    className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full border border-white/[0.12] bg-[#3a3a3a] transition-colors hover:bg-red-500"
                     title="Remove file"
                   >
                     <X className="h-3.5 w-3.5 text-white" />
@@ -535,7 +527,7 @@ export function ChatInput({ onSend, disabled, isLoading, conversationId, reasoni
               variant="ghost"
               onClick={() => fileInputRef.current?.click()}
               disabled={disabled || isLoading}
-              className="h-10 w-10 md:h-11 md:w-11 rounded-xl shrink-0 hover:bg-white/10 text-gray-400 hover:text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              className="h-9 w-9 shrink-0 rounded-full text-gray-400 transition-colors hover:bg-white/[0.08] hover:text-white disabled:cursor-not-allowed disabled:opacity-50 md:h-10 md:w-10"
               title="Attach files"
             >
               <Paperclip className="h-4 w-4 md:h-5 md:w-5" />
@@ -550,7 +542,7 @@ export function ChatInput({ onSend, disabled, isLoading, conversationId, reasoni
               disabled={isComposerUnavailable}
               className={cn(
                 'flex-1 bg-transparent border-none outline-none resize-none text-white placeholder:text-gray-400 text-sm md:text-base',
-                'min-h-[40px] md:min-h-[44px] max-h-[160px] md:max-h-[200px] py-2.5 md:py-3 px-1 md:px-2',
+                'min-h-[38px] max-h-[160px] px-1 py-2.5 md:max-h-[200px] md:px-2',
                 'scrollbar-thin',
                 'disabled:opacity-50 disabled:cursor-not-allowed'
               )}
@@ -562,7 +554,7 @@ export function ChatInput({ onSend, disabled, isLoading, conversationId, reasoni
               onMouseDown={(event) => event.preventDefault()}
               disabled={(!message.trim() && attachments.length === 0) || isComposerUnavailable || hasActiveUpload}
               size="icon"
-              className="bg-violet-600 hover:bg-violet-500 h-9 w-9 md:h-10 md:w-10 rounded-xl shrink-0 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              className="h-9 w-9 shrink-0 rounded-full bg-violet-600 transition-colors hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-40 md:h-10 md:w-10"
             >
               {isLoading ? (
                 <Loader2 className="h-4 w-4 md:h-5 md:w-5 animate-spin" />
@@ -574,7 +566,7 @@ export function ChatInput({ onSend, disabled, isLoading, conversationId, reasoni
             </Button>
           </div>
           {reasoningMode && onReasoningModeChange && (
-            <div className="flex items-center justify-between mt-2 pt-2 border-t border-white/[0.05]">
+            <div className="mt-2 flex items-center justify-between border-t border-white/[0.06] pt-2">
               <ReasoningSelector
                 selectedMode={reasoningMode}
                 onSelectMode={onReasoningModeChange}

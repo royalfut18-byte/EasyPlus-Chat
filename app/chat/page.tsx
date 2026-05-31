@@ -1955,7 +1955,7 @@ Default to artifact:html with a complete single-file HTML document. Do NOT outpu
 
   if (!userProfile) {
     return (
-      <div className="min-h-screen bg-[#08070d] flex items-center justify-center">
+      <div className="flex min-h-screen items-center justify-center bg-[#212121]">
         <div className="animate-spin h-8 w-8 border-2 border-violet-500/60 border-t-transparent rounded-full" />
       </div>
     )
@@ -1976,7 +1976,7 @@ Default to artifact:html with a complete single-file HTML document. Do NOT outpu
   const modelFamily = currentModelData?.name || ''
 
   return (
-    <div className="h-[100dvh] md:h-screen bg-[#08070d] flex overflow-hidden">
+    <div className="flex h-[100dvh] overflow-hidden bg-[#212121] md:h-screen">
       <Sidebar
         conversations={conversations}
         currentConversationId={currentConversation?.id}
@@ -1988,11 +1988,11 @@ Default to artifact:html with a complete single-file HTML document. Do NOT outpu
       />
 
       {/* Main content + artifact panel flex container */}
-      <div className="flex min-w-0 flex-1 overflow-hidden ml-0 md:ml-80">
+      <div className="ml-0 flex min-w-0 flex-1 overflow-hidden md:ml-72">
         {/* Chat section */}
         <main className="flex min-w-0 flex-1 flex-col overflow-hidden h-full">
-        <div className="border-b border-white/[0.06] bg-[#08070d]/90 backdrop-blur-sm md:backdrop-blur-xl">
-          <div className="flex items-center gap-2 overflow-x-auto px-3 py-3 md:px-4">
+        <div className="sticky top-0 z-20 border-b border-white/[0.06] bg-[#212121]/95 backdrop-blur-md">
+          <div className="flex min-h-14 items-center gap-2 overflow-x-auto px-3 py-2 md:px-4">
             <div className="flex-1 min-w-0">
               <ModelSelector
                 selectedModel={selectedModel}
@@ -2008,7 +2008,7 @@ Default to artifact:html with a complete single-file HTML document. Do NOT outpu
                   animate={{ opacity: 1, scale: 1 }}
                   exit={{ opacity: 0, scale: 0.9 }}
                   onClick={() => handleOpenArtifact()}
-                  className="px-2.5 md:px-3 py-1.5 md:py-2 rounded-full text-xs md:text-sm font-medium transition-all flex items-center gap-1.5 bg-white/[0.03] border border-white/[0.08] hover:border-white/[0.15] text-gray-300 hover:text-white"
+                  className="flex h-9 items-center gap-1.5 rounded-lg border border-white/[0.08] bg-transparent px-2.5 text-xs font-medium text-gray-300 transition-colors hover:bg-white/[0.06] hover:text-white md:px-3 md:text-sm"
                   title="Reopen latest artifact"
                 >
                   <PanelRightOpen className="h-4 w-4" />
@@ -2021,10 +2021,10 @@ Default to artifact:html with a complete single-file HTML document. Do NOT outpu
                 disabled={isRequestInProgress}
                 title={isRequestInProgress ? 'Wait for the current response to finish' : 'Toggle Web Search'}
                 className={cn(
-                  'px-2.5 md:px-3 py-1.5 md:py-2 rounded-full text-xs md:text-sm font-medium transition-all flex items-center gap-1.5',
+                  'flex h-9 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-medium transition-colors md:px-3 md:text-sm',
                   webSearchEnabled
-                    ? 'bg-violet-500/10 text-violet-300 border border-violet-500/30'
-                    : 'bg-white/[0.03] border border-white/[0.08] hover:border-white/[0.15] text-gray-400',
+                    ? 'border-violet-400/25 bg-violet-500/10 text-violet-300'
+                    : 'border-white/[0.08] bg-transparent text-gray-400 hover:bg-white/[0.06] hover:text-gray-200',
                   isRequestInProgress && 'opacity-50 cursor-not-allowed'
                 )}
               >
@@ -2037,10 +2037,10 @@ Default to artifact:html with a complete single-file HTML document. Do NOT outpu
                 disabled={isRequestInProgress}
                 title={isRequestInProgress ? 'Wait for the current response to finish' : 'Toggle Artifact Mode'}
                 className={cn(
-                  'px-2.5 md:px-3 py-1.5 md:py-2 rounded-full text-xs md:text-sm font-medium transition-all flex items-center gap-1.5',
+                  'flex h-9 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-medium transition-colors md:px-3 md:text-sm',
                   artifactMode
-                    ? 'bg-violet-500/10 text-violet-300 border border-violet-500/30'
-                    : 'bg-white/[0.03] border border-white/[0.08] hover:border-white/[0.15] text-gray-400',
+                    ? 'border-violet-400/25 bg-violet-500/10 text-violet-300'
+                    : 'border-white/[0.08] bg-transparent text-gray-400 hover:bg-white/[0.06] hover:text-gray-200',
                   isRequestInProgress && 'opacity-50 cursor-not-allowed'
                 )}
               >
@@ -2051,8 +2051,8 @@ Default to artifact:html with a complete single-file HTML document. Do NOT outpu
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-3 md:px-4 lg:px-6 py-4 md:py-6 lg:py-8 scrollbar-thin">
-          <div className="max-w-4xl mx-auto">
+        <div className="flex-1 overflow-y-auto px-3 py-4 scrollbar-thin md:px-4 md:py-6 lg:px-6">
+          <div className="mx-auto max-w-3xl">
             <AnimatePresence mode="popLayout">
               {displayedMessages.length === 0 && !isLoadingConversation ? (
                 <motion.div
@@ -2061,7 +2061,7 @@ Default to artifact:html with a complete single-file HTML document. Do NOT outpu
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -10 }}
                   transition={{ duration: 0.4 }}
-                  className="flex flex-col items-center justify-center h-full min-h-[65vh] text-center px-4 gap-7 md:gap-8 max-w-4xl mx-auto relative"
+                  className="relative mx-auto flex min-h-[72vh] max-w-3xl flex-col items-center justify-center gap-6 px-2 text-center md:gap-7 md:px-4"
                   onDragEnter={handleHeroDragEnter}
                   onDragOver={handleHeroDragOver}
                   onDragLeave={handleHeroDragLeave}
@@ -2081,17 +2081,12 @@ Default to artifact:html with a complete single-file HTML document. Do NOT outpu
                       </div>
                     </div>
                   )}
-                  {/* Subtle background glow */}
-                  <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
-                    <div className="w-[600px] h-[400px] bg-violet-600/[0.04] rounded-full blur-[120px]" />
-                  </div>
-
                   {/* Badge */}
                   <motion.div
                     initial={{ opacity: 0, y: 5 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: 0.1 }}
-                    className="relative px-4 py-1.5 rounded-full bg-white/[0.03] border border-white/[0.08] text-xs text-gray-400 font-medium"
+                    className="relative text-xs font-medium text-gray-500"
                   >
                     Private AI Workspace
                   </motion.div>
@@ -2101,12 +2096,12 @@ Default to artifact:html with a complete single-file HTML document. Do NOT outpu
                     initial={{ opacity: 0, y: 8 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: 0.15 }}
-                    className="relative space-y-4"
+                    className="relative space-y-3"
                   >
-                    <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-semibold text-white/95 tracking-tight leading-[1.1]">
+                    <h1 className="text-3xl font-semibold tracking-tight text-white/95 sm:text-4xl md:text-5xl">
                       Ask anything. Build anything.
                     </h1>
-                    <p className="text-sm md:text-base lg:text-lg text-gray-500 max-w-xl mx-auto leading-relaxed">
+                    <p className="mx-auto max-w-xl text-sm leading-relaxed text-gray-400 md:text-base">
                       Chat with {modelFamily}, use web search, upload files, and create interactive artifacts from one focused workspace.
                     </p>
                   </motion.div>
@@ -2118,8 +2113,7 @@ Default to artifact:html with a complete single-file HTML document. Do NOT outpu
                     transition={{ delay: 0.25 }}
                     className="relative w-full max-w-3xl"
                   >
-                    <div className="absolute -inset-1.5 bg-violet-500/[0.05] rounded-[28px] blur-xl" />
-                    <div className="relative bg-white/[0.03] border border-white/[0.08] rounded-2xl md:rounded-3xl px-4 md:px-5 py-3 md:py-4 focus-within:border-white/[0.16] transition-colors">
+                    <div className="relative rounded-[26px] border border-white/[0.10] bg-[#2f2f2f] px-3 py-3 transition-colors focus-within:border-white/[0.18] md:px-4">
                       <input
                         ref={heroFileInputRef}
                         type="file"
@@ -2231,7 +2225,7 @@ Default to artifact:html with a complete single-file HTML document. Do NOT outpu
                               }
                             }
                           }}
-                          placeholder="What do you want to work on today?"
+                          placeholder="Ask anything..."
                           disabled={isRequestInProgress}
                           className="flex-1 bg-transparent border-none outline-none resize-none text-white placeholder:text-gray-600 text-sm md:text-base min-h-[28px] max-h-[160px] py-1 scrollbar-thin disabled:opacity-50"
                           rows={1}
@@ -2251,7 +2245,7 @@ Default to artifact:html with a complete single-file HTML document. Do NOT outpu
                             }
                           }}
                           disabled={(!heroInput.trim() && heroAttachments.length === 0) || isRequestInProgress || heroAttachments.some(a => a.uploadStatus === 'pending' || a.uploadStatus === 'uploading' || a.uploadStatus === 'processing' || a.uploadStatus === 'compressing')}
-                          className="bg-violet-600 hover:bg-violet-500 h-8 w-8 md:h-9 md:w-9 rounded-xl shrink-0 flex items-center justify-center transition-all disabled:opacity-30 disabled:cursor-not-allowed mb-0.5"
+                          className="mb-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-violet-600 transition-colors hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-30 md:h-9 md:w-9"
                         >
                           {isRequestInProgress || heroAttachments.some(a => a.uploadStatus === 'pending' || a.uploadStatus === 'uploading' || a.uploadStatus === 'processing') ? (
                             <Loader2 className="h-3.5 w-3.5 md:h-4 md:w-4 text-white animate-spin" />
@@ -2289,7 +2283,7 @@ Default to artifact:html with a complete single-file HTML document. Do NOT outpu
                         key={i}
                         onClick={() => handleSendMessage(text)}
                         disabled={isRequestInProgress}
-                        className="px-4 py-2 md:py-2.5 rounded-full text-xs md:text-sm text-gray-400 bg-white/[0.02] border border-white/[0.07] hover:border-white/[0.15] hover:text-gray-200 hover:bg-white/[0.04] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="rounded-full border border-white/[0.08] bg-transparent px-3.5 py-2 text-xs text-gray-400 transition-colors hover:border-white/[0.16] hover:bg-white/[0.05] hover:text-gray-200 disabled:cursor-not-allowed disabled:opacity-50 md:text-sm"
                       >
                         {text}
                       </button>
