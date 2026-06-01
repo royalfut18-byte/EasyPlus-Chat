@@ -27,6 +27,7 @@ interface AdminUser {
   user_prompt_count: number
   total_message_count: number
   conversation_count: number
+  last_active_at: string | null
 }
 
 interface AdminResponse {
@@ -117,6 +118,7 @@ export function AdminUserTable() {
       <td className="px-3 py-3 text-gray-400">{user.total_message_count}</td>
       <td className="px-3 py-3 text-gray-400">{user.conversation_count}</td>
       <td className="px-3 py-3"><Status value={user.account_status} /></td>
+      <td className="px-3 py-3 text-gray-400" title={user.last_active_at ? formatDate(user.last_active_at) : undefined}>{formatLastActive(user.last_active_at)}</td>
       <td className="px-3 py-3 text-gray-400">{user.created_at ? formatDate(user.created_at) : 'Unknown'}</td>
       <td className="px-3 py-3 text-gray-500">{user.account_expires_at ? formatDate(user.account_expires_at) : 'No expiry'}</td>
       <td className="px-3 py-3 flex items-center gap-2">
@@ -143,21 +145,21 @@ export function AdminUserTable() {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-gray-500">Visible accounts: <span className="text-gray-200">{data.users.length}</span>. Chats are conversations. User prompts are messages sent by the user.</p>
+        <p className="text-sm text-gray-500">Visible accounts: <span className="text-gray-200">{data.users.length}</span>. Chats are conversations. User prompts and last active come from user-sent messages.</p>
         <CreateUserDialog actorRole={data.actorRole} subAdmins={data.subAdmins} onUserCreated={loadUsers} />
       </div>
 
       <div className="overflow-x-auto rounded-xl border border-white/[0.07]">
-        <table className="w-full min-w-[980px]">
+        <table className="w-full min-w-[1080px]">
           <thead className="bg-white/[0.025] text-left text-xs uppercase tracking-wide text-gray-500">
-            <tr>{['Name', 'Email', 'Role', 'Credits', 'User prompts', 'Total messages', 'Chats', 'Status', 'Created', 'Expiry', 'Actions'].map((label) => <th key={label} className="px-3 py-3 font-medium">{label}</th>)}</tr>
+            <tr>{['Name', 'Email', 'Role', 'Credits', 'User prompts', 'Total messages', 'Chats', 'Status', 'Last active', 'Created', 'Expiry', 'Actions'].map((label) => <th key={label} className="px-3 py-3 font-medium">{label}</th>)}</tr>
           </thead>
           <tbody>
             {data.actorRole === 'admin' && data.users.filter((user) => user.role !== 'user').map(renderUser)}
             {data.actorRole === 'admin' ? groups.map((group) => (
               <Fragment key={group.id}>
                 <tr className="border-b border-white/[0.05] bg-white/[0.015]">
-                  <td colSpan={11}>
+                  <td colSpan={12}>
                     <button className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-gray-300" onClick={() => setExpandedGroups({ ...expandedGroups, [group.id]: !expandedGroups[group.id] })}>
                       {expandedGroups[group.id] ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                       {group.label} <span className="text-xs text-gray-600">({group.users.length})</span>
@@ -194,6 +196,34 @@ export function AdminUserTable() {
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return <div className="space-y-2"><Label>{label}</Label>{children}</div>
+}
+
+function formatLastActive(value: string | null) {
+  if (!value) return 'Never'
+  const date = new Date(value)
+  const diffMs = Date.now() - date.getTime()
+  if (!Number.isFinite(diffMs) || diffMs < 0) return formatDate(date)
+
+  const minute = 60 * 1000
+  const hour = 60 * minute
+  const day = 24 * hour
+
+  if (diffMs < minute) return 'Just now'
+  if (diffMs < hour) {
+    const minutes = Math.floor(diffMs / minute)
+    return `${minutes} min ago`
+  }
+  if (diffMs < day) {
+    const hours = Math.floor(diffMs / hour)
+    return `${hours} ${hours === 1 ? 'hour' : 'hours'} ago`
+  }
+  if (diffMs < 2 * day) return 'Yesterday'
+
+  return new Intl.DateTimeFormat('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  }).format(date)
 }
 
 function Status({ value }: { value: AdminUser['account_status'] }) {

@@ -17,6 +17,7 @@ export interface AdminUserUsage {
   chatCount: number
   userPromptCount: number
   totalMessageCount: number
+  lastActiveAt: string | null
 }
 
 export interface AdminStatisticsData {
@@ -82,7 +83,7 @@ export async function getAdminStatisticsData(
   const usageByUserId = new Map<string, AdminUserUsage>()
 
   for (const userId of userIds) {
-    usageByUserId.set(userId, { chatCount: 0, userPromptCount: 0, totalMessageCount: 0 })
+    usageByUserId.set(userId, { chatCount: 0, userPromptCount: 0, totalMessageCount: 0, lastActiveAt: null })
   }
 
   let conversations: Array<{ id: string; user_id: string }> = []
@@ -97,10 +98,10 @@ export async function getAdminStatisticsData(
     if (usage) usage.chatCount += 1
   }
 
-  let messages: Array<{ conversation_id: string; role: string }> = []
+  let messages: Array<{ conversation_id: string; role: string; created_at: string }> = []
   const conversationIds = Array.from(conversationOwner.keys())
   if (conversationIds.length > 0) {
-    messages = await selectAllRowsForValues(access, 'messages', 'id, conversation_id, role', 'conversation_id', conversationIds)
+    messages = await selectAllRowsForValues(access, 'messages', 'id, conversation_id, role, created_at', 'conversation_id', conversationIds)
   }
 
   for (const message of messages) {
@@ -108,7 +109,12 @@ export async function getAdminStatisticsData(
     const usage = ownerId ? usageByUserId.get(ownerId) : null
     if (!usage) continue
     usage.totalMessageCount += 1
-    if (message.role === 'user') usage.userPromptCount += 1
+    if (message.role === 'user') {
+      usage.userPromptCount += 1
+      if (!usage.lastActiveAt || new Date(message.created_at).getTime() > new Date(usage.lastActiveAt).getTime()) {
+        usage.lastActiveAt = message.created_at
+      }
+    }
   }
 
   const stats = {

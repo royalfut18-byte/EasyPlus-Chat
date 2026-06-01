@@ -111,6 +111,7 @@ export async function GET() {
         user_prompt_count: usageByUserId.get(profile.user_id)?.userPromptCount || 0,
         total_message_count: usageByUserId.get(profile.user_id)?.totalMessageCount || 0,
         conversation_count: usageByUserId.get(profile.user_id)?.chatCount || 0,
+        last_active_at: usageByUserId.get(profile.user_id)?.lastActiveAt || null,
       }
     })
 
