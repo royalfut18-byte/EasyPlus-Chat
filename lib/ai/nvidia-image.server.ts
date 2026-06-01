@@ -5,6 +5,18 @@ import { readFirstServerEnv, readServerEnv } from '@/lib/server-env'
 const NVIDIA_BASE_URL = 'https://integrate.api.nvidia.com/v1'
 const NVIDIA_QWEN_IMAGE_MODEL = 'qwen-image-2512'
 const REQUEST_TIMEOUT_MS = 280_000
+const AVAILABILITY_CACHE_MS = 5 * 60_000
+
+export interface NvidiaImageProviderDiagnostics {
+  configured: boolean
+  baseUrlConfigured: boolean
+  probeOk: boolean
+  status: number | null
+  endpointPath: '/images/generations'
+  safeReason: string
+}
+
+let availabilityCache: { checkedAt: number; diagnostics: NvidiaImageProviderDiagnostics } | null = null
 
 const IMAGE_SIZES: Record<string, string> = {
   '1:1': '1328x1328',
@@ -41,6 +53,75 @@ function getSafeProviderError(status?: number): Error {
 
 export function isNvidiaImageAvailable(): boolean {
   return Boolean(getProviderConfig().apiKey)
+}
+
+export async function getNvidiaImageDiagnostics(force = false): Promise<NvidiaImageProviderDiagnostics> {
+  const now = Date.now()
+  if (!force && availabilityCache && now - availabilityCache.checkedAt < AVAILABILITY_CACHE_MS) {
+    return availabilityCache.diagnostics
+  }
+
+  const { apiKey, baseUrl, baseUrlConfigured } = getProviderConfig()
+  const endpointPath = '/images/generations' as const
+  if (!apiKey) {
+    const diagnostics = {
+      configured: false,
+      baseUrlConfigured,
+      probeOk: false,
+      status: null,
+      endpointPath,
+      safeReason: 'Missing API key configuration',
+    }
+    availabilityCache = { checkedAt: now, diagnostics }
+    return diagnostics
+  }
+
+  try {
+    const response = await fetch(`${baseUrl}/health/ready`, {
+      headers: { Authorization: `Bearer ${apiKey}` },
+      signal: AbortSignal.timeout(10_000),
+    })
+    const probeOk = response.ok
+    const diagnostics = {
+      configured: true,
+      baseUrlConfigured,
+      probeOk,
+      status: response.status,
+      endpointPath,
+      safeReason: probeOk
+        ? 'Available'
+        : response.status === 404
+          ? 'Image provider endpoint not found'
+          : response.status === 401 || response.status === 403
+            ? 'Invalid or unsupported endpoint/key'
+            : 'Image provider health check failed',
+    }
+    console.info('[NVIDIA Image] Availability probe completed:', {
+      status: response.status,
+      probeOk,
+      baseUrlConfigured,
+      endpointPath,
+    })
+    availabilityCache = { checkedAt: now, diagnostics }
+  } catch (error: any) {
+    const diagnostics = {
+      configured: true,
+      baseUrlConfigured,
+      probeOk: false,
+      status: null,
+      endpointPath,
+      safeReason: error?.name === 'TimeoutError' ? 'Image provider probe timed out' : 'Image provider is unreachable',
+    }
+    console.error('[NVIDIA Image] Availability probe failed:', {
+      message: error.message,
+      timeoutHit: error?.name === 'TimeoutError',
+      baseUrlConfigured,
+      endpointPath,
+    })
+    availabilityCache = { checkedAt: now, diagnostics }
+  }
+
+  return availabilityCache.diagnostics
 }
 
 export interface ImageGenerationRequest {

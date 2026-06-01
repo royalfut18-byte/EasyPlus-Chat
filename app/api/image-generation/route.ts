@@ -2,7 +2,7 @@ import { randomUUID } from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { getAccountEntitlement, getEntitlementBlockResponse } from '@/lib/account-entitlements.server'
-import { generateImage, isNvidiaImageAvailable } from '@/lib/ai/nvidia-image.server'
+import { generateImage, getNvidiaImageDiagnostics, isNvidiaImageAvailable } from '@/lib/ai/nvidia-image.server'
 import { getInternalModel } from '@/lib/ai/model-routing.server'
 import { getR2ConfigStatus, uploadObjectToR2 } from '@/lib/storage/r2'
 
@@ -56,6 +56,11 @@ export async function POST(request: NextRequest) {
       console.error('[Image Generation API] Image provider is not configured')
       return NextResponse.json({ error: 'Image Generation is temporarily unavailable.' }, { status: 503 })
     }
+    const imageDiagnostics = await getNvidiaImageDiagnostics()
+    if (!imageDiagnostics.probeOk) {
+      console.error('[Image Generation API] Image provider probe failed', imageDiagnostics)
+      return NextResponse.json({ error: 'Image Generation is temporarily unavailable.' }, { status: 503 })
+    }
 
     if (projectId) {
       const { data: project } = await db
@@ -90,11 +95,13 @@ export async function POST(request: NextRequest) {
     const imageResponse = await generateImage({ prompt, aspectRatio })
     const filename = `easyplus-image-${new Date().toISOString().slice(0, 10)}-${randomUUID().slice(0, 8)}.png`
     const storageKey = `uploads/${user.id}/generated-images/${randomUUID()}/${filename}`
+    console.info('[Image Generation API] R2 save started')
     await uploadObjectToR2({
       key: storageKey,
       body: Buffer.from(imageResponse.imageData, 'base64'),
       mimeType: imageResponse.mimeType,
     })
+    console.info('[Image Generation API] R2 save succeeded')
 
     if (!entitlement!.unlimitedCredits) {
       await db

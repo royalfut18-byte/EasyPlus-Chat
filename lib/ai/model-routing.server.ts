@@ -3,6 +3,8 @@ import 'server-only'
 import { AI_MODELS, type AIModel } from '@/types/models'
 import { readFirstServerEnv } from '@/lib/server-env'
 import { isDeepSeekV4ProEndpointAvailable } from '@/lib/ai/nvidia.server'
+import { getNvidiaImageDiagnostics } from '@/lib/ai/nvidia-image.server'
+import { isR2Configured } from '@/lib/storage/r2'
 
 export type AIProvider = 'anthropic' | 'google' | 'nvidia' | 'image'
 
@@ -83,6 +85,7 @@ export async function getAvailablePublicModelIds(): Promise<string[]> {
   const availableModels = await Promise.all(INTERNAL_AI_MODELS.map(async (model) => {
     if (!isModelAvailable(model.id)) return false
     if (model.provider === 'nvidia') return isDeepSeekV4ProEndpointAvailable()
+    if (model.provider === 'image') return isR2Configured() && (await getNvidiaImageDiagnostics()).probeOk
     return true
   }))
 

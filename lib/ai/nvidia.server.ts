@@ -9,7 +9,15 @@ const REQUEST_TIMEOUT_MS = 120_000
 const FIRST_TOKEN_TIMEOUT_MS = 45_000
 const AVAILABILITY_CACHE_MS = 5 * 60_000
 
-let availabilityCache: { checkedAt: number; available: boolean } | null = null
+export interface DeepSeekProviderDiagnostics {
+  configured: boolean
+  baseUrlConfigured: boolean
+  probeOk: boolean
+  status: number | null
+  safeReason: string
+}
+
+let availabilityCache: { checkedAt: number; diagnostics: DeepSeekProviderDiagnostics } | null = null
 
 function getProviderConfig() {
   const key = readFirstServerEnv(['DEEPSEEK_V4_PRO_API_KEY', 'NVIDIA_API_KEY'])
@@ -40,10 +48,10 @@ function getSafeTimeoutError(): Error {
   return new Error('DeepSeek V4 Pro is taking too long to respond. Please try again.')
 }
 
-export async function isDeepSeekV4ProEndpointAvailable(): Promise<boolean> {
+export async function getDeepSeekV4ProDiagnostics(force = false): Promise<DeepSeekProviderDiagnostics> {
   const now = Date.now()
-  if (availabilityCache && now - availabilityCache.checkedAt < AVAILABILITY_CACHE_MS) {
-    return availabilityCache.available
+  if (!force && availabilityCache && now - availabilityCache.checkedAt < AVAILABILITY_CACHE_MS) {
+    return availabilityCache.diagnostics
   }
 
   const { apiKey, baseUrl, model, baseUrlConfigured } = getProviderConfig()
@@ -52,8 +60,15 @@ export async function isDeepSeekV4ProEndpointAvailable(): Promise<boolean> {
       checked: ['DEEPSEEK_V4_PRO_API_KEY', 'NVIDIA_API_KEY'],
       baseUrlConfigured,
     })
-    availabilityCache = { checkedAt: now, available: false }
-    return false
+    const diagnostics = {
+      configured: false,
+      baseUrlConfigured,
+      probeOk: false,
+      status: null,
+      safeReason: 'Missing API key configuration',
+    }
+    availabilityCache = { checkedAt: now, diagnostics }
+    return diagnostics
   }
 
   try {
@@ -85,8 +100,21 @@ export async function isDeepSeekV4ProEndpointAvailable(): Promise<boolean> {
         baseUrlConfigured,
         error: errorText.substring(0, 300),
       })
-      availabilityCache = { checkedAt: now, available: false }
-      return false
+      const diagnostics = {
+        configured: true,
+        baseUrlConfigured,
+        probeOk: false,
+        status: response.status,
+        safeReason: response.status === 401 || response.status === 403
+          ? 'Invalid or unsupported endpoint/key'
+          : response.status === 404
+            ? 'Model endpoint not found'
+            : response.status === 429
+              ? 'Provider is busy'
+              : 'Provider request failed',
+      }
+      availabilityCache = { checkedAt: now, diagnostics }
+      return diagnostics
     }
 
     const data = await response.json().catch(() => null)
@@ -97,16 +125,38 @@ export async function isDeepSeekV4ProEndpointAvailable(): Promise<boolean> {
       baseUrlConfigured,
       status: response.status,
     })
-    availabilityCache = { checkedAt: now, available }
+    availabilityCache = {
+      checkedAt: now,
+      diagnostics: {
+        configured: true,
+        baseUrlConfigured,
+        probeOk: available,
+        status: response.status,
+        safeReason: available ? 'Available' : 'Provider returned no content',
+      },
+    }
   } catch (error: any) {
     console.error('[DeepSeek Provider] Availability probe exception:', {
       message: error.message,
       timeoutHit: error?.name === 'TimeoutError',
     })
-    availabilityCache = { checkedAt: now, available: false }
+    availabilityCache = {
+      checkedAt: now,
+      diagnostics: {
+        configured: true,
+        baseUrlConfigured,
+        probeOk: false,
+        status: null,
+        safeReason: error?.name === 'TimeoutError' ? 'Provider probe timed out' : 'Provider is unreachable',
+      },
+    }
   }
 
-  return availabilityCache.available
+  return availabilityCache.diagnostics
+}
+
+export async function isDeepSeekV4ProEndpointAvailable(): Promise<boolean> {
+  return (await getDeepSeekV4ProDiagnostics()).probeOk
 }
 
 export async function streamDeepSeekV4ProResponse(
