@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Sparkles, Box, PanelRightOpen, Globe, Paperclip, Send, Loader2, X, FileText, FolderOpen, ArrowLeft } from 'lucide-react'
@@ -278,6 +278,7 @@ export default function ChatPage() {
   const [isLoading, setIsLoading] = useState(false)
   const [isLoadingConversation, setIsLoadingConversation] = useState(false)
   const [userProfile, setUserProfile] = useState<any>(null)
+  const [sessionLoadError, setSessionLoadError] = useState(false)
   const [isCreatingConversation, setIsCreatingConversation] = useState(false)
   const [artifactMode, setArtifactMode] = useState(false)
   const [webSearchEnabled, setWebSearchEnabled] = useState(false)
@@ -308,7 +309,7 @@ export default function ChatPage() {
   const searchParams = useSearchParams()
   const projectId = searchParams.get('projectId')
   const queryConversationId = searchParams.get('conversationId')
-  const supabase = createClient()
+  const supabase = useMemo(() => createClient(), [])
 
   const setPendingResponse = (conversationId: string, pending: PendingResponse) => {
     pendingResponsesRef.current = { ...pendingResponsesRef.current, [conversationId]: pending }
@@ -344,6 +345,12 @@ export default function ChatPage() {
   }, [])
 
   useEffect(() => {
+    if (userProfile || sessionLoadError) return
+    const timer = setTimeout(() => setSessionLoadError(true), 10000)
+    return () => clearTimeout(timer)
+  }, [sessionLoadError, userProfile])
+
+  useEffect(() => {
     loadConversations()
     loadActiveProject()
     handleNewChat()
@@ -368,14 +375,15 @@ export default function ChatPage() {
       } = await supabase.auth.getUser()
 
       if (userError || !user) {
-        router.push('/login')
+        window.location.assign('/login')
         return
       }
 
       const profile = await ensureProfile(supabase, user.id)
       setUserProfile(profile)
+      setSessionLoadError(false)
     } catch (error) {
-      setUserProfile({ credits: 0, unlimited_credits: false, role: 'user' })
+      setSessionLoadError(true)
     }
   }
 
@@ -2151,8 +2159,21 @@ Default to artifact:html with a complete single-file HTML document for visual, p
 
   if (!userProfile) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[#0f0f0f]">
-        <div className="animate-spin h-8 w-8 border-2 border-violet-500/60 border-t-transparent rounded-full" />
+      <div className="flex min-h-[100dvh] items-center justify-center bg-[#0f0f0f] p-4 text-center">
+        {sessionLoadError ? (
+          <div className="max-w-sm rounded-2xl border border-white/[0.08] bg-[#181818] p-6">
+            <p className="text-sm text-gray-200">Something went wrong loading your session. Tap to retry.</p>
+            <button
+              type="button"
+              onClick={() => window.location.reload()}
+              className="mt-4 rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-violet-500"
+            >
+              Retry
+            </button>
+          </div>
+        ) : (
+          <div className="h-8 w-8 animate-spin rounded-full border-2 border-violet-500/60 border-t-transparent" />
+        )}
       </div>
     )
   }
@@ -2211,7 +2232,7 @@ Default to artifact:html with a complete single-file HTML document for visual, p
         {/* Chat section */}
         <main className="flex min-w-0 flex-1 flex-col overflow-hidden h-full">
         <div className="sticky top-0 z-20 border-b border-white/[0.06] bg-[#0f0f0f]/95 backdrop-blur-md">
-          <div className="flex min-h-12 items-center gap-2 overflow-x-auto px-3 py-1.5 md:px-4">
+          <div className="flex min-h-12 items-center gap-2 overflow-x-auto pb-1.5 pl-14 pr-3 pt-[max(0.375rem,env(safe-area-inset-top))] md:px-4 md:py-1.5">
             <div className="flex-1 min-w-0">
               <ModelSelector
                 selectedModel={selectedModel}
@@ -2294,7 +2315,7 @@ Default to artifact:html with a complete single-file HTML document for visual, p
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -10 }}
                   transition={{ duration: 0.4 }}
-                  className="relative mx-auto flex min-h-[66vh] max-w-3xl flex-col items-center justify-center gap-5 px-2 text-center md:gap-6 md:px-4"
+                  className="relative mx-auto flex min-h-[54svh] max-w-3xl flex-col items-center justify-center gap-3 px-1 py-3 text-center sm:min-h-[60vh] sm:gap-5 md:min-h-[66vh] md:gap-6 md:px-4"
                   onDragEnter={handleHeroDragEnter}
                   onDragOver={handleHeroDragOver}
                   onDragLeave={handleHeroDragLeave}
@@ -2329,9 +2350,9 @@ Default to artifact:html with a complete single-file HTML document for visual, p
                     initial={{ opacity: 0, y: 8 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: 0.15 }}
-                    className="relative space-y-2.5"
+                    className="relative space-y-2 sm:space-y-2.5"
                   >
-                    <h1 className="text-3xl font-semibold tracking-tight text-white/95 sm:text-4xl md:text-[2.75rem]">
+                    <h1 className="text-2xl font-semibold tracking-tight text-white/95 sm:text-4xl md:text-[2.75rem]">
                       Ask anything. Build anything.
                     </h1>
                     <p className="mx-auto max-w-xl text-sm leading-relaxed text-gray-400 md:text-base">
@@ -2460,7 +2481,7 @@ Default to artifact:html with a complete single-file HTML document for visual, p
                           }}
                           placeholder="Ask anything..."
                           disabled={isRequestInProgress}
-                          className="min-h-[30px] flex-1 resize-none border-none bg-transparent py-1.5 text-sm text-white outline-none scrollbar-thin placeholder:text-gray-500 disabled:opacity-50 md:text-base"
+                          className="min-h-[30px] flex-1 resize-none border-none bg-transparent py-1.5 text-base text-white outline-none scrollbar-thin placeholder:text-gray-500 disabled:opacity-50"
                           rows={1}
                           autoFocus
                         />

@@ -84,7 +84,13 @@ export function Sidebar({
 
   const handleSignOut = async () => {
     await supabase.auth.signOut()
-    router.push('/login')
+    window.location.assign('/login')
+  }
+
+  const closeDrawer = () => setIsOpen(false)
+  const navigateFromDrawer = (href: string) => {
+    closeDrawer()
+    router.push(href)
   }
 
   const initials = userProfile.display_name
@@ -108,14 +114,15 @@ export function Sidebar({
         onClick={() => setIsOpen(!isOpen)}
         variant="ghost"
         size="icon"
-        className="fixed left-3 top-3 z-50 h-9 w-9 rounded-lg border border-white/[0.07] bg-[#171717] text-gray-300 hover:bg-[#202020] md:hidden"
+        className="fixed left-3 top-[max(0.75rem,env(safe-area-inset-top))] z-50 h-9 w-9 rounded-lg border border-white/[0.07] bg-[#171717] text-gray-300 hover:bg-[#202020] md:hidden"
+        aria-label={isOpen ? 'Close menu' : 'Open menu'}
       >
         {isOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
       </Button>
 
       <aside
         className={cn(
-          'fixed left-0 top-0 z-40 flex h-[100dvh] w-72 flex-col',
+          'fixed left-0 top-0 z-40 flex h-[100dvh] w-[min(18rem,86vw)] flex-col pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)]',
           'border-r border-white/[0.05] bg-[#171717]',
           'transition-transform duration-200',
           isOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
@@ -125,7 +132,7 @@ export function Sidebar({
               <div className="px-2 py-1">
                 <Logo size="sm" showText />
               </div>
-              <Button onClick={onNewChat} className="mt-3 h-9 w-full justify-start rounded-lg border border-white/[0.07] bg-white/[0.02] px-3 text-sm text-gray-200 hover:bg-white/[0.06] hover:text-white">
+              <Button onClick={() => { closeDrawer(); onNewChat() }} className="mt-3 h-9 w-full justify-start rounded-lg border border-white/[0.07] bg-white/[0.02] px-3 text-sm text-gray-200 hover:bg-white/[0.06] hover:text-white">
                 <Plus className="mr-2 h-4 w-4 text-violet-400" />
                 New Chat
               </Button>
@@ -133,13 +140,13 @@ export function Sidebar({
 
             <div className="flex items-center justify-between px-4 pb-1 pt-2 text-[10px] font-medium uppercase tracking-[0.14em] text-gray-500">
               <span>Projects</span>
-              <button onClick={() => router.push('/projects')} className="rounded px-1.5 py-0.5 text-violet-300 transition-colors hover:bg-white/[0.05] hover:text-white" title="View all projects">
+              <button onClick={() => navigateFromDrawer('/projects')} className="rounded px-1.5 py-0.5 text-violet-300 transition-colors hover:bg-white/[0.05] hover:text-white" title="View all projects">
                 View all
               </button>
             </div>
             <div className="space-y-px px-2 pb-2">
               {projects.length === 0 ? (
-                <button onClick={() => router.push('/projects')} className="w-full rounded-lg px-2.5 py-2 text-left text-xs text-gray-500 transition-colors hover:bg-white/[0.045] hover:text-gray-300">
+                <button onClick={() => navigateFromDrawer('/projects')} className="w-full rounded-lg px-2.5 py-2 text-left text-xs text-gray-500 transition-colors hover:bg-white/[0.045] hover:text-gray-300">
                   Create your first project
                 </button>
               ) : projects.map(project => {
@@ -153,20 +160,20 @@ export function Sidebar({
                         <FolderOpen className={cn('h-3.5 w-3.5 shrink-0', isActive ? 'text-violet-300' : 'text-gray-500')} />
                         <span className={cn('truncate text-sm', isActive ? 'text-white' : 'text-gray-300')}>{project.name}</span>
                       </button>
-                      <button onClick={() => onNewProjectChat?.(project.id)} className="mr-1 rounded p-1 text-gray-500 opacity-0 transition-all hover:bg-white/[0.08] hover:text-violet-300 group-hover:opacity-100" title={`New chat in ${project.name}`}>
+                      <button onClick={() => { closeDrawer(); onNewProjectChat?.(project.id) }} className="mr-1 rounded p-1 text-gray-500 opacity-100 transition-all hover:bg-white/[0.08] hover:text-violet-300 md:opacity-0 md:group-hover:opacity-100" title={`New chat in ${project.name}`}>
                         <Plus className="h-3.5 w-3.5" />
                       </button>
                     </div>
                     {expanded && (
                       <div className="ml-5 border-l border-white/[0.06] pl-2">
-                        <button onClick={() => onNewProjectChat?.(project.id)} className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs text-gray-500 transition-colors hover:bg-white/[0.04] hover:text-violet-200">
+                        <button onClick={() => { closeDrawer(); onNewProjectChat?.(project.id) }} className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs text-gray-500 transition-colors hover:bg-white/[0.04] hover:text-violet-200">
                           <Plus className="h-3 w-3" />
                           New chat
                         </button>
                         {project.conversations.length === 0 ? (
                           <p className="px-2 py-1.5 text-[11px] text-gray-600">No chats in this project yet</p>
                         ) : project.conversations.slice(0, 5).map(conv => (
-                          <button key={conv.id} onClick={() => onSelectConversation(conv.id, project.id)} className={cn('flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors', currentConversationId === conv.id ? 'bg-white/[0.07] text-white' : 'text-gray-400 hover:bg-white/[0.04] hover:text-gray-200')}>
+                          <button key={conv.id} onClick={() => { closeDrawer(); onSelectConversation(conv.id, project.id) }} className={cn('flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors', currentConversationId === conv.id ? 'bg-white/[0.07] text-white' : 'text-gray-400 hover:bg-white/[0.04] hover:text-gray-200')}>
                             <MessageSquare className="h-3 w-3 shrink-0" />
                             <span className="truncate text-xs">{conv.title}</span>
                           </button>
@@ -192,7 +199,7 @@ export function Sidebar({
                 conversations.map((conv) => (
                   <button
                     key={conv.id}
-                    onClick={() => onSelectConversation(conv.id, null)}
+                    onClick={() => { closeDrawer(); onSelectConversation(conv.id, null) }}
                     className={cn(
                       'group relative w-full rounded-lg px-2.5 py-1.5 text-left transition-colors',
                       currentConversationId === conv.id
@@ -259,11 +266,11 @@ export function Sidebar({
                   </button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="start" side="top" className="w-64 border-white/[0.08] bg-[#202020]">
-                  <DropdownMenuItem onClick={() => router.push('/dashboard')}><User className="mr-2 h-4 w-4" />Dashboard</DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => router.push('/billing')}><CreditCard className="mr-2 h-4 w-4" />Credits</DropdownMenuItem>
-                  {(userProfile.role === 'admin' || userProfile.role === 'sub_admin') && <DropdownMenuItem onClick={() => router.push('/admin')}><Shield className="mr-2 h-4 w-4" />Admin Panel</DropdownMenuItem>}
-                  <DropdownMenuItem onClick={() => router.push('/settings/memory')}><Brain className="mr-2 h-4 w-4" />Memory</DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => router.push('/settings')}><Settings className="mr-2 h-4 w-4" />Settings</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => navigateFromDrawer('/dashboard')}><User className="mr-2 h-4 w-4" />Dashboard</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => navigateFromDrawer('/billing')}><CreditCard className="mr-2 h-4 w-4" />Credits</DropdownMenuItem>
+                  {(userProfile.role === 'admin' || userProfile.role === 'sub_admin') && <DropdownMenuItem onClick={() => navigateFromDrawer('/admin')}><Shield className="mr-2 h-4 w-4" />Admin Panel</DropdownMenuItem>}
+                  <DropdownMenuItem onClick={() => navigateFromDrawer('/settings/memory')}><Brain className="mr-2 h-4 w-4" />Memory</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => navigateFromDrawer('/settings')}><Settings className="mr-2 h-4 w-4" />Settings</DropdownMenuItem>
                   <DropdownMenuSeparator className="bg-white/10" />
                   <DropdownMenuItem onClick={handleSignOut}><LogOut className="mr-2 h-4 w-4" />Sign Out</DropdownMenuItem>
                 </DropdownMenuContent>

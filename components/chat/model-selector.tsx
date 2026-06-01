@@ -4,8 +4,14 @@ import { motion } from 'framer-motion'
 import { AI_MODELS, type AIModel } from '@/types/models'
 import { AnthropicIcon } from '@/components/icons/anthropic-icon'
 import { ChatGPTIcon } from '@/components/icons/chatgpt-icon'
-import { Sparkles, Lock } from 'lucide-react'
+import { Check, ChevronDown, Sparkles, Lock } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 
 interface ModelSelectorProps {
   selectedModel: string
@@ -15,6 +21,7 @@ interface ModelSelectorProps {
 }
 
 export function ModelSelector({ selectedModel, onSelectModel, disabled = false, disabledReason }: ModelSelectorProps) {
+  const activeModel = AI_MODELS.find(model => model.id === selectedModel) || AI_MODELS[0]
   const getSelectedGlow = (model: AIModel) => {
     if (selectedModel !== model.id) return undefined
     const color = model.id === 'chat-gpt-5.5'
@@ -61,7 +68,41 @@ export function ModelSelector({ selectedModel, onSelectModel, disabled = false, 
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-1">
+    <>
+      <div className="md:hidden">
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild disabled={disabled}>
+            <button
+              type="button"
+              title={disabled ? (disabledReason || 'Start a new chat to switch models') : 'Switch model'}
+              className={cn(
+                'flex h-8 max-w-[148px] items-center gap-1 rounded-full border border-white/[0.10] bg-white/[0.06] px-2 text-xs font-medium text-white',
+                disabled && 'cursor-not-allowed opacity-60'
+              )}
+              style={getSelectedGlow(activeModel)}
+            >
+              {getModelIcon(activeModel)}
+              <span className="truncate">{getShortName(activeModel.name)}</span>
+              {disabled ? <Lock className="h-3 w-3 shrink-0" /> : <ChevronDown className="h-3 w-3 shrink-0 text-gray-400" />}
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-56 border-white/[0.08] bg-[#202020]">
+            {AI_MODELS.map(model => (
+              <DropdownMenuItem
+                key={model.id}
+                onSelect={() => onSelectModel(model.id)}
+                className="flex cursor-pointer items-center gap-2 text-gray-200 focus:bg-white/[0.07] focus:text-white"
+              >
+                {getModelIcon(model)}
+                <span className="flex-1">{getShortName(model.name)}</span>
+                {selectedModel === model.id && <Check className="h-4 w-4 text-violet-300" />}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+
+      <div className="hidden flex-wrap items-center gap-1 md:flex">
       {disabled && (
         <div className="flex items-center gap-2 text-xs text-gray-400 px-2 py-1">
           <Lock className="w-3 h-3" />
@@ -99,6 +140,7 @@ export function ModelSelector({ selectedModel, onSelectModel, disabled = false, 
           )}
         </motion.button>
       ))}
-    </div>
+      </div>
+    </>
   )
 }

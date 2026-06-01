@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { motion } from 'framer-motion'
@@ -17,31 +17,60 @@ export default function LoginPage() {
   const [password, setPassword] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const router = useRouter()
-  const supabase = createClient()
+  const supabase = useMemo(() => createClient(), [])
+  const navigationFallbackRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (navigationFallbackRef.current) clearTimeout(navigationFallbackRef.current)
+    }
+  }, [])
+
+  const withTimeout = async <T,>(promise: PromiseLike<T>, timeoutMs: number): Promise<T> => {
+    return await Promise.race([
+      Promise.resolve(promise),
+      new Promise<T>((_, reject) => {
+        setTimeout(() => reject(new Error('Sign in took too long. Please try again.')), timeoutMs)
+      }),
+    ])
+  }
 
   const handleEmailLogin = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (isLoading) return
     setIsLoading(true)
 
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    })
+    try {
+      const { data, error } = await withTimeout(supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password,
+      }), 15000)
 
-    if (error) {
+      if (error) throw error
+
+      const session = data.session || (await withTimeout(supabase.auth.getSession(), 5000)).data.session
+      if (!session) throw new Error('Your session could not be confirmed. Please try again.')
+
+      router.refresh()
+      router.replace('/chat')
+
+      // A hard navigation makes the freshly written auth cookies visible to the
+      // server in standalone PWAs where a soft App Router transition can stall.
+      navigationFallbackRef.current = setTimeout(() => {
+        if (window.location.pathname !== '/chat') window.location.assign('/chat')
+      }, 1200)
+    } catch (error) {
       toast({
-        title: 'Error',
-        description: error.message,
+        title: 'Sign in failed',
+        description: error instanceof Error ? error.message : 'Something went wrong. Please try again.',
         variant: 'destructive',
       })
       setIsLoading(false)
-    } else {
-      router.push('/chat')
     }
   }
 
   return (
-    <div className="min-h-screen bg-[#0f0f0f] flex items-center justify-center p-6">
+    <div className="flex min-h-[100dvh] items-center justify-center bg-[#0f0f0f] p-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-[max(1rem,env(safe-area-inset-top))] sm:p-6">
       <div className="absolute inset-0 bg-gradient-radial from-violet-900/10 via-transparent to-transparent" />
 
       <motion.div

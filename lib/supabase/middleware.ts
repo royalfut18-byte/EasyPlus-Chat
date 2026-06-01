@@ -30,24 +30,34 @@ export async function updateSession(request: NextRequest) {
   const {
     data: { user },
   } = await supabase.auth.getUser()
+  const isPublicAsset = request.nextUrl.pathname === '/manifest.webmanifest'
+
+  const finalizeResponse = (response: NextResponse) => {
+    supabaseResponse.cookies.getAll().forEach(({ name, value, ...options }) => {
+      response.cookies.set(name, value, options)
+    })
+    response.headers.set('Cache-Control', 'private, no-store, max-age=0')
+    return response
+  }
 
   if (
     !user &&
     !request.nextUrl.pathname.startsWith('/login') &&
     !request.nextUrl.pathname.startsWith('/signup') &&
     !request.nextUrl.pathname.startsWith('/auth') &&
+    !isPublicAsset &&
     request.nextUrl.pathname !== '/'
   ) {
     const url = request.nextUrl.clone()
     url.pathname = '/login'
-    return NextResponse.redirect(url)
+    return finalizeResponse(NextResponse.redirect(url))
   }
 
   if (user && (request.nextUrl.pathname === '/login' || request.nextUrl.pathname === '/signup')) {
     const url = request.nextUrl.clone()
     url.pathname = '/chat'
-    return NextResponse.redirect(url)
+    return finalizeResponse(NextResponse.redirect(url))
   }
 
-  return supabaseResponse
+  return finalizeResponse(supabaseResponse)
 }

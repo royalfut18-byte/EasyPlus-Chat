@@ -402,7 +402,7 @@ export function ChatInput({ onSend, disabled, isLoading, conversationId, reasoni
 
   return (
     <div
-      className="sticky bottom-0 bg-gradient-to-t from-[#0f0f0f] via-[#0f0f0f] to-[#0f0f0f]/90 px-3 pb-3 pt-2 md:px-4 md:pb-4"
+      className="sticky bottom-0 bg-gradient-to-t from-[#0f0f0f] via-[#0f0f0f] to-[#0f0f0f]/90 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2 md:px-4 md:pb-4"
       onDragEnter={handleDragEnter}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
@@ -541,7 +541,7 @@ export function ChatInput({ onSend, disabled, isLoading, conversationId, reasoni
               placeholder="Ask anything..."
               disabled={isComposerUnavailable}
               className={cn(
-                'flex-1 resize-none border-none bg-transparent text-sm text-white outline-none placeholder:text-gray-500 md:text-base',
+                'flex-1 resize-none border-none bg-transparent text-base text-white outline-none placeholder:text-gray-500',
                 'min-h-[34px] max-h-[150px] px-1 py-2 md:max-h-[180px] md:px-2',
                 'scrollbar-thin',
                 'disabled:opacity-50 disabled:cursor-not-allowed'
