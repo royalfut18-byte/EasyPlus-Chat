@@ -158,7 +158,7 @@ export function ProjectsClient({ initialProjects }: { initialProjects: ProjectCa
                 </button>
               </div>
 
-              <div className="mt-5 grid grid-cols-4 gap-2 text-center text-xs">
+              <div className="mt-4 flex flex-wrap gap-1.5">
                 <Metric href={`/projects/${project.id}?tab=chats`} icon={<MessageSquare />} label="Chats" value={statsLoaded ? project.stats?.chatCount || 0 : null} />
                 <Metric href={`/projects/${project.id}?tab=files`} icon={<Upload />} label="Files" value={statsLoaded ? project.stats?.fileCount || 0 : null} />
                 <Metric href={`/projects/${project.id}?tab=artifacts`} icon={<Search />} label="Artifacts" value={statsLoaded ? project.stats?.artifactCount || 0 : null} />
@@ -214,11 +214,16 @@ export function ProjectsClient({ initialProjects }: { initialProjects: ProjectCa
 }
 
 function Metric({ href, icon, label, value }: { href: string; icon: React.ReactNode; label: string; value: number | null }) {
+  const labelText = value === 1 && label !== 'Memory' ? label.slice(0, -1) : label
+
   return (
-    <Link href={href} className="rounded-lg border border-white/[0.06] bg-white/[0.025] p-2 transition-colors hover:border-violet-400/20 hover:bg-violet-500/[0.06]">
-      <div className="mx-auto h-3.5 w-3.5 text-violet-300">{icon}</div>
-      <p className="mt-1 font-medium text-gray-200">{value ?? '-'}</p>
-      <p className="text-[10px] text-gray-500">{label}</p>
+    <Link
+      href={href}
+      className="inline-flex h-7 items-center gap-1.5 rounded-full border border-white/[0.06] bg-white/[0.02] px-2.5 text-[11px] leading-none text-gray-400 transition-colors hover:border-violet-400/20 hover:bg-violet-500/[0.06] hover:text-gray-200"
+    >
+      <span className="h-3 w-3 shrink-0 text-violet-300/80">{icon}</span>
+      <span className="font-medium text-gray-200">{value ?? '-'}</span>
+      <span>{labelText.toLowerCase()}</span>
     </Link>
   )
 }
