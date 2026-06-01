@@ -111,8 +111,10 @@ export function WorkspacePreview() {
             </div>
 
             <div className="flex-1 space-y-6 overflow-hidden px-4 py-6 md:px-8">
-              <div className="ml-auto max-w-[86%] rounded-[1.4rem] bg-violet-500 px-4 py-3 text-sm leading-6 text-white md:max-w-[70%]">
-                Use my economics project context and explain the latest inflation data in essay form.
+              <div className="mb-4 ml-auto max-w-[85%] rounded-2xl border border-violet-300/[0.08] bg-[#312b3b] px-3 py-2.5 text-gray-100 md:max-w-[72%] md:px-3.5 md:py-3">
+                <p className="mb-0 whitespace-pre-wrap break-words text-sm leading-6 md:text-base">
+                  Use my economics project context and explain the latest inflation data in essay form.
+                </p>
               </div>
 
               <div className="max-w-3xl">
