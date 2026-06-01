@@ -1,7 +1,9 @@
 import 'server-only'
 
+import { readFirstServerEnv, readServerEnv } from '@/lib/server-env'
+
 const NVIDIA_BASE_URL = 'https://integrate.api.nvidia.com/v1'
-const NVIDIA_QWEN_IMAGE_MODEL = 'qwen/qwen-image-2512'
+const NVIDIA_QWEN_IMAGE_MODEL = 'qwen-image-2512'
 const REQUEST_TIMEOUT_MS = 280_000
 
 const IMAGE_SIZES: Record<string, string> = {
@@ -13,11 +15,21 @@ const IMAGE_SIZES: Record<string, string> = {
 }
 
 function getProviderConfig() {
+  const key = readFirstServerEnv(['NVIDIA_IMAGE_API_KEY', 'NVIDIA_API_KEY'])
+  const configuredBaseUrl = readServerEnv('NVIDIA_IMAGE_BASE_URL')
   return {
-    apiKey: process.env.NVIDIA_IMAGE_API_KEY || process.env.NVIDIA_API_KEY,
-    baseUrl: (process.env.NVIDIA_IMAGE_BASE_URL || NVIDIA_BASE_URL).replace(/\/+$/, ''),
-    model: process.env.NVIDIA_IMAGE_MODEL || NVIDIA_QWEN_IMAGE_MODEL,
+    apiKey: key.value,
+    apiKeySource: key.source,
+    baseUrl: normalizeImageBaseUrl(configuredBaseUrl || NVIDIA_BASE_URL),
+    baseUrlConfigured: Boolean(configuredBaseUrl),
+    model: readServerEnv('NVIDIA_IMAGE_MODEL') || NVIDIA_QWEN_IMAGE_MODEL,
   }
+}
+
+function normalizeImageBaseUrl(baseUrl: string): string {
+  const trimmed = baseUrl.replace(/\/+$/, '')
+  if (trimmed === 'https://integrate.api.nvidia.com') return `${trimmed}/v1`
+  return trimmed
 }
 
 function getSafeProviderError(status?: number): Error {
@@ -44,10 +56,13 @@ export interface ImageGenerationResponse {
 }
 
 export async function generateImage(request: ImageGenerationRequest): Promise<ImageGenerationResponse> {
-  const { apiKey, baseUrl, model } = getProviderConfig()
+  const { apiKey, baseUrl, model, baseUrlConfigured, apiKeySource } = getProviderConfig()
 
   if (!apiKey) {
-    console.error('[NVIDIA Image] API key is not configured')
+    console.error('[NVIDIA Image] Missing API key env', {
+      checked: ['NVIDIA_IMAGE_API_KEY', 'NVIDIA_API_KEY'],
+      baseUrlConfigured,
+    })
     throw getSafeProviderError()
   }
 
@@ -84,6 +99,8 @@ export async function generateImage(request: ImageGenerationRequest): Promise<Im
       const errorText = await response.text().catch(() => '')
       console.error('[NVIDIA Image] Generation failed:', {
         status: response.status,
+        baseUrlConfigured,
+        apiKeySource,
         error: errorText.substring(0, 300),
       })
       throw getSafeProviderError(response.status)

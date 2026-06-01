@@ -4,7 +4,7 @@ import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { getAccountEntitlement, getEntitlementBlockResponse } from '@/lib/account-entitlements.server'
 import { generateImage, isNvidiaImageAvailable } from '@/lib/ai/nvidia-image.server'
 import { getInternalModel } from '@/lib/ai/model-routing.server'
-import { isR2Configured, uploadObjectToR2 } from '@/lib/storage/r2'
+import { getR2ConfigStatus, uploadObjectToR2 } from '@/lib/storage/r2'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
@@ -21,7 +21,9 @@ function getImageUrl(storageKey: string, filename: string, download = false): st
 
 export async function POST(request: NextRequest) {
   try {
-    if (!isR2Configured()) {
+    const r2Config = getR2ConfigStatus()
+    if (!r2Config.configured) {
+      console.error('[Image Generation API] Missing storage env', { missing: r2Config.missing })
       return NextResponse.json({ error: 'Image storage is temporarily unavailable.' }, { status: 503 })
     }
 
@@ -51,6 +53,7 @@ export async function POST(request: NextRequest) {
 
     const imageModel = getInternalModel('image-generation')
     if (!imageModel || !isNvidiaImageAvailable()) {
+      console.error('[Image Generation API] Image provider is not configured')
       return NextResponse.json({ error: 'Image Generation is temporarily unavailable.' }, { status: 503 })
     }
 

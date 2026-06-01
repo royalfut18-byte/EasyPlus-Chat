@@ -1,6 +1,7 @@
 import 'server-only'
 
 import type { ChatMessage } from '@/types/models'
+import { readFirstServerEnv, readServerEnv } from '@/lib/server-env'
 
 const NVIDIA_BASE_URL = 'https://integrate.api.nvidia.com/v1'
 const NVIDIA_DEEPSEEK_V4_PRO_MODEL = 'deepseek-ai/deepseek-v4-pro'
@@ -10,11 +11,21 @@ const AVAILABILITY_CACHE_MS = 5 * 60_000
 let availabilityCache: { checkedAt: number; available: boolean } | null = null
 
 function getProviderConfig() {
+  const key = readFirstServerEnv(['DEEPSEEK_V4_PRO_API_KEY', 'NVIDIA_API_KEY'])
+  const configuredBaseUrl = readServerEnv('DEEPSEEK_V4_PRO_BASE_URL')
   return {
-    apiKey: process.env.DEEPSEEK_V4_PRO_API_KEY || process.env.NVIDIA_API_KEY,
-    baseUrl: (process.env.DEEPSEEK_V4_PRO_BASE_URL || NVIDIA_BASE_URL).replace(/\/+$/, ''),
-    model: process.env.DEEPSEEK_V4_PRO_MODEL || NVIDIA_DEEPSEEK_V4_PRO_MODEL,
+    apiKey: key.value,
+    apiKeySource: key.source,
+    baseUrl: normalizeDeepSeekBaseUrl(configuredBaseUrl || NVIDIA_BASE_URL),
+    baseUrlConfigured: Boolean(configuredBaseUrl),
+    model: readServerEnv('DEEPSEEK_V4_PRO_MODEL') || NVIDIA_DEEPSEEK_V4_PRO_MODEL,
   }
+}
+
+function normalizeDeepSeekBaseUrl(baseUrl: string): string {
+  const trimmed = baseUrl.replace(/\/+$/, '')
+  if (trimmed === 'https://integrate.api.nvidia.com') return `${trimmed}/v1`
+  return trimmed
 }
 
 function getSafeProviderError(status?: number): Error {
@@ -30,8 +41,12 @@ export async function isDeepSeekV4ProEndpointAvailable(): Promise<boolean> {
     return availabilityCache.available
   }
 
-  const { apiKey, baseUrl, model } = getProviderConfig()
+  const { apiKey, baseUrl, model, baseUrlConfigured } = getProviderConfig()
   if (!apiKey) {
+    console.error('[DeepSeek Provider] Missing API key env', {
+      checked: ['DEEPSEEK_V4_PRO_API_KEY', 'NVIDIA_API_KEY'],
+      baseUrlConfigured,
+    })
     availabilityCache = { checkedAt: now, available: false }
     return false
   }
@@ -62,6 +77,7 @@ export async function isDeepSeekV4ProEndpointAvailable(): Promise<boolean> {
       const errorText = await response.text().catch(() => '')
       console.error('[DeepSeek Provider] Availability probe failed:', {
         status: response.status,
+        baseUrlConfigured,
         error: errorText.substring(0, 300),
       })
     }
@@ -81,10 +97,13 @@ export async function streamDeepSeekV4ProResponse(
   temperature: number = 0.7,
   maxTokens: number = 16384
 ): Promise<ReadableStream> {
-  const { apiKey, baseUrl, model } = getProviderConfig()
+  const { apiKey, baseUrl, model, baseUrlConfigured, apiKeySource } = getProviderConfig()
 
   if (!apiKey) {
-    console.error('[DeepSeek Provider] NVIDIA_API_KEY is not set')
+    console.error('[DeepSeek Provider] Missing API key env', {
+      checked: ['DEEPSEEK_V4_PRO_API_KEY', 'NVIDIA_API_KEY'],
+      baseUrlConfigured,
+    })
     throw getSafeProviderError()
   }
 
@@ -123,6 +142,8 @@ export async function streamDeepSeekV4ProResponse(
       const errorText = await response.text().catch(() => '')
       console.error('[DeepSeek Provider] Request failed:', {
         status: response.status,
+        baseUrlConfigured,
+        apiKeySource,
         error: errorText.substring(0, 300),
       })
       throw getSafeProviderError(response.status)

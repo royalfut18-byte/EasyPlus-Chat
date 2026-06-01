@@ -1,6 +1,7 @@
 import 'server-only'
 
 import { AI_MODELS, type AIModel } from '@/types/models'
+import { readFirstServerEnv } from '@/lib/server-env'
 
 export type AIProvider = 'anthropic' | 'google' | 'nvidia' | 'image'
 
@@ -67,8 +68,8 @@ export function getPublicModelName(modelId: string): string {
 export function isModelAvailable(modelId: string): boolean {
   const model = getInternalModel(modelId)
   if (!model) return false
-  if (model.provider === 'nvidia') return Boolean(process.env.DEEPSEEK_V4_PRO_API_KEY || process.env.NVIDIA_API_KEY)
-  if (model.provider === 'image') return Boolean(process.env.NVIDIA_IMAGE_API_KEY || process.env.NVIDIA_API_KEY)
+  if (model.provider === 'nvidia') return Boolean(readFirstServerEnv(['DEEPSEEK_V4_PRO_API_KEY', 'NVIDIA_API_KEY']).value)
+  if (model.provider === 'image') return Boolean(readFirstServerEnv(['NVIDIA_IMAGE_API_KEY', 'NVIDIA_API_KEY']).value)
   return true
 }
 
