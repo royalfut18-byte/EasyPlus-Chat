@@ -7,9 +7,9 @@ import { Toaster } from "@/components/ui/toaster"
 const inter = Inter({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
-  title: "EasyPlus AI - One Interface. Every AI.",
-  description: "Premium multi-model AI chat platform with Chat GPT 5.5, Claude Opus 4.7, and Gemini 3.1 Pro",
-  keywords: "AI, Chat GPT, Claude Opus 4.7, Gemini 3.1 Pro, AI Chat, Multi-model AI",
+  title: "EasyPlus AI - All-in-one AI workspace",
+  description: "A premium AI workspace for chat, files, Projects, memory, research, artifacts, and admin-managed access.",
+  keywords: "AI workspace, AI chat, file analysis, Projects, memory, artifacts, research tools",
   icons: {
     icon: "/newlogo.png",
     apple: "/newlogo.png",
