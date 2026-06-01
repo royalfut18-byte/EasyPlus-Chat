@@ -5,7 +5,8 @@ import { readFirstServerEnv, readServerEnv } from '@/lib/server-env'
 
 const NVIDIA_BASE_URL = 'https://integrate.api.nvidia.com/v1'
 const NVIDIA_DEEPSEEK_V4_PRO_MODEL = 'deepseek-ai/deepseek-v4-pro'
-const REQUEST_TIMEOUT_MS = 280_000
+const REQUEST_TIMEOUT_MS = 120_000
+const FIRST_TOKEN_TIMEOUT_MS = 45_000
 const AVAILABILITY_CACHE_MS = 5 * 60_000
 
 let availabilityCache: { checkedAt: number; available: boolean } | null = null
@@ -33,6 +34,10 @@ function getSafeProviderError(status?: number): Error {
     return new Error('DeepSeek V4 Pro is temporarily busy. Please try again in a moment.')
   }
   return new Error('DeepSeek V4 Pro is temporarily unavailable.')
+}
+
+function getSafeTimeoutError(): Error {
+  return new Error('DeepSeek V4 Pro is taking too long to respond. Please try again.')
 }
 
 export async function isDeepSeekV4ProEndpointAvailable(): Promise<boolean> {
@@ -80,11 +85,24 @@ export async function isDeepSeekV4ProEndpointAvailable(): Promise<boolean> {
         baseUrlConfigured,
         error: errorText.substring(0, 300),
       })
+      availabilityCache = { checkedAt: now, available: false }
+      return false
     }
 
-    availabilityCache = { checkedAt: now, available: response.ok }
+    const data = await response.json().catch(() => null)
+    const content = data?.choices?.[0]?.message?.content
+    const available = typeof content === 'string' && content.trim().length > 0
+    console.info('[DeepSeek Provider] Availability probe completed:', {
+      available,
+      baseUrlConfigured,
+      status: response.status,
+    })
+    availabilityCache = { checkedAt: now, available }
   } catch (error: any) {
-    console.error('[DeepSeek Provider] Availability probe exception:', error.message)
+    console.error('[DeepSeek Provider] Availability probe exception:', {
+      message: error.message,
+      timeoutHit: error?.name === 'TimeoutError',
+    })
     availabilityCache = { checkedAt: now, available: false }
   }
 
@@ -156,6 +174,17 @@ export async function streamDeepSeekV4ProResponse(
     return new ReadableStream({
       async start(streamController) {
         let buffer = ''
+        let contentStarted = false
+        let firstTokenTimeoutHit = false
+        const firstTokenTimeout = setTimeout(() => {
+          firstTokenTimeoutHit = true
+          controller.abort()
+        }, FIRST_TOKEN_TIMEOUT_MS)
+
+        console.info('[DeepSeek Provider] Stream opened:', {
+          baseUrlConfigured,
+          streamStarted: true,
+        })
 
         try {
           while (true) {
@@ -175,6 +204,14 @@ export async function streamDeepSeekV4ProResponse(
                 const data = JSON.parse(payload)
                 const text = data?.choices?.[0]?.delta?.content
                 if (typeof text === 'string' && text) {
+                  if (!contentStarted) {
+                    contentStarted = true
+                    clearTimeout(firstTokenTimeout)
+                    console.info('[DeepSeek Provider] First token received:', {
+                      streamStarted: true,
+                      timeoutHit: false,
+                    })
+                  }
                   streamController.enqueue(encoder.encode(text))
                 }
               } catch {
@@ -183,11 +220,24 @@ export async function streamDeepSeekV4ProResponse(
             }
           }
 
+          if (!contentStarted) {
+            console.error('[DeepSeek Provider] Stream closed without content:', {
+              streamStarted: true,
+              timeoutHit: false,
+            })
+            throw getSafeProviderError()
+          }
+
           streamController.close()
         } catch (error: any) {
-          console.error('[DeepSeek Provider] Stream failed:', error.message)
-          streamController.error(getSafeProviderError())
+          console.error('[DeepSeek Provider] Stream failed:', {
+            message: error.message,
+            streamStarted: true,
+            timeoutHit: firstTokenTimeoutHit,
+          })
+          streamController.error(firstTokenTimeoutHit ? getSafeTimeoutError() : getSafeProviderError())
         } finally {
+          clearTimeout(firstTokenTimeout)
           clearTimeout(timeout)
           reader.releaseLock()
         }
@@ -201,7 +251,12 @@ export async function streamDeepSeekV4ProResponse(
   } catch (error: any) {
     clearTimeout(timeout)
     if (error?.message?.startsWith('DeepSeek V4 Pro')) throw error
-    console.error('[DeepSeek Provider] Request exception:', error.message)
-    throw getSafeProviderError()
+    const timeoutHit = error?.name === 'AbortError' || error?.name === 'TimeoutError'
+    console.error('[DeepSeek Provider] Request exception:', {
+      message: error.message,
+      timeoutHit,
+      streamStarted: false,
+    })
+    throw timeoutHit ? getSafeTimeoutError() : getSafeProviderError()
   }
 }
