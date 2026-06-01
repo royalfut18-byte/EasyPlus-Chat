@@ -139,25 +139,6 @@ export function dedupeMessages(messages: Message[]): Message[] {
       }
     }
 
-    // Check for likely duplicates: same conversation, role, content within 5 minutes
-    const isDuplicate = result.some(existing => {
-      if (
-        existing?.conversation_id === msg?.conversation_id &&
-        existing?.role === msg?.role &&
-        existing?.content === msg?.content &&
-        existing?.content?.length > 0 &&
-        !LOADING_MARKERS.has(existing.content || '')
-      ) {
-        const timeDiff = Math.abs(
-          new Date(existing?.created_at || 0).getTime() - new Date(msg?.created_at || 0).getTime()
-        )
-        return timeDiff < 300000
-      }
-      return false
-    })
-
-    if (isDuplicate) continue
-
     seenIds.add(msg.id)
     if (msg.client_message_id) seenClientIds.add(msg.client_message_id)
     result.push(msg)
