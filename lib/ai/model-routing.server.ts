@@ -1,7 +1,6 @@
 import 'server-only'
 
 import { AI_MODELS, type AIModel } from '@/types/models'
-import { isDeepSeekV4ProEndpointAvailable } from '@/lib/ai/nvidia.server'
 
 export type AIProvider = 'anthropic' | 'google' | 'nvidia'
 
@@ -69,15 +68,7 @@ export function isModelAvailable(modelId: string): boolean {
 }
 
 export async function getAvailablePublicModelIds(): Promise<string[]> {
-  const availableIds = INTERNAL_AI_MODELS
-    .filter((model) => model.provider !== 'nvidia')
-    .map((model) => model.id)
-
-  if (isModelAvailable('deepseek-v4-pro') && await isDeepSeekV4ProEndpointAvailable()) {
-    availableIds.push('deepseek-v4-pro')
-  }
-
-  return availableIds
+  return INTERNAL_AI_MODELS.filter((model) => isModelAvailable(model.id)).map((model) => model.id)
 }
 
 export function sanitizeConversation<T extends Record<string, any>>(conversation: T): T {
