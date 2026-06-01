@@ -2,6 +2,48 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getAdminAccess, getScopedProfiles } from '@/lib/admin-access.server'
 import { normalizeEntitlement } from '@/lib/account-entitlements.server'
+import { getAdminStatisticsData } from '@/lib/admin-statistics.server'
+
+async function listAllAuthUsers(db: any) {
+  const users: any[] = []
+  const perPage = 1000
+  for (let page = 1; ; page += 1) {
+    const { data, error } = await db.auth.admin.listUsers({ page, perPage })
+    if (error) throw error
+    const batch = data?.users || []
+    users.push(...batch)
+    if (batch.length < perPage) return users
+  }
+}
+
+async function listAllConversations(db: any) {
+  const conversations: Array<{ id: string; user_id: string }> = []
+  const pageSize = 1000
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await db
+      .from('conversations')
+      .select('id, user_id')
+      .order('id', { ascending: true })
+      .range(from, from + pageSize - 1)
+    if (error) throw error
+    const batch = data || []
+    conversations.push(...batch)
+    if (batch.length < pageSize) return conversations
+  }
+}
+
+async function countMessagesForConversations(db: any, conversationIds: string[]) {
+  let total = 0
+  for (let index = 0; index < conversationIds.length; index += 200) {
+    const { count, error } = await db
+      .from('messages')
+      .select('*', { count: 'exact', head: true })
+      .in('conversation_id', conversationIds.slice(index, index + 200))
+    if (error) throw error
+    total += count || 0
+  }
+  return total
+}
 
 export async function GET() {
   try {
@@ -18,45 +60,34 @@ export async function GET() {
     }
 
     const profiles = await getScopedProfiles(access)
-    const { data: authData, error: authError } = await access.db.auth.admin.listUsers()
-    if (authError) throw authError
-
-    const authUsers = authData?.users || []
+    const { stats, usageByUserId } = await getAdminStatisticsData(access, profiles)
+    const authUsers = await listAllAuthUsers(access.db)
     const visibleUserIds = new Set(profiles.map((profile) => profile.user_id))
     const visibleAuthUsers = authUsers.filter((authUser: any) => visibleUserIds.has(authUser.id))
 
-    let conversations: Array<{ id: string; user_id: string }> = []
-    if (visibleUserIds.size > 0) {
-      const { data, error } = await access.db
-        .from('conversations')
-        .select('id, user_id')
-        .in('user_id', Array.from(visibleUserIds))
-      if (error) throw error
-      conversations = data || []
-    }
+    if (access.isMainAdmin) {
+      try {
+        const authUserIds = new Set(authUsers.map((authUser: any) => authUser.id))
+        const allConversations = await listAllConversations(access.db)
+        const orphanedConversationIds = allConversations
+          .filter((conversation: any) => !visibleUserIds.has(conversation.user_id))
+          .map((conversation: any) => conversation.id)
+        const messagesInOrphanedConversations = await countMessagesForConversations(access.db, orphanedConversationIds)
 
-    const conversationOwner = new Map<string, string>()
-    const conversationCounts = new Map<string, number>()
-    for (const conversation of conversations || []) {
-      conversationOwner.set(conversation.id, conversation.user_id)
-      conversationCounts.set(conversation.user_id, (conversationCounts.get(conversation.user_id) || 0) + 1)
-    }
-
-    const conversationIds = Array.from(conversationOwner.keys())
-    let messages: Array<{ conversation_id: string; role: string }> = []
-    if (conversationIds.length > 0) {
-      const { data, error } = await access.db
-        .from('messages')
-        .select('conversation_id, role')
-        .in('conversation_id', conversationIds)
-      if (error) throw error
-      messages = data || []
-    }
-
-    const messageCounts = new Map<string, number>()
-    for (const message of messages) {
-      const ownerId = conversationOwner.get(message.conversation_id)
-      if (ownerId) messageCounts.set(ownerId, (messageCounts.get(ownerId) || 0) + 1)
+        console.info('[Admin Stats Audit]', {
+          profileAccounts: profiles.length,
+          authAccounts: authUsers.length,
+          profilesWithoutAuthUsers: profiles.filter((profile) => !authUserIds.has(profile.user_id)).length,
+          authUsersWithoutProfiles: authUsers.filter((authUser: any) => !visibleUserIds.has(authUser.id)).length,
+          conversationsWithoutProfiles: orphanedConversationIds.length,
+          messagesInConversationsWithoutProfiles: messagesInOrphanedConversations,
+          chatsOwnedByProfileAccounts: stats.totalChats,
+          userPromptsOwnedByProfileAccounts: stats.userPrompts,
+          totalMessagesOwnedByProfileAccounts: stats.totalMessages,
+        })
+      } catch (auditError) {
+        console.warn('[Admin Stats Audit] Failed to load diagnostics:', auditError)
+      }
     }
 
     const authById = new Map(visibleAuthUsers.map((authUser: any) => [authUser.id, authUser]))
@@ -77,18 +108,11 @@ export async function GET() {
         owner_sub_admin_id: profile.owner_sub_admin_id,
         created_at: profile.created_at || authUser?.created_at,
         last_sign_in_at: authUser?.last_sign_in_at || null,
-        message_count: messageCounts.get(profile.user_id) || 0,
-        conversation_count: conversationCounts.get(profile.user_id) || 0,
+        user_prompt_count: usageByUserId.get(profile.user_id)?.userPromptCount || 0,
+        total_message_count: usageByUserId.get(profile.user_id)?.totalMessageCount || 0,
+        conversation_count: usageByUserId.get(profile.user_id)?.chatCount || 0,
       }
     })
-
-    const finiteProfiles = profiles.filter((profile) => !normalizeEntitlement(profile).unlimitedCredits)
-    const stats = {
-      totalUsers: profiles.filter((profile) => profile.role === 'user').length,
-      totalMessages: messages.length,
-      unlimitedAccounts: profiles.filter((profile) => normalizeEntitlement(profile).unlimitedCredits).length,
-      finiteCreditsRemaining: finiteProfiles.reduce((sum, profile) => sum + Math.max(0, profile.credits || 0), 0),
-    }
 
     return NextResponse.json({
       actorRole: access.actor.role,

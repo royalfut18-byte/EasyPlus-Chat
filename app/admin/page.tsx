@@ -1,8 +1,8 @@
 import { redirect } from 'next/navigation'
-import { CreditCard, Infinity, MessageSquare, Users } from 'lucide-react'
+import { CreditCard, Infinity, MessageSquare, Shield, Users } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 import { getAdminAccess } from '@/lib/admin-access.server'
-import { getAdminStatistics } from '@/lib/admin-statistics.server'
+import { EMPTY_ADMIN_STATISTICS, getAdminStatistics } from '@/lib/admin-statistics.server'
 import { AdminUserTable } from '@/components/admin/admin-user-table'
 import { BackfillPanel } from '@/components/admin/backfill-panel'
 
@@ -20,7 +20,7 @@ export default async function AdminPage() {
   } catch (err: any) {
     console.error('[Admin Page] Failed to load stats:', err)
     statsError = err
-    stats = { totalUsers: 0, totalMessages: 0, unlimitedAccounts: 0, finiteCreditsRemaining: 0 }
+    stats = EMPTY_ADMIN_STATISTICS
   }
 
   return (
@@ -44,10 +44,15 @@ export default async function AdminPage() {
         )}
 
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <Stat icon={<Users />} label={access.isMainAdmin ? 'Total users' : 'Assigned users'} value={stats.totalUsers.toLocaleString()} />
+          <Stat icon={<Users />} label={access.isMainAdmin ? 'Total accounts' : 'Assigned users'} value={(access.isMainAdmin ? stats.totalAccounts : stats.userAccounts).toLocaleString()} />
+          {access.isMainAdmin && <Stat icon={<Users />} label="User accounts" value={stats.userAccounts.toLocaleString()} />}
+          {access.isMainAdmin && <Stat icon={<Shield />} label="Admin accounts" value={stats.adminAccounts.toLocaleString()} />}
+          {access.isMainAdmin && <Stat icon={<Shield />} label="Sub-admins" value={stats.subAdminAccounts.toLocaleString()} />}
           <Stat icon={<Infinity />} label="Unlimited accounts" value={stats.unlimitedAccounts.toLocaleString()} />
           <Stat icon={<CreditCard />} label="Finite credits remaining" value={stats.finiteCreditsRemaining.toLocaleString()} />
-          <Stat icon={<MessageSquare />} label={access.isMainAdmin ? 'Total messages' : 'Scoped messages'} value={stats.totalMessages.toLocaleString()} />
+          <Stat icon={<MessageSquare />} label="Chats" value={stats.totalChats.toLocaleString()} />
+          <Stat icon={<MessageSquare />} label="User prompts" value={stats.userPrompts.toLocaleString()} />
+          <Stat icon={<MessageSquare />} label="Total messages" value={stats.totalMessages.toLocaleString()} />
         </div>
 
         {access.isMainAdmin && <BackfillPanel />}

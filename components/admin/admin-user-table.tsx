@@ -24,7 +24,8 @@ interface AdminUser {
   account_expires_at: string | null
   owner_sub_admin_id: string | null
   created_at: string
-  message_count: number
+  user_prompt_count: number
+  total_message_count: number
   conversation_count: number
 }
 
@@ -112,7 +113,8 @@ export function AdminUserTable() {
       <td className="px-3 py-3 text-gray-400">{user.email}</td>
       <td className="px-3 py-3 text-gray-400">{user.role.replace('_', '-')}</td>
       <td className="px-3 py-3 text-gray-200">{user.unlimited_credits ? <span className="flex items-center gap-1 text-violet-300"><Infinity className="h-4 w-4" />Unlimited</span> : formatCredits(user.credits)}</td>
-      <td className="px-3 py-3 text-gray-400">{user.message_count}</td>
+      <td className="px-3 py-3 text-gray-400">{user.user_prompt_count}</td>
+      <td className="px-3 py-3 text-gray-400">{user.total_message_count}</td>
       <td className="px-3 py-3 text-gray-400">{user.conversation_count}</td>
       <td className="px-3 py-3"><Status value={user.account_status} /></td>
       <td className="px-3 py-3 text-gray-400">{user.created_at ? formatDate(user.created_at) : 'Unknown'}</td>
@@ -141,21 +143,21 @@ export function AdminUserTable() {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-gray-500">Visible accounts: <span className="text-gray-200">{data.users.length}</span></p>
+        <p className="text-sm text-gray-500">Visible accounts: <span className="text-gray-200">{data.users.length}</span>. Chats are conversations. User prompts are messages sent by the user.</p>
         <CreateUserDialog actorRole={data.actorRole} subAdmins={data.subAdmins} onUserCreated={loadUsers} />
       </div>
 
       <div className="overflow-x-auto rounded-xl border border-white/[0.07]">
         <table className="w-full min-w-[980px]">
           <thead className="bg-white/[0.025] text-left text-xs uppercase tracking-wide text-gray-500">
-            <tr>{['Name', 'Email', 'Role', 'Credits', 'Messages', 'Chats', 'Status', 'Created', 'Expiry', 'Actions'].map((label) => <th key={label} className="px-3 py-3 font-medium">{label}</th>)}</tr>
+            <tr>{['Name', 'Email', 'Role', 'Credits', 'User prompts', 'Total messages', 'Chats', 'Status', 'Created', 'Expiry', 'Actions'].map((label) => <th key={label} className="px-3 py-3 font-medium">{label}</th>)}</tr>
           </thead>
           <tbody>
             {data.actorRole === 'admin' && data.users.filter((user) => user.role !== 'user').map(renderUser)}
             {data.actorRole === 'admin' ? groups.map((group) => (
               <Fragment key={group.id}>
                 <tr className="border-b border-white/[0.05] bg-white/[0.015]">
-                  <td colSpan={10}>
+                  <td colSpan={11}>
                     <button className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-gray-300" onClick={() => setExpandedGroups({ ...expandedGroups, [group.id]: !expandedGroups[group.id] })}>
                       {expandedGroups[group.id] ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                       {group.label} <span className="text-xs text-gray-600">({group.users.length})</span>

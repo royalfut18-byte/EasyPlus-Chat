@@ -38,16 +38,29 @@ export function getScopedProfileFilter(access: AdminAccess) {
     : { column: 'owner_sub_admin_id', value: access.actor.userId }
 }
 
+async function selectAllProfiles(createQuery: () => any) {
+  const rows: any[] = []
+  const pageSize = 1000
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await createQuery().range(from, from + pageSize - 1)
+    if (error) return { data: null, error }
+    const batch = data || []
+    rows.push(...batch)
+    if (batch.length < pageSize) return { data: rows, error: null }
+  }
+}
+
 export async function getScopedProfiles(access: AdminAccess): Promise<AccountProfileRow[]> {
-  let query = access.db
-    .from('profiles')
-    .select(PROFILE_ENTITLEMENT_SELECT)
-    .order('created_at', { ascending: false })
-
   const filter = getScopedProfileFilter(access)
-  if (filter) query = query.eq(filter.column, filter.value)
-
-  const { data, error } = await query
+  const { data, error } = await selectAllProfiles(() => {
+    let query = access.db
+      .from('profiles')
+      .select(PROFILE_ENTITLEMENT_SELECT)
+      .order('created_at', { ascending: false })
+      .order('id', { ascending: true })
+    if (filter) query = query.eq(filter.column, filter.value)
+    return query
+  })
   if (error) {
     const missingNewEntitlementColumns =
       error.code === '42703' || /account_status|account_expires_at|owner_sub_admin_id|created_by/i.test(error.message || '')
@@ -55,14 +68,15 @@ export async function getScopedProfiles(access: AdminAccess): Promise<AccountPro
     if (!missingNewEntitlementColumns) throw error
 
     // Legacy fallback: select older, safe columns and synthesize missing fields
-    let legacyQuery = access.db
-      .from('profiles')
-      .select('id, user_id, display_name, avatar_url, role, credits, subscription_tier, created_at')
-      .order('created_at', { ascending: false })
-
-    if (filter) legacyQuery = legacyQuery.eq(filter.column, filter.value)
-
-    const { data: legacyData, error: legacyError } = await legacyQuery
+    const { data: legacyData, error: legacyError } = await selectAllProfiles(() => {
+      let legacyQuery = access.db
+        .from('profiles')
+        .select('id, user_id, display_name, avatar_url, role, credits, subscription_tier, created_at')
+        .order('created_at', { ascending: false })
+        .order('id', { ascending: true })
+      if (filter) legacyQuery = legacyQuery.eq(filter.column, filter.value)
+      return legacyQuery
+    })
     if (legacyError) throw legacyError
 
     const rows = (legacyData || []).map((row: any) => ({
