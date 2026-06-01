@@ -12,6 +12,7 @@ import { MessageBubble } from '@/components/chat/message-bubble'
 import { ChatInput } from '@/components/chat/chat-input'
 import { Sidebar } from '@/components/chat/sidebar'
 import { ArtifactPanel } from '@/components/chat/artifact-panel'
+import { ImageGenerationPanel, type GeneratedImage, type ImageGenerationSize } from '@/components/chat/image-generation-panel'
 import { toast } from '@/components/ui/use-toast'
 import { AI_MODELS } from '@/types/models'
 import { cn } from '@/lib/utils'
@@ -269,6 +270,8 @@ type SidebarProject = {
 
 export default function ChatPage() {
   const [selectedModel, setSelectedModel] = useState(AI_MODELS[0].id)
+  const [generatedImages, setGeneratedImages] = useState<GeneratedImage[]>([])
+  const [isGeneratingImage, setIsGeneratingImage] = useState(false)
   const [reasoningMode, setReasoningMode] = useState<ReasoningMode>('thinking')
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [normalConversations, setNormalConversations] = useState<Conversation[]>([])
@@ -662,7 +665,7 @@ export default function ChatPage() {
   }
 
   const handleNewChat = () => {
-    if (!currentConversation && messages.length === 0) return
+    if (!currentConversation && messages.length === 0 && generatedImages.length === 0) return
 
     // Increment sequence to invalidate any pending requests
     ++conversationRequestSeqRef.current
@@ -673,6 +676,7 @@ export default function ChatPage() {
     setActiveArtifact(null)
     setIsArtifactOpen(false)
     setArtifactMessageId(null)
+    setGeneratedImages([])
   }
 
   const handleSelectConversation = async (id: string) => {
@@ -1570,6 +1574,48 @@ Rules:
     setWebSearchEnabled(!webSearchEnabled)
   }
 
+  const handleGenerateImage = async (prompt: string, size: ImageGenerationSize) => {
+    if (isGeneratingImage) return
+    setIsGeneratingImage(true)
+
+    try {
+      const response = await fetch('/api/image-generation', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prompt,
+          size,
+          conversationId: currentConversation?.id,
+          projectId: currentConversation?.id ? projectId || undefined : undefined,
+        }),
+      })
+
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok || !data?.image) {
+        throw new Error(data?.error || 'Could not generate image right now. Please try again.')
+      }
+
+      setGeneratedImages((prev) => [...prev, data.image as GeneratedImage])
+      toast({
+        title: 'Image generated',
+        description: 'Your PNG is ready to view and download.',
+      })
+    } catch (error: any) {
+      toast({
+        title: 'Generation failed',
+        description: error?.message || 'Image Generation is temporarily unavailable.',
+        variant: 'destructive',
+      })
+      throw error
+    } finally {
+      setIsGeneratingImage(false)
+    }
+  }
+
+  const handleRegenerateImage = async (image: GeneratedImage) => {
+    await handleGenerateImage(image.prompt, image.size)
+  }
+
   const handleRegenerateResponse = async (assistantMessageId: string) => {
     const conversationId = currentConversation?.id
     if (!conversationId || isLoading || isCreatingConversation || isSendingRef.current || pendingResponsesRef.current[conversationId]) {
@@ -2204,13 +2250,14 @@ Default to artifact:html with a complete single-file HTML document for visual, p
   const currentConvId = currentConversation?.id
   const currentChatPending = currentConvId ? !!pendingResponses[currentConvId] : false
   const isRequestInProgress = currentChatPending || isLoading || isCreatingConversation
-  const showReopenButton = currentConversation && activeArtifact && !isArtifactOpen
+  const isImageGenerationMode = selectedModel === 'image-generation'
+  const showReopenButton = currentConversation && activeArtifact && !isArtifactOpen && !isImageGenerationMode
 
   // Process messages before rendering - filter by current conversation ID as final safety
   const activeConversationId = currentConversation?.id || null
   const displayedMessages = processMessages(messages, activeConversationId)
 
-  const isEmptyDraft = !currentConversation && displayedMessages.length === 0
+  const isEmptyDraft = !currentConversation && displayedMessages.length === 0 && !isImageGenerationMode
 
   return (
     <div className="flex h-[100dvh] overflow-hidden bg-[#0f0f0f] md:h-screen">
@@ -2270,43 +2317,55 @@ Default to artifact:html with a complete single-file HTML document for visual, p
                 </motion.button>
               )}
 
-              <button
-                onClick={handleToggleWebSearch}
-                disabled={isRequestInProgress}
-                title={isRequestInProgress ? 'Wait for the current response to finish' : 'Toggle Web Search'}
-                className={cn(
-                  'flex h-8 items-center gap-1.5 rounded-full border px-2.5 text-xs font-medium transition-colors md:px-3',
-                  webSearchEnabled
-                    ? 'border-violet-400/20 bg-violet-500/10 text-violet-200'
-                    : 'border-white/[0.07] bg-white/[0.02] text-gray-400 hover:bg-white/[0.06] hover:text-gray-200',
-                  isRequestInProgress && 'opacity-50 cursor-not-allowed'
-                )}
-              >
-                <Globe className="h-3.5 w-3.5" />
-                <span className="hidden sm:inline">Search</span>
-              </button>
+              {!isImageGenerationMode && (
+                <>
+                  <button
+                    onClick={handleToggleWebSearch}
+                    disabled={isRequestInProgress}
+                    title={isRequestInProgress ? 'Wait for the current response to finish' : 'Toggle Web Search'}
+                    className={cn(
+                      'flex h-8 items-center gap-1.5 rounded-full border px-2.5 text-xs font-medium transition-colors md:px-3',
+                      webSearchEnabled
+                        ? 'border-violet-400/20 bg-violet-500/10 text-violet-200'
+                        : 'border-white/[0.07] bg-white/[0.02] text-gray-400 hover:bg-white/[0.06] hover:text-gray-200',
+                      isRequestInProgress && 'opacity-50 cursor-not-allowed'
+                    )}
+                  >
+                    <Globe className="h-3.5 w-3.5" />
+                    <span className="hidden sm:inline">Search</span>
+                  </button>
 
-              <button
-                onClick={handleToggleArtifactMode}
-                disabled={isRequestInProgress}
-                title={isRequestInProgress ? 'Wait for the current response to finish' : 'Toggle Artifact Mode'}
-                className={cn(
-                  'flex h-8 items-center gap-1.5 rounded-full border px-2.5 text-xs font-medium transition-colors md:px-3',
-                  artifactMode
-                    ? 'border-violet-400/20 bg-violet-500/10 text-violet-200'
-                    : 'border-white/[0.07] bg-white/[0.02] text-gray-400 hover:bg-white/[0.06] hover:text-gray-200',
-                  isRequestInProgress && 'opacity-50 cursor-not-allowed'
-                )}
-              >
-                <Box className="h-3.5 w-3.5" />
-                <span className="hidden sm:inline">Artifacts</span>
-              </button>
+                  <button
+                    onClick={handleToggleArtifactMode}
+                    disabled={isRequestInProgress}
+                    title={isRequestInProgress ? 'Wait for the current response to finish' : 'Toggle Artifact Mode'}
+                    className={cn(
+                      'flex h-8 items-center gap-1.5 rounded-full border px-2.5 text-xs font-medium transition-colors md:px-3',
+                      artifactMode
+                        ? 'border-violet-400/20 bg-violet-500/10 text-violet-200'
+                        : 'border-white/[0.07] bg-white/[0.02] text-gray-400 hover:bg-white/[0.06] hover:text-gray-200',
+                      isRequestInProgress && 'opacity-50 cursor-not-allowed'
+                    )}
+                  >
+                    <Box className="h-3.5 w-3.5" />
+                    <span className="hidden sm:inline">Artifacts</span>
+                  </button>
+                </>
+              )}
             </div>
           </div>
         </div>
 
         <div className="flex-1 overflow-y-auto px-3 py-4 scrollbar-thin md:px-4 md:py-5 lg:px-6">
-              <div className="mx-auto max-w-[820px]">
+              <div className={cn('mx-auto', isImageGenerationMode ? 'max-w-5xl' : 'max-w-[820px]')}>
+                {isImageGenerationMode ? (
+                  <ImageGenerationPanel
+                    generatedImages={generatedImages}
+                    isGenerating={isGeneratingImage}
+                    onGenerate={handleGenerateImage}
+                    onRegenerate={handleRegenerateImage}
+                  />
+                ) : (
                 <AnimatePresence mode="popLayout">
                   {displayedMessages.length === 0 && !isLoadingConversation ? (
                     <motion.div
@@ -2593,12 +2652,13 @@ Default to artifact:html with a complete single-file HTML document for visual, p
                   })}
                 </>
               )}
-            </AnimatePresence>
+                </AnimatePresence>
+                )}
             <div ref={messagesEndRef} />
           </div>
         </div>
 
-        {!isEmptyDraft && (
+        {!isEmptyDraft && !isImageGenerationMode && (
           <ChatInput
             onSend={handleSendMessage}
             disabled={isRequestInProgress}
@@ -2611,7 +2671,7 @@ Default to artifact:html with a complete single-file HTML document for visual, p
         </main>
 
         {/* Artifact panel as flex child */}
-        {isArtifactOpen && activeArtifact && (
+        {isArtifactOpen && activeArtifact && !isImageGenerationMode && (
           <ArtifactPanel
             artifact={activeArtifact}
             isOpen={isArtifactOpen}

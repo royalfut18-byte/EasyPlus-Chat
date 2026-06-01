@@ -2,9 +2,11 @@ import 'server-only'
 
 import { AI_MODELS, type AIModel } from '@/types/models'
 import { isAzureDeepSeekAvailable } from '@/lib/ai/azure-deepseek.server'
+import { isAzureImageAvailable } from '@/lib/ai/azure-image.server'
 import { readFirstServerEnv } from '@/lib/server-env'
+import { isR2Configured } from '@/lib/storage/r2'
 
-export type AIProvider = 'anthropic' | 'google' | 'azure'
+export type AIProvider = 'anthropic' | 'google' | 'azure' | 'image'
 
 export interface InternalAIModel extends AIModel {
   provider: AIProvider
@@ -31,6 +33,10 @@ const INTERNAL_AI_MODELS: InternalAIModel[] = [
   {
     ...AI_MODELS[3],
     provider: 'azure',
+  },
+  {
+    ...AI_MODELS[4],
+    provider: 'image',
   },
 ]
 
@@ -68,18 +74,26 @@ export function isModelAvailable(modelId: string): boolean {
   if (model.provider === 'azure') {
     return Boolean(readFirstServerEnv(['AZURE_FOUNDRY_API_KEY']).value && readFirstServerEnv(['AZURE_OPENAI_BASE_URL']).value)
   }
+  if (model.provider === 'image') {
+    return Boolean(
+      readFirstServerEnv(['AZURE_FOUNDRY_API_KEY']).value &&
+      readFirstServerEnv(['AZURE_OPENAI_BASE_URL']).value &&
+      isR2Configured()
+    )
+  }
   return true
 }
 
 export function isChatModelAvailable(modelId: string): boolean {
   const model = getInternalModel(modelId)
-  return Boolean(model && isModelAvailable(modelId))
+  return Boolean(model && model.provider !== 'image' && isModelAvailable(modelId))
 }
 
 export async function getAvailablePublicModelIds(): Promise<string[]> {
   const availableModels = await Promise.all(INTERNAL_AI_MODELS.map(async (model) => {
     if (!isModelAvailable(model.id)) return false
     if (model.provider === 'azure') return isAzureDeepSeekAvailable()
+    if (model.provider === 'image') return isAzureImageAvailable()
     return true
   }))
 

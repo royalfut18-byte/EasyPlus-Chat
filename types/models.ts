@@ -2,7 +2,7 @@ export interface AIModel {
   id: string
   name: string
   description?: string
-  tier: 'max' | 'fast' | 'pro'
+  tier: 'max' | 'fast' | 'pro' | 'image'
   costPerMessage: number
   color: string
 }
@@ -36,6 +36,14 @@ export const AI_MODELS: AIModel[] = [
     tier: 'pro',
     costPerMessage: 15,
     color: '#a78bfa',
+  },
+  {
+    id: 'image-generation',
+    name: 'Image Generation',
+    description: 'Create high-quality images from detailed prompts.',
+    tier: 'image',
+    costPerMessage: 0,
+    color: '#ec4899',
   },
 ]
 
