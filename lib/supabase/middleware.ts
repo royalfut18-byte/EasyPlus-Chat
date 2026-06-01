@@ -30,7 +30,9 @@ export async function updateSession(request: NextRequest) {
   const {
     data: { user },
   } = await supabase.auth.getUser()
-  const isPublicAsset = request.nextUrl.pathname === '/manifest.webmanifest'
+  const isPublicAsset =
+    request.nextUrl.pathname === '/manifest.webmanifest' ||
+    request.nextUrl.pathname === '/api/models'
 
   const finalizeResponse = (response: NextResponse) => {
     supabaseResponse.cookies.getAll().forEach(({ name, value, ...options }) => {

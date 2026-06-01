@@ -1,10 +1,11 @@
 'use client'
 
+import { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
 import { AI_MODELS, type AIModel } from '@/types/models'
 import { AnthropicIcon } from '@/components/icons/anthropic-icon'
 import { ChatGPTIcon } from '@/components/icons/chatgpt-icon'
-import { Check, ChevronDown, Sparkles, Lock } from 'lucide-react'
+import { Check, ChevronDown, Code2, Sparkles, Lock } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
   DropdownMenu,
@@ -21,14 +22,35 @@ interface ModelSelectorProps {
 }
 
 export function ModelSelector({ selectedModel, onSelectModel, disabled = false, disabledReason }: ModelSelectorProps) {
+  const [availableModelIds, setAvailableModelIds] = useState<Set<string>>(
+    () => new Set(AI_MODELS.filter(model => model.id !== 'deepseek-v4-pro').map(model => model.id))
+  )
   const activeModel = AI_MODELS.find(model => model.id === selectedModel) || AI_MODELS[0]
+  const isAvailable = (model: AIModel) => availableModelIds.has(model.id)
+
+  useEffect(() => {
+    let active = true
+    fetch('/api/models', { cache: 'no-store' })
+      .then(response => response.ok ? response.json() : null)
+      .then(data => {
+        if (!active || !Array.isArray(data?.availableModelIds)) return
+        setAvailableModelIds(new Set(data.availableModelIds))
+      })
+      .catch(() => {})
+    return () => {
+      active = false
+    }
+  }, [])
+
   const getSelectedGlow = (model: AIModel) => {
     if (selectedModel !== model.id) return undefined
     const color = model.id === 'chat-gpt-5.5'
       ? '16, 163, 127'
       : model.id === 'claude-opus-4.8'
         ? '217, 119, 87'
-        : '96, 165, 250'
+        : model.id === 'deepseek-v4-pro'
+          ? '167, 139, 250'
+          : '96, 165, 250'
     return { boxShadow: `0 0 18px rgba(${color}, 0.22), 0 0 0 1px rgba(${color}, 0.14)` }
   }
 
@@ -37,6 +59,7 @@ export function ModelSelector({ selectedModel, onSelectModel, disabled = false, 
       .replace('Claude Opus', 'Claude')
       .replace('Chat GPT 5.5', 'GPT 5.5')
       .replace('Gemini 3.1 Pro', 'Gemini 3.1')
+      .replace('DeepSeek V4 Pro', 'DeepSeek V4')
   }
 
   const getModelIcon = (model: AIModel) => {
@@ -47,7 +70,9 @@ export function ModelSelector({ selectedModel, onSelectModel, disabled = false, 
           ? 'text-[#10a37f]'
           : model.id === 'claude-opus-4.8'
             ? 'text-[#d97757]'
-            : 'text-blue-400'
+            : model.id === 'deepseek-v4-pro'
+              ? 'text-violet-300'
+              : 'text-blue-400'
         : 'text-gray-400'
     )
 
@@ -60,6 +85,8 @@ export function ModelSelector({ selectedModel, onSelectModel, disabled = false, 
           <ChatGPTIcon className={iconClassName} />
         ) : model.id === 'claude-opus-4.8' ? (
           <AnthropicIcon className={iconClassName} />
+        ) : model.id === 'deepseek-v4-pro' ? (
+          <Code2 className={iconClassName} />
         ) : (
           <Sparkles className={iconClassName} />
         )}
@@ -90,11 +117,16 @@ export function ModelSelector({ selectedModel, onSelectModel, disabled = false, 
             {AI_MODELS.map(model => (
               <DropdownMenuItem
                 key={model.id}
-                onSelect={() => onSelectModel(model.id)}
+                disabled={!isAvailable(model)}
+                onSelect={() => isAvailable(model) && onSelectModel(model.id)}
                 className="flex cursor-pointer items-center gap-2 text-gray-200 focus:bg-white/[0.07] focus:text-white"
               >
                 {getModelIcon(model)}
-                <span className="flex-1">{getShortName(model.name)}</span>
+                <span className="flex-1">
+                  {getShortName(model.name)}
+                  {model.description && <span className="mt-0.5 block text-[10px] leading-tight text-gray-500">{model.description}</span>}
+                </span>
+                {!isAvailable(model) && <span className="text-[10px] text-gray-500">Unavailable</span>}
                 {selectedModel === model.id && <Check className="h-4 w-4 text-violet-300" />}
               </DropdownMenuItem>
             ))}
@@ -112,15 +144,15 @@ export function ModelSelector({ selectedModel, onSelectModel, disabled = false, 
       {AI_MODELS.map((model) => (
         <motion.button
           key={model.id}
-          onClick={() => !disabled && onSelectModel(model.id)}
-          disabled={disabled}
-          title={disabled ? (disabledReason || 'Start a new chat to switch models') : undefined}
+          onClick={() => !disabled && isAvailable(model) && onSelectModel(model.id)}
+          disabled={disabled || !isAvailable(model)}
+          title={!isAvailable(model) ? `${model.name} is temporarily unavailable` : disabled ? (disabledReason || 'Start a new chat to switch models') : model.description}
           className={cn(
             'relative flex h-8 items-center gap-1.5 rounded-full border px-2.5 text-xs font-medium transition-colors md:px-3',
             selectedModel === model.id
               ? 'border-white/[0.10] bg-white/[0.06]'
               : 'border-transparent bg-transparent hover:bg-white/[0.045]',
-            disabled && 'opacity-60 cursor-not-allowed'
+            (disabled || !isAvailable(model)) && 'opacity-60 cursor-not-allowed'
           )}
           style={getSelectedGlow(model)}
           whileTap={disabled ? {} : { scale: 0.98 }}

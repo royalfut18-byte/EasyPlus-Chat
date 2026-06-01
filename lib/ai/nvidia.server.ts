@@ -1,0 +1,186 @@
+import 'server-only'
+
+import type { ChatMessage } from '@/types/models'
+
+const NVIDIA_BASE_URL = 'https://integrate.api.nvidia.com/v1'
+const NVIDIA_DEEPSEEK_V4_PRO_MODEL = 'deepseek-ai/deepseek-v4-pro'
+const REQUEST_TIMEOUT_MS = 280_000
+const AVAILABILITY_CACHE_MS = 5 * 60_000
+
+let availabilityCache: { checkedAt: number; available: boolean } | null = null
+
+function getProviderConfig() {
+  return {
+    apiKey: process.env.DEEPSEEK_V4_PRO_API_KEY || process.env.NVIDIA_API_KEY,
+    baseUrl: (process.env.DEEPSEEK_V4_PRO_BASE_URL || NVIDIA_BASE_URL).replace(/\/+$/, ''),
+    model: process.env.DEEPSEEK_V4_PRO_MODEL || NVIDIA_DEEPSEEK_V4_PRO_MODEL,
+  }
+}
+
+function getSafeProviderError(status?: number): Error {
+  if (status === 429 || (status != null && status >= 500)) {
+    return new Error('DeepSeek V4 Pro is temporarily busy. Please try again in a moment.')
+  }
+  return new Error('DeepSeek V4 Pro is temporarily unavailable.')
+}
+
+export async function isDeepSeekV4ProEndpointAvailable(): Promise<boolean> {
+  const now = Date.now()
+  if (availabilityCache && now - availabilityCache.checkedAt < AVAILABILITY_CACHE_MS) {
+    return availabilityCache.available
+  }
+
+  const { apiKey, baseUrl, model } = getProviderConfig()
+  if (!apiKey) {
+    availabilityCache = { checkedAt: now, available: false }
+    return false
+  }
+
+  try {
+    const response = await fetch(`${baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model,
+        messages: [{ role: 'user', content: 'Reply OK.' }],
+        temperature: 0,
+        max_tokens: 2,
+        extra_body: {
+          chat_template_kwargs: {
+            thinking: false,
+          },
+        },
+        stream: false,
+      }),
+      signal: AbortSignal.timeout(15_000),
+    })
+
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => '')
+      console.error('[DeepSeek Provider] Availability probe failed:', {
+        status: response.status,
+        error: errorText.substring(0, 300),
+      })
+    }
+
+    availabilityCache = { checkedAt: now, available: response.ok }
+  } catch (error: any) {
+    console.error('[DeepSeek Provider] Availability probe exception:', error.message)
+    availabilityCache = { checkedAt: now, available: false }
+  }
+
+  return availabilityCache.available
+}
+
+export async function streamDeepSeekV4ProResponse(
+  messages: ChatMessage[],
+  systemPromptText: string,
+  temperature: number = 0.7,
+  maxTokens: number = 16384
+): Promise<ReadableStream> {
+  const { apiKey, baseUrl, model } = getProviderConfig()
+
+  if (!apiKey) {
+    console.error('[DeepSeek Provider] NVIDIA_API_KEY is not set')
+    throw getSafeProviderError()
+  }
+
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
+
+  try {
+    const response = await fetch(`${baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model,
+        messages: [
+          { role: 'system', content: systemPromptText },
+          ...messages
+            .filter((message) => message.role === 'user' || message.role === 'assistant')
+            .map((message) => ({ role: message.role, content: message.content || '' })),
+        ],
+        temperature,
+        top_p: 0.95,
+        max_tokens: maxTokens,
+        extra_body: {
+          chat_template_kwargs: {
+            thinking: false,
+          },
+        },
+        stream: true,
+      }),
+      signal: controller.signal,
+    })
+
+    if (!response.ok || !response.body) {
+      const errorText = await response.text().catch(() => '')
+      console.error('[DeepSeek Provider] Request failed:', {
+        status: response.status,
+        error: errorText.substring(0, 300),
+      })
+      throw getSafeProviderError(response.status)
+    }
+
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+    const encoder = new TextEncoder()
+
+    return new ReadableStream({
+      async start(streamController) {
+        let buffer = ''
+
+        try {
+          while (true) {
+            const { done, value } = await reader.read()
+            if (done) break
+
+            buffer += decoder.decode(value, { stream: true })
+            const lines = buffer.split(/\r?\n/)
+            buffer = lines.pop() || ''
+
+            for (const line of lines) {
+              if (!line.startsWith('data:')) continue
+              const payload = line.slice(5).trim()
+              if (!payload || payload === '[DONE]') continue
+
+              try {
+                const data = JSON.parse(payload)
+                const text = data?.choices?.[0]?.delta?.content
+                if (typeof text === 'string' && text) {
+                  streamController.enqueue(encoder.encode(text))
+                }
+              } catch {
+                console.warn('[DeepSeek Provider] Ignored malformed stream event')
+              }
+            }
+          }
+
+          streamController.close()
+        } catch (error: any) {
+          console.error('[DeepSeek Provider] Stream failed:', error.message)
+          streamController.error(getSafeProviderError())
+        } finally {
+          clearTimeout(timeout)
+          reader.releaseLock()
+        }
+      },
+      cancel() {
+        clearTimeout(timeout)
+        controller.abort()
+        reader.cancel().catch(() => {})
+      },
+    })
+  } catch (error: any) {
+    clearTimeout(timeout)
+    if (error?.message?.startsWith('DeepSeek V4 Pro')) throw error
+    console.error('[DeepSeek Provider] Request exception:', error.message)
+    throw getSafeProviderError()
+  }
+}

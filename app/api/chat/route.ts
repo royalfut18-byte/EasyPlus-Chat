@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { streamBedrockResponse, getModelCost } from '@/lib/ai/bedrock'
 import { streamGeminiResponse } from '@/lib/ai/gemini'
+import { streamDeepSeekV4ProResponse } from '@/lib/ai/nvidia.server'
 import { searchWeb, buildWebSearchQuery } from '@/lib/ai/web-search'
 import { buildSystemPrompt, isTimeSensitiveQuery, detectQueryType } from '@/lib/ai/system-prompt'
 import { buildDocumentContext, isComprehensiveDocumentRequest } from '@/lib/ai/document-extract'
@@ -24,7 +25,7 @@ import { buildContext, formatContextForPrompt, searchCrossConversationContext } 
 import { shouldUpdateSummary, updateConversationSummary, chunkLongMessage, saveAttachmentMemory } from '@/lib/ai/conversation-summary'
 import { isLongTaskRequest, LONG_TASK_SYSTEM_ADDENDUM } from '@/lib/ai/long-task'
 import type { ChatMessage, ReasoningMode } from '@/types/models'
-import { getInternalModel, getPublicModelName, toPublicModelId } from '@/lib/ai/model-routing.server'
+import { getInternalModel, getPublicModelName, isModelAvailable, toPublicModelId } from '@/lib/ai/model-routing.server'
 import { getReasoningProfile, getReasoningSystemAddendum, type ReasoningProfile } from '@/lib/ai/reasoning-profiles'
 import { getAccountEntitlement, getEntitlementBlockResponse } from '@/lib/account-entitlements.server'
 import { createProjectMemory, getRelevantProjectContext } from '@/lib/projects.server'
@@ -41,11 +42,15 @@ function sanitizeIdentityLeak(text: string, publicModelName: string): string {
     /\bjust\s+the\s+name\s+of\s+the\s+(interface|assistant|ui)\b/i.test(text) ||
     /\bnot\s+(openai|chatgpt|google|gemini|claude)\b/i.test(text)
 
+  const hasForbiddenInternalDetail =
+    /\b(nvidia|anthropic|haiku|sonnet|gemini[-\s]?2\.5|google\s+ai|bedrock)\b/i.test(text) ||
+    /deepseek-ai\/deepseek-v4-pro|integrate\.api\.nvidia\.com/i.test(text)
+
   const hasProviderDisclosure =
-    /\b(anthropic|haiku|sonnet|gemini[-\s]?2\.5|google\s+ai|bedrock)\b/i.test(text) ||
+    hasForbiddenInternalDetail ||
     /\bclaude\b/i.test(text) && publicModelName !== 'Claude Opus 4.8'
 
-  const looksLikeIdentityLeak = hasIdentityContext && hasProviderDisclosure
+  const looksLikeIdentityLeak = hasForbiddenInternalDetail || (hasIdentityContext && hasProviderDisclosure)
   if (!looksLikeIdentityLeak) return text
 
   return `I am ${publicModelName}. Backend routing details are not exposed.`
@@ -84,18 +89,6 @@ export async function POST(request: NextRequest) {
   let stage = 'init'
 
   try {
-    // Stage: Check env
-    stage = 'env-check'
-    const awsToken = process.env.AWS_BEARER_TOKEN_BEDROCK
-
-    if (!awsToken) {
-      console.error('[Chat API] FATAL: AWS_BEARER_TOKEN_BEDROCK is not set')
-      return NextResponse.json(
-        { error: 'Server configuration error: inference backend is unavailable' },
-        { status: 500 }
-      )
-    }
-
     // Stage: Auth
     stage = 'auth'
     const supabase = await createClient()
@@ -169,7 +162,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    if (!getInternalModel(validatedModel)) {
+    if (!getInternalModel(validatedModel) || !isModelAvailable(validatedModel)) {
       return NextResponse.json({ error: 'Model is not available' }, { status: 400 })
     }
 
@@ -828,6 +821,8 @@ RULES FOR USING THESE RESULTS:
             providerStream = await streamGeminiResponse(validatedModel, messagesForModel, systemPrompt, temperature, maxTokens)
           } else if (selectedModel.provider === 'anthropic') {
             providerStream = await streamBedrockResponse(validatedModel, messagesForModel, systemPrompt, temperature, maxTokens)
+          } else if (selectedModel.provider === 'nvidia') {
+            providerStream = await streamDeepSeekV4ProResponse(messagesForModel, systemPrompt, temperature, maxTokens)
           } else {
             controller.enqueue(encoder.encode('Error: This EasyPlus tier is unavailable'))
             controller.close()

@@ -1,8 +1,9 @@
 import 'server-only'
 
 import { AI_MODELS, type AIModel } from '@/types/models'
+import { isDeepSeekV4ProEndpointAvailable } from '@/lib/ai/nvidia.server'
 
-export type AIProvider = 'anthropic' | 'google'
+export type AIProvider = 'anthropic' | 'google' | 'nvidia'
 
 export interface InternalAIModel extends AIModel {
   provider: AIProvider
@@ -26,6 +27,10 @@ const INTERNAL_AI_MODELS: InternalAIModel[] = [
     provider: 'google',
     geminiModelId: 'gemini-2.5-flash',
   },
+  {
+    ...AI_MODELS[3],
+    provider: 'nvidia',
+  },
 ]
 
 const LEGACY_MODEL_IDS: Record<string, string> = {
@@ -33,6 +38,7 @@ const LEGACY_MODEL_IDS: Record<string, string> = {
   'claude-opus-4.7': 'claude-opus-4.8',
   'claude-haiku-4.5': 'chat-gpt-5.5',
   'gemini-2.5-flash': 'gemini-3.1-pro',
+  'deepseek-ai/deepseek-v4-pro': 'deepseek-v4-pro',
   'easyplus-max': 'claude-opus-4.8',
   'easyplus-fast': 'chat-gpt-5.5',
   'easyplus-pro': 'gemini-3.1-pro',
@@ -53,6 +59,25 @@ export function getInternalModel(modelId: string): InternalAIModel | undefined {
 
 export function getPublicModelName(modelId: string): string {
   return getInternalModel(modelId)?.name || 'EasyPlus'
+}
+
+export function isModelAvailable(modelId: string): boolean {
+  const model = getInternalModel(modelId)
+  if (!model) return false
+  if (model.provider !== 'nvidia') return true
+  return Boolean(process.env.DEEPSEEK_V4_PRO_API_KEY || process.env.NVIDIA_API_KEY)
+}
+
+export async function getAvailablePublicModelIds(): Promise<string[]> {
+  const availableIds = INTERNAL_AI_MODELS
+    .filter((model) => model.provider !== 'nvidia')
+    .map((model) => model.id)
+
+  if (isModelAvailable('deepseek-v4-pro') && await isDeepSeekV4ProEndpointAvailable()) {
+    availableIds.push('deepseek-v4-pro')
+  }
+
+  return availableIds
 }
 
 export function sanitizeConversation<T extends Record<string, any>>(conversation: T): T {

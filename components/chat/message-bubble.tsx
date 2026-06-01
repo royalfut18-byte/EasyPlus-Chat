@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { motion } from 'framer-motion'
-import { Copy, ThumbsUp, ThumbsDown, RotateCw, FileCode, Sparkles, PanelRightOpen, Download, FileText, FileSpreadsheet, FileJson, File as FileIcon, ImageIcon, ScanText, ExternalLink, FileArchive } from 'lucide-react'
+import { Copy, ThumbsUp, ThumbsDown, RotateCw, FileCode, Sparkles, PanelRightOpen, Download, FileText, FileSpreadsheet, FileJson, File as FileIcon, ImageIcon, ScanText, ExternalLink, FileArchive, Code2 } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism'
@@ -129,6 +129,8 @@ export function MessageBubble({ role, content, model, onRegenerate, attachments,
                 <ChatGPTIcon className="w-3 h-3 md:w-3.5 md:h-3.5 text-[#10a37f]" />
               ) : modelData.id === 'claude-opus-4.8' ? (
                 <AnthropicIcon className="w-3 h-3 md:w-3.5 md:h-3.5 text-[#d97757]" />
+              ) : modelData.id === 'deepseek-v4-pro' ? (
+                <Code2 className="w-3 h-3 md:w-3.5 md:h-3.5 text-violet-300" />
               ) : (
                 <Sparkles className="w-3 h-3 md:w-3.5 md:h-3.5 text-blue-400" />
               )}

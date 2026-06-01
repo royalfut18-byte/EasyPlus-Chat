@@ -1,6 +1,7 @@
 export interface AIModel {
   id: string
   name: string
+  description?: string
   tier: 'max' | 'fast' | 'pro'
   costPerMessage: number
   color: string
@@ -27,6 +28,14 @@ export const AI_MODELS: AIModel[] = [
     tier: 'pro',
     costPerMessage: 15,
     color: '#4285f4',
+  },
+  {
+    id: 'deepseek-v4-pro',
+    name: 'DeepSeek V4 Pro',
+    description: 'Advanced coding, reasoning, and long-context project work.',
+    tier: 'pro',
+    costPerMessage: 15,
+    color: '#a78bfa',
   },
 ]
 
