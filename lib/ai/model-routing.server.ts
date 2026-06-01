@@ -29,13 +29,14 @@ const INTERNAL_AI_MODELS: InternalAIModel[] = [
 ]
 
 const LEGACY_MODEL_IDS: Record<string, string> = {
-  'claude-opus-4.6': 'claude-opus-4.7',
+  'claude-opus-4.6': 'claude-opus-4.8',
+  'claude-opus-4.7': 'claude-opus-4.8',
   'claude-haiku-4.5': 'chat-gpt-5.5',
   'gemini-2.5-flash': 'gemini-3.1-pro',
-  'easyplus-max': 'claude-opus-4.7',
+  'easyplus-max': 'claude-opus-4.8',
   'easyplus-fast': 'chat-gpt-5.5',
   'easyplus-pro': 'gemini-3.1-pro',
-  'epm-7f3a9c': 'claude-opus-4.7',
+  'epm-7f3a9c': 'claude-opus-4.8',
   'epm-b1d4e8': 'chat-gpt-5.5',
   'epm-c6a275': 'gemini-3.1-pro',
 }

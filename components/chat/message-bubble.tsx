@@ -127,7 +127,7 @@ export function MessageBubble({ role, content, model, onRegenerate, attachments,
             <div className="flex h-5 w-5 items-center justify-center rounded-md bg-white/[0.04]">
               {modelData.id === 'chat-gpt-5.5' ? (
                 <ChatGPTIcon className="w-3 h-3 md:w-3.5 md:h-3.5 text-[#10a37f]" />
-              ) : modelData.id === 'claude-opus-4.7' ? (
+              ) : modelData.id === 'claude-opus-4.8' ? (
                 <AnthropicIcon className="w-3 h-3 md:w-3.5 md:h-3.5 text-[#d97757]" />
               ) : (
                 <Sparkles className="w-3 h-3 md:w-3.5 md:h-3.5 text-blue-400" />

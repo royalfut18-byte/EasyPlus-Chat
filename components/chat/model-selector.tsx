@@ -19,7 +19,7 @@ export function ModelSelector({ selectedModel, onSelectModel, disabled = false, 
     if (selectedModel !== model.id) return undefined
     const color = model.id === 'chat-gpt-5.5'
       ? '16, 163, 127'
-      : model.id === 'claude-opus-4.7'
+      : model.id === 'claude-opus-4.8'
         ? '217, 119, 87'
         : '96, 165, 250'
     return { boxShadow: `0 0 18px rgba(${color}, 0.22), 0 0 0 1px rgba(${color}, 0.14)` }
@@ -38,7 +38,7 @@ export function ModelSelector({ selectedModel, onSelectModel, disabled = false, 
       selectedModel === model.id
         ? model.id === 'chat-gpt-5.5'
           ? 'text-[#10a37f]'
-          : model.id === 'claude-opus-4.7'
+          : model.id === 'claude-opus-4.8'
             ? 'text-[#d97757]'
             : 'text-blue-400'
         : 'text-gray-400'
@@ -51,7 +51,7 @@ export function ModelSelector({ selectedModel, onSelectModel, disabled = false, 
       )}>
         {model.id === 'chat-gpt-5.5' ? (
           <ChatGPTIcon className={iconClassName} />
-        ) : model.id === 'claude-opus-4.7' ? (
+        ) : model.id === 'claude-opus-4.8' ? (
           <AnthropicIcon className={iconClassName} />
         ) : (
           <Sparkles className={iconClassName} />

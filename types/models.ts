@@ -8,8 +8,8 @@ export interface AIModel {
 
 export const AI_MODELS: AIModel[] = [
   {
-    id: 'claude-opus-4.7',
-    name: 'Claude Opus 4.7',
+    id: 'claude-opus-4.8',
+    name: 'Claude Opus 4.8',
     tier: 'max',
     costPerMessage: 50,
     color: '#d97757',

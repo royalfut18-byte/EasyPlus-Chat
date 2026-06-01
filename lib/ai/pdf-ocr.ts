@@ -4,7 +4,7 @@ import { getInternalModel } from '@/lib/ai/model-routing.server'
 
 const MAX_OCR_PAGES_PER_REQUEST = 10
 const MAX_RENDER_DIMENSION = 1800
-const OCR_MODEL_ID = 'claude-opus-4.7'
+const OCR_MODEL_ID = 'claude-opus-4.8'
 
 interface RenderedPageImage {
   pageNumber: number

@@ -43,7 +43,7 @@ function sanitizeIdentityLeak(text: string, publicModelName: string): string {
 
   const hasProviderDisclosure =
     /\b(anthropic|haiku|sonnet|gemini[-\s]?2\.5|google\s+ai|bedrock)\b/i.test(text) ||
-    /\bclaude\b/i.test(text) && publicModelName !== 'Claude Opus 4.7'
+    /\bclaude\b/i.test(text) && publicModelName !== 'Claude Opus 4.8'
 
   const looksLikeIdentityLeak = hasIdentityContext && hasProviderDisclosure
   if (!looksLikeIdentityLeak) return text
