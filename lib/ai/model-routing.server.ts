@@ -2,7 +2,7 @@ import 'server-only'
 
 import { AI_MODELS, type AIModel } from '@/types/models'
 
-export type AIProvider = 'anthropic' | 'google' | 'nvidia'
+export type AIProvider = 'anthropic' | 'google' | 'nvidia' | 'image'
 
 export interface InternalAIModel extends AIModel {
   provider: AIProvider
@@ -29,6 +29,10 @@ const INTERNAL_AI_MODELS: InternalAIModel[] = [
   {
     ...AI_MODELS[3],
     provider: 'nvidia',
+  },
+  {
+    ...AI_MODELS[4],
+    provider: 'image',
   },
 ]
 
@@ -63,8 +67,14 @@ export function getPublicModelName(modelId: string): string {
 export function isModelAvailable(modelId: string): boolean {
   const model = getInternalModel(modelId)
   if (!model) return false
-  if (model.provider !== 'nvidia') return true
-  return Boolean(process.env.DEEPSEEK_V4_PRO_API_KEY || process.env.NVIDIA_API_KEY)
+  if (model.provider === 'nvidia') return Boolean(process.env.DEEPSEEK_V4_PRO_API_KEY || process.env.NVIDIA_API_KEY)
+  if (model.provider === 'image') return Boolean(process.env.NVIDIA_IMAGE_API_KEY || process.env.NVIDIA_API_KEY)
+  return true
+}
+
+export function isChatModelAvailable(modelId: string): boolean {
+  const model = getInternalModel(modelId)
+  return Boolean(model && model.provider !== 'image' && isModelAvailable(modelId))
 }
 
 export async function getAvailablePublicModelIds(): Promise<string[]> {

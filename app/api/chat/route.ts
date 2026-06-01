@@ -25,7 +25,7 @@ import { buildContext, formatContextForPrompt, searchCrossConversationContext } 
 import { shouldUpdateSummary, updateConversationSummary, chunkLongMessage, saveAttachmentMemory } from '@/lib/ai/conversation-summary'
 import { isLongTaskRequest, LONG_TASK_SYSTEM_ADDENDUM } from '@/lib/ai/long-task'
 import type { ChatMessage, ReasoningMode } from '@/types/models'
-import { getInternalModel, getPublicModelName, isModelAvailable, toPublicModelId } from '@/lib/ai/model-routing.server'
+import { getInternalModel, getPublicModelName, isChatModelAvailable, toPublicModelId } from '@/lib/ai/model-routing.server'
 import { getReasoningProfile, getReasoningSystemAddendum, type ReasoningProfile } from '@/lib/ai/reasoning-profiles'
 import { getAccountEntitlement, getEntitlementBlockResponse } from '@/lib/account-entitlements.server'
 import { createProjectMemory, getRelevantProjectContext } from '@/lib/projects.server'
@@ -162,7 +162,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    if (!getInternalModel(validatedModel) || !isModelAvailable(validatedModel)) {
+    if (!getInternalModel(validatedModel) || !isChatModelAvailable(validatedModel)) {
       return NextResponse.json({ error: 'Model is not available' }, { status: 400 })
     }
 
