@@ -37,14 +37,6 @@ export const AI_MODELS: AIModel[] = [
     costPerMessage: 15,
     color: '#a78bfa',
   },
-  {
-    id: 'image-generation',
-    name: 'Image Generation',
-    description: 'Create high-quality images from text descriptions.',
-    tier: 'pro',
-    costPerMessage: 10,
-    color: '#ec4899',
-  },
 ]
 
 export interface ChatAttachment {

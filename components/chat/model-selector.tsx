@@ -23,7 +23,7 @@ interface ModelSelectorProps {
 
 export function ModelSelector({ selectedModel, onSelectModel, disabled = false, disabledReason }: ModelSelectorProps) {
   const [availableModelIds, setAvailableModelIds] = useState<Set<string>>(
-    () => new Set(AI_MODELS.filter(model => model.id !== 'deepseek-v4-pro' && model.id !== 'image-generation').map(model => model.id))
+    () => new Set(AI_MODELS.filter(model => model.id !== 'deepseek-v4-pro').map(model => model.id))
   )
   const activeModel = AI_MODELS.find(model => model.id === selectedModel) || AI_MODELS[0]
   const isAvailable = (model: AIModel) => availableModelIds.has(model.id)
@@ -50,9 +50,7 @@ export function ModelSelector({ selectedModel, onSelectModel, disabled = false, 
         ? '217, 119, 87'
         : model.id === 'deepseek-v4-pro'
           ? '167, 139, 250'
-          : model.id === 'image-generation'
-            ? '236, 72, 153'
-            : '96, 165, 250'
+          : '96, 165, 250'
     return { boxShadow: `0 0 18px rgba(${color}, 0.22), 0 0 0 1px rgba(${color}, 0.14)` }
   }
 
@@ -62,7 +60,6 @@ export function ModelSelector({ selectedModel, onSelectModel, disabled = false, 
       .replace('Chat GPT 5.5', 'GPT 5.5')
       .replace('Gemini 3.1 Pro', 'Gemini 3.1')
       .replace('DeepSeek V4 Pro', 'DeepSeek V4')
-      .replace('Image Generation', 'Image Gen')
   }
 
   const getModelIcon = (model: AIModel) => {
@@ -75,9 +72,7 @@ export function ModelSelector({ selectedModel, onSelectModel, disabled = false, 
             ? 'text-[#d97757]'
             : model.id === 'deepseek-v4-pro'
               ? 'text-violet-300'
-              : model.id === 'image-generation'
-                ? 'text-pink-300'
-                : 'text-blue-400'
+              : 'text-blue-400'
         : 'text-gray-400'
     )
 
@@ -92,8 +87,6 @@ export function ModelSelector({ selectedModel, onSelectModel, disabled = false, 
           <AnthropicIcon className={iconClassName} />
         ) : model.id === 'deepseek-v4-pro' ? (
           <Code2 className={iconClassName} />
-        ) : model.id === 'image-generation' ? (
-          <Sparkles className={cn(iconClassName, 'text-pink-300')} />
         ) : (
           <Sparkles className={iconClassName} />
         )}

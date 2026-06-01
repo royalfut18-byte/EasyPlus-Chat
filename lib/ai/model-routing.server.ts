@@ -1,12 +1,10 @@
 import 'server-only'
 
 import { AI_MODELS, type AIModel } from '@/types/models'
+import { isAzureDeepSeekAvailable } from '@/lib/ai/azure-deepseek.server'
 import { readFirstServerEnv } from '@/lib/server-env'
-import { isDeepSeekV4ProEndpointAvailable } from '@/lib/ai/nvidia.server'
-import { getNvidiaImageDiagnostics } from '@/lib/ai/nvidia-image.server'
-import { isR2Configured } from '@/lib/storage/r2'
 
-export type AIProvider = 'anthropic' | 'google' | 'nvidia' | 'image'
+export type AIProvider = 'anthropic' | 'google' | 'azure'
 
 export interface InternalAIModel extends AIModel {
   provider: AIProvider
@@ -32,11 +30,7 @@ const INTERNAL_AI_MODELS: InternalAIModel[] = [
   },
   {
     ...AI_MODELS[3],
-    provider: 'nvidia',
-  },
-  {
-    ...AI_MODELS[4],
-    provider: 'image',
+    provider: 'azure',
   },
 ]
 
@@ -71,21 +65,21 @@ export function getPublicModelName(modelId: string): string {
 export function isModelAvailable(modelId: string): boolean {
   const model = getInternalModel(modelId)
   if (!model) return false
-  if (model.provider === 'nvidia') return Boolean(readFirstServerEnv(['DEEPSEEK_V4_PRO_API_KEY', 'NVIDIA_API_KEY']).value)
-  if (model.provider === 'image') return Boolean(readFirstServerEnv(['NVIDIA_IMAGE_API_KEY', 'NVIDIA_API_KEY']).value)
+  if (model.provider === 'azure') {
+    return Boolean(readFirstServerEnv(['AZURE_FOUNDRY_API_KEY']).value && readFirstServerEnv(['AZURE_OPENAI_BASE_URL']).value)
+  }
   return true
 }
 
 export function isChatModelAvailable(modelId: string): boolean {
   const model = getInternalModel(modelId)
-  return Boolean(model && model.provider !== 'image' && isModelAvailable(modelId))
+  return Boolean(model && isModelAvailable(modelId))
 }
 
 export async function getAvailablePublicModelIds(): Promise<string[]> {
   const availableModels = await Promise.all(INTERNAL_AI_MODELS.map(async (model) => {
     if (!isModelAvailable(model.id)) return false
-    if (model.provider === 'nvidia') return isDeepSeekV4ProEndpointAvailable()
-    if (model.provider === 'image') return isR2Configured() && (await getNvidiaImageDiagnostics()).probeOk
+    if (model.provider === 'azure') return isAzureDeepSeekAvailable()
     return true
   }))
 

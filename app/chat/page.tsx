@@ -12,7 +12,6 @@ import { MessageBubble } from '@/components/chat/message-bubble'
 import { ChatInput } from '@/components/chat/chat-input'
 import { Sidebar } from '@/components/chat/sidebar'
 import { ArtifactPanel } from '@/components/chat/artifact-panel'
-import { ImageGenerationPanel, type GeneratedImage } from '@/components/chat/image-generation-panel'
 import { toast } from '@/components/ui/use-toast'
 import { AI_MODELS } from '@/types/models'
 import { cn } from '@/lib/utils'
@@ -283,8 +282,6 @@ export default function ChatPage() {
   const [isCreatingConversation, setIsCreatingConversation] = useState(false)
   const [artifactMode, setArtifactMode] = useState(false)
   const [webSearchEnabled, setWebSearchEnabled] = useState(false)
-  const [generatedImages, setGeneratedImages] = useState<GeneratedImage[]>([])
-  const [isGeneratingImage, setIsGeneratingImage] = useState(false)
   const [activeArtifact, setActiveArtifact] = useState<Artifact | null>(null)
   const [isArtifactOpen, setIsArtifactOpen] = useState(false)
   const [artifactMessageId, setArtifactMessageId] = useState<string | null>(null)
@@ -1573,59 +1570,6 @@ Rules:
     setWebSearchEnabled(!webSearchEnabled)
   }
 
-  const handleGenerateImage = async (prompt: string, aspectRatio?: string) => {
-    setIsGeneratingImage(true)
-    try {
-      const response = await fetch('/api/image-generation', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          prompt,
-          aspectRatio,
-          format: 'png',
-          conversationId: currentConversation?.id,
-          projectId: projectId,
-        }),
-      })
-
-      const data = await response.json()
-      if (!response.ok) {
-        throw new Error(data.error || 'Image generation failed')
-      }
-
-      const newImage: GeneratedImage = {
-        id: data.imageId,
-        prompt,
-        imageUrl: data.imageUrl,
-        downloadUrl: data.downloadUrl,
-        format: data.format,
-        mimeType: data.mimeType,
-        sizeBytes: data.sizeBytes,
-        filename: data.filename,
-        createdAt: new Date(),
-      }
-
-      setGeneratedImages((prev) => [newImage, ...prev])
-
-      toast({
-        title: 'Image created',
-        description: `Credits used: ${data.creditsUsed}`,
-      })
-    } catch (error: any) {
-      throw error
-    } finally {
-      setIsGeneratingImage(false)
-    }
-  }
-
-  const handleRegenerateImage = async (imageId: string) => {
-    // Find the image and regenerate it with the same prompt
-    const image = generatedImages.find((img) => img.id === imageId)
-    if (!image) return
-
-    await handleGenerateImage(image.prompt)
-  }
-
   const handleRegenerateResponse = async (assistantMessageId: string) => {
     const conversationId = currentConversation?.id
     if (!conversationId || isLoading || isCreatingConversation || isSendingRef.current || pendingResponsesRef.current[conversationId]) {
@@ -2312,7 +2256,7 @@ Default to artifact:html with a complete single-file HTML document for visual, p
               </div>
             )}
             <div className="flex items-center gap-2 shrink-0">
-              {showReopenButton && selectedModel !== 'image-generation' && (
+              {showReopenButton && (
                 <motion.button
                   initial={{ opacity: 0, scale: 0.9 }}
                   animate={{ opacity: 1, scale: 1 }}
@@ -2326,55 +2270,42 @@ Default to artifact:html with a complete single-file HTML document for visual, p
                 </motion.button>
               )}
 
-              {selectedModel !== 'image-generation' && (
-                <>
-                  <button
-                    onClick={handleToggleWebSearch}
-                    disabled={isRequestInProgress}
-                    title={isRequestInProgress ? 'Wait for the current response to finish' : 'Toggle Web Search'}
-                    className={cn(
-                      'flex h-8 items-center gap-1.5 rounded-full border px-2.5 text-xs font-medium transition-colors md:px-3',
-                      webSearchEnabled
-                        ? 'border-violet-400/20 bg-violet-500/10 text-violet-200'
-                        : 'border-white/[0.07] bg-white/[0.02] text-gray-400 hover:bg-white/[0.06] hover:text-gray-200',
-                      isRequestInProgress && 'opacity-50 cursor-not-allowed'
-                    )}
-                  >
-                    <Globe className="h-3.5 w-3.5" />
-                    <span className="hidden sm:inline">Search</span>
-                  </button>
+              <button
+                onClick={handleToggleWebSearch}
+                disabled={isRequestInProgress}
+                title={isRequestInProgress ? 'Wait for the current response to finish' : 'Toggle Web Search'}
+                className={cn(
+                  'flex h-8 items-center gap-1.5 rounded-full border px-2.5 text-xs font-medium transition-colors md:px-3',
+                  webSearchEnabled
+                    ? 'border-violet-400/20 bg-violet-500/10 text-violet-200'
+                    : 'border-white/[0.07] bg-white/[0.02] text-gray-400 hover:bg-white/[0.06] hover:text-gray-200',
+                  isRequestInProgress && 'opacity-50 cursor-not-allowed'
+                )}
+              >
+                <Globe className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Search</span>
+              </button>
 
-                  <button
-                    onClick={handleToggleArtifactMode}
-                    disabled={isRequestInProgress}
-                    title={isRequestInProgress ? 'Wait for the current response to finish' : 'Toggle Artifact Mode'}
-                    className={cn(
-                      'flex h-8 items-center gap-1.5 rounded-full border px-2.5 text-xs font-medium transition-colors md:px-3',
-                      artifactMode
-                        ? 'border-violet-400/20 bg-violet-500/10 text-violet-200'
-                        : 'border-white/[0.07] bg-white/[0.02] text-gray-400 hover:bg-white/[0.06] hover:text-gray-200',
-                      isRequestInProgress && 'opacity-50 cursor-not-allowed'
-                    )}
-                  >
-                    <Box className="h-3.5 w-3.5" />
-                    <span className="hidden sm:inline">Artifacts</span>
-                  </button>
-                </>
-              )}
+              <button
+                onClick={handleToggleArtifactMode}
+                disabled={isRequestInProgress}
+                title={isRequestInProgress ? 'Wait for the current response to finish' : 'Toggle Artifact Mode'}
+                className={cn(
+                  'flex h-8 items-center gap-1.5 rounded-full border px-2.5 text-xs font-medium transition-colors md:px-3',
+                  artifactMode
+                    ? 'border-violet-400/20 bg-violet-500/10 text-violet-200'
+                    : 'border-white/[0.07] bg-white/[0.02] text-gray-400 hover:bg-white/[0.06] hover:text-gray-200',
+                  isRequestInProgress && 'opacity-50 cursor-not-allowed'
+                )}
+              >
+                <Box className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Artifacts</span>
+              </button>
             </div>
           </div>
         </div>
 
-        {selectedModel === 'image-generation' ? (
-          <ImageGenerationPanel
-            onGenerate={handleGenerateImage}
-            isGenerating={isGeneratingImage}
-            generatedImages={generatedImages}
-            onRegenerate={handleRegenerateImage}
-          />
-        ) : (
-          <>
-            <div className="flex-1 overflow-y-auto px-3 py-4 scrollbar-thin md:px-4 md:py-5 lg:px-6">
+        <div className="flex-1 overflow-y-auto px-3 py-4 scrollbar-thin md:px-4 md:py-5 lg:px-6">
               <div className="mx-auto max-w-[820px]">
                 <AnimatePresence mode="popLayout">
                   {displayedMessages.length === 0 && !isLoadingConversation ? (
@@ -2677,12 +2608,10 @@ Default to artifact:html with a complete single-file HTML document for visual, p
             onReasoningModeChange={setReasoningMode}
           />
         )}
-          </>
-        )}
         </main>
 
         {/* Artifact panel as flex child */}
-        {isArtifactOpen && activeArtifact && selectedModel !== 'image-generation' && (
+        {isArtifactOpen && activeArtifact && (
           <ArtifactPanel
             artifact={activeArtifact}
             isOpen={isArtifactOpen}

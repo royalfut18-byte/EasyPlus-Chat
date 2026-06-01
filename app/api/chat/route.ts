@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { streamBedrockResponse, getModelCost } from '@/lib/ai/bedrock'
 import { streamGeminiResponse } from '@/lib/ai/gemini'
-import { streamDeepSeekV4ProResponse } from '@/lib/ai/nvidia.server'
+import { streamAzureDeepSeekResponse } from '@/lib/ai/azure-deepseek.server'
 import { searchWeb, buildWebSearchQuery } from '@/lib/ai/web-search'
 import { buildSystemPrompt, isTimeSensitiveQuery, detectQueryType } from '@/lib/ai/system-prompt'
 import { buildDocumentContext, isComprehensiveDocumentRequest } from '@/lib/ai/document-extract'
@@ -43,8 +43,8 @@ function sanitizeIdentityLeak(text: string, publicModelName: string): string {
     /\bnot\s+(openai|chatgpt|google|gemini|claude)\b/i.test(text)
 
   const hasForbiddenInternalDetail =
-    /\b(nvidia|anthropic|haiku|sonnet|gemini[-\s]?2\.5|google\s+ai|bedrock)\b/i.test(text) ||
-    /deepseek-ai\/deepseek-v4-pro|integrate\.api\.nvidia\.com/i.test(text)
+    /\b(azure|openai|anthropic|haiku|sonnet|gemini[-\s]?2\.5|google\s+ai|bedrock)\b/i.test(text) ||
+    /azureml:\/\/|openai\.azure\.com|services\.ai\.azure\.com/i.test(text)
 
   const hasProviderDisclosure =
     hasForbiddenInternalDetail ||
@@ -821,8 +821,8 @@ RULES FOR USING THESE RESULTS:
             providerStream = await streamGeminiResponse(validatedModel, messagesForModel, systemPrompt, temperature, maxTokens)
           } else if (selectedModel.provider === 'anthropic') {
             providerStream = await streamBedrockResponse(validatedModel, messagesForModel, systemPrompt, temperature, maxTokens)
-          } else if (selectedModel.provider === 'nvidia') {
-            providerStream = await streamDeepSeekV4ProResponse(messagesForModel, systemPrompt, temperature, maxTokens)
+          } else if (selectedModel.provider === 'azure') {
+            providerStream = await streamAzureDeepSeekResponse(messagesForModel, systemPrompt, temperature, maxTokens)
           } else {
             controller.enqueue(encoder.encode('Error: This EasyPlus tier is unavailable'))
             controller.close()
