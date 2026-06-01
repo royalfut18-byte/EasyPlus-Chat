@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { Archive, Brain, Check, Download, Edit3, FileText, FolderOpen, MessageSquare, PanelRightOpen, Plus, Settings, Trash2, Upload, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -64,18 +65,25 @@ export function ProjectWorkspaceClient({
   files: initialFiles,
   memories: initialMemories,
   artifacts,
+  initialTab,
 }: {
   project: Project
   conversations: Conversation[]
   files: ProjectFile[]
   memories: ProjectMemory[]
   artifacts: ProjectArtifact[]
+  initialTab?: string
 }) {
+  const router = useRouter()
   const [project, setProject] = useState(initialProject)
   const [conversations] = useState(initialConversations)
   const [files] = useState(initialFiles)
   const [memories, setMemories] = useState(initialMemories)
-  const [tab, setTab] = useState<Tab>('overview')
+  const [tab, setTab] = useState<Tab>(
+    (['overview', 'chats', 'files', 'memory', 'instructions', 'artifacts', 'settings'] as string[]).includes(initialTab || '')
+      ? initialTab as Tab
+      : 'overview'
+  )
   const [isSavingProject, setIsSavingProject] = useState(false)
   const [projectForm, setProjectForm] = useState({
     name: initialProject.name,
@@ -177,10 +185,15 @@ export function ProjectWorkspaceClient({
       const data = await response.json().catch(() => ({}))
       if (!response.ok) throw new Error(data.error || 'Failed to archive project')
       toast({ title: 'Project archived' })
-      window.location.href = '/projects'
+      router.push('/projects')
     } catch (error: any) {
       toast({ title: 'Could not archive project', description: error.message, variant: 'destructive' })
     }
+  }
+
+  const selectTab = (nextTab: Tab) => {
+    setTab(nextTab)
+    router.replace(`/projects/${project.id}?tab=${nextTab}`, { scroll: false })
   }
 
   return (
@@ -206,7 +219,7 @@ export function ProjectWorkspaceClient({
                 New chat in project
               </Button>
             </Link>
-            <Button variant="ghost" className="border border-white/[0.08] bg-white/[0.02]" onClick={() => setTab('settings')}>
+            <Button variant="ghost" className="border border-white/[0.08] bg-white/[0.02]" onClick={() => selectTab('settings')}>
               <Settings className="mr-2 h-4 w-4" />
               Settings
             </Button>
@@ -218,7 +231,7 @@ export function ProjectWorkspaceClient({
         {(['overview', 'chats', 'files', 'memory', 'instructions', 'artifacts', 'settings'] as Tab[]).map(item => (
           <button
             key={item}
-            onClick={() => setTab(item)}
+            onClick={() => selectTab(item)}
             className={`rounded-lg px-3 py-2 text-sm capitalize transition-colors ${tab === item ? 'bg-white/[0.08] text-white' : 'text-gray-500 hover:bg-white/[0.04] hover:text-gray-300'}`}
           >
             {item}
@@ -253,6 +266,15 @@ export function ProjectWorkspaceClient({
 
       {tab === 'files' && (
         <Panel title="Project files" icon={<Upload />}>
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/[0.07] bg-white/[0.025] p-4">
+            <p className="text-sm text-gray-400">Upload a file inside a project chat so it is linked to this workspace and available to its memory.</p>
+            <Link href={`/chat?projectId=${project.id}`}>
+              <Button size="sm" className="bg-violet-600 text-white hover:bg-violet-500">
+                <Upload className="mr-2 h-4 w-4" />
+                Upload in project chat
+              </Button>
+            </Link>
+          </div>
           <div className="space-y-2">
             {files.length ? files.map(file => (
               <div key={file.id} className="flex items-center justify-between gap-3 rounded-xl border border-white/[0.07] bg-white/[0.025] p-4">
@@ -264,11 +286,14 @@ export function ProjectWorkspaceClient({
                     {(file.processing_status || file.ocr_status) && <p className="mt-1 text-xs text-gray-500">Status: {file.processing_status || file.ocr_status}</p>}
                   </div>
                 </div>
-                {file.public_url && (
-                  <a href={file.public_url} target="_blank" rel="noreferrer" className="rounded-lg border border-white/[0.08] px-3 py-2 text-sm text-gray-300 hover:bg-white/[0.05]">
+                <div className="flex gap-2">
+                  <a href={`/api/attachments/file?attachmentId=${encodeURIComponent(file.id)}`} target="_blank" rel="noreferrer" className="rounded-lg border border-white/[0.08] px-3 py-2 text-sm text-gray-300 hover:bg-white/[0.05]" title="Open file">
+                    Open
+                  </a>
+                  <a href={`/api/attachments/file?attachmentId=${encodeURIComponent(file.id)}&download=1`} target="_blank" rel="noreferrer" className="rounded-lg border border-white/[0.08] px-3 py-2 text-sm text-gray-300 hover:bg-white/[0.05]" title="Download file">
                     <Download className="h-4 w-4" />
                   </a>
-                )}
+                </div>
               </div>
             )) : <EmptyText>No files have been saved to this project yet. Upload files inside a project chat.</EmptyText>}
           </div>
@@ -321,7 +346,7 @@ export function ProjectWorkspaceClient({
                   </div>
                 )}
               </div>
-            )) : <EmptyText>No project memories yet.</EmptyText>}
+            )) : <EmptyText>No project memory yet. Important details from project chats and files will appear here.</EmptyText>}
           </div>
         </Panel>
       )}

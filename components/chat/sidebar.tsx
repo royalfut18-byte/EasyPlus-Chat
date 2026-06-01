@@ -14,6 +14,8 @@ import {
   Shield,
   Brain,
   FolderOpen,
+  ChevronDown,
+  ChevronRight,
 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
@@ -32,10 +34,17 @@ import type { Conversation } from '@/types/models'
 
 interface SidebarProps {
   conversations: Conversation[]
+  projects?: Array<{
+    id: string
+    name: string
+    conversations: Conversation[]
+  }>
+  activeProjectId?: string | null
   currentConversationId?: string
   pendingConversationIds?: string[]
-  onSelectConversation: (id: string) => void
+  onSelectConversation: (id: string, projectId?: string | null) => void
   onNewChat: () => void
+  onNewProjectChat?: (projectId: string) => void
   onDeleteConversation: (id: string) => void
   userProfile: {
     display_name: string | null
@@ -48,14 +57,18 @@ interface SidebarProps {
 
 export function Sidebar({
   conversations,
+  projects = [],
+  activeProjectId,
   currentConversationId,
   pendingConversationIds = [],
   onSelectConversation,
   onNewChat,
+  onNewProjectChat,
   onDeleteConversation,
   userProfile,
 }: SidebarProps) {
   const [isOpen, setIsOpen] = useState(false)
+  const [expandedProjects, setExpandedProjects] = useState<Record<string, boolean>>({})
   const router = useRouter()
   const supabase = createClient()
 
@@ -63,6 +76,7 @@ export function Sidebar({
   useEffect(() => {
     router.prefetch('/dashboard')
     router.prefetch('/billing')
+    router.prefetch('/projects')
     if (userProfile.role === 'admin' || userProfile.role === 'sub_admin') {
       router.prefetch('/admin')
     }
@@ -78,6 +92,15 @@ export function Sidebar({
     .map((n) => n[0])
     .join('')
     .toUpperCase() || 'U'
+
+  useEffect(() => {
+    if (!activeProjectId) return
+    setExpandedProjects(prev => ({ ...prev, [activeProjectId]: true }))
+  }, [activeProjectId])
+
+  const toggleProject = (projectId: string) => {
+    setExpandedProjects(prev => ({ ...prev, [projectId]: !prev[projectId] }))
+  }
 
   return (
     <>
@@ -106,10 +129,53 @@ export function Sidebar({
                 <Plus className="mr-2 h-4 w-4 text-violet-400" />
                 New Chat
               </Button>
-              <Button onClick={() => router.push('/projects')} className="mt-2 h-9 w-full justify-start rounded-lg border border-white/[0.07] bg-transparent px-3 text-sm text-gray-300 hover:bg-white/[0.05] hover:text-white">
-                <FolderOpen className="mr-2 h-4 w-4 text-violet-300" />
-                Projects
-              </Button>
+            </div>
+
+            <div className="flex items-center justify-between px-4 pb-1 pt-2 text-[10px] font-medium uppercase tracking-[0.14em] text-gray-500">
+              <span>Projects</span>
+              <button onClick={() => router.push('/projects')} className="rounded px-1.5 py-0.5 text-violet-300 transition-colors hover:bg-white/[0.05] hover:text-white" title="View all projects">
+                View all
+              </button>
+            </div>
+            <div className="space-y-px px-2 pb-2">
+              {projects.length === 0 ? (
+                <button onClick={() => router.push('/projects')} className="w-full rounded-lg px-2.5 py-2 text-left text-xs text-gray-500 transition-colors hover:bg-white/[0.045] hover:text-gray-300">
+                  Create your first project
+                </button>
+              ) : projects.map(project => {
+                const expanded = !!expandedProjects[project.id]
+                const isActive = activeProjectId === project.id
+                return (
+                  <div key={project.id}>
+                    <div className={cn('group flex items-center rounded-lg transition-colors', isActive ? 'bg-violet-500/[0.08]' : 'hover:bg-white/[0.045]')}>
+                      <button onClick={() => toggleProject(project.id)} className="flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-left">
+                        {expanded ? <ChevronDown className="h-3.5 w-3.5 shrink-0 text-gray-500" /> : <ChevronRight className="h-3.5 w-3.5 shrink-0 text-gray-500" />}
+                        <FolderOpen className={cn('h-3.5 w-3.5 shrink-0', isActive ? 'text-violet-300' : 'text-gray-500')} />
+                        <span className={cn('truncate text-sm', isActive ? 'text-white' : 'text-gray-300')}>{project.name}</span>
+                      </button>
+                      <button onClick={() => onNewProjectChat?.(project.id)} className="mr-1 rounded p-1 text-gray-500 opacity-0 transition-all hover:bg-white/[0.08] hover:text-violet-300 group-hover:opacity-100" title={`New chat in ${project.name}`}>
+                        <Plus className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                    {expanded && (
+                      <div className="ml-5 border-l border-white/[0.06] pl-2">
+                        <button onClick={() => onNewProjectChat?.(project.id)} className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs text-gray-500 transition-colors hover:bg-white/[0.04] hover:text-violet-200">
+                          <Plus className="h-3 w-3" />
+                          New chat
+                        </button>
+                        {project.conversations.length === 0 ? (
+                          <p className="px-2 py-1.5 text-[11px] text-gray-600">No chats in this project yet</p>
+                        ) : project.conversations.slice(0, 5).map(conv => (
+                          <button key={conv.id} onClick={() => onSelectConversation(conv.id, project.id)} className={cn('flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors', currentConversationId === conv.id ? 'bg-white/[0.07] text-white' : 'text-gray-400 hover:bg-white/[0.04] hover:text-gray-200')}>
+                            <MessageSquare className="h-3 w-3 shrink-0" />
+                            <span className="truncate text-xs">{conv.title}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
             </div>
 
             <div className="px-4 pb-1 pt-2 text-[10px] font-medium uppercase tracking-[0.14em] text-gray-500">
@@ -119,14 +185,14 @@ export function Sidebar({
               {conversations.length === 0 ? (
                 <div className="text-center py-8 text-gray-400 text-sm">
                   <MessageSquare className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                  <p>No conversations yet</p>
-                  <p className="text-xs text-gray-500 mt-1">Start a new chat to begin</p>
+                  <p>No normal chats yet</p>
+                  <p className="text-xs text-gray-500 mt-1">Start a new chat or open a project</p>
                 </div>
               ) : (
                 conversations.map((conv) => (
                   <button
                     key={conv.id}
-                    onClick={() => onSelectConversation(conv.id)}
+                    onClick={() => onSelectConversation(conv.id, null)}
                     className={cn(
                       'group relative w-full rounded-lg px-2.5 py-1.5 text-left transition-colors',
                       currentConversationId === conv.id

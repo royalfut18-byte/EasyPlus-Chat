@@ -3,7 +3,7 @@ import { redirect } from 'next/navigation'
 import { ArrowLeft } from 'lucide-react'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { getAccountEntitlement } from '@/lib/account-entitlements.server'
-import { getProjectsWithStatsForUser } from '@/lib/projects.server'
+import { getProjectsForUser } from '@/lib/projects.server'
 import { ProjectsClient } from './projects-client'
 
 export default async function ProjectsPage() {
@@ -15,7 +15,7 @@ export default async function ProjectsPage() {
   const entitlement = await getAccountEntitlement(db, user.id)
   if (!entitlement) redirect('/login')
 
-  const projects = await getProjectsWithStatsForUser(user.id)
+  const projects = await getProjectsForUser(user.id)
 
   return (
     <div className="min-h-screen bg-[#0f0f0f] p-4 text-white md:p-8">

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Archive, FolderOpen, MessageSquare, Plus, Search, Upload, Brain } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -26,9 +26,29 @@ type ProjectCard = {
 
 export function ProjectsClient({ initialProjects }: { initialProjects: ProjectCard[] }) {
   const [projects, setProjects] = useState(initialProjects)
+  const [query, setQuery] = useState('')
+  const [statsLoaded, setStatsLoaded] = useState(false)
   const [isCreateOpen, setIsCreateOpen] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [form, setForm] = useState({ name: '', description: '', instructions: '' })
+
+  useEffect(() => {
+    let cancelled = false
+    fetch('/api/projects?view=stats')
+      .then(response => response.ok ? response.json() : null)
+      .then(data => {
+        if (!cancelled && data?.projects) {
+          setProjects(data.projects)
+        }
+      })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setStatsLoaded(true) })
+    return () => { cancelled = true }
+  }, [])
+
+  const filteredProjects = projects.filter(project =>
+    `${project.name} ${project.description || ''}`.toLowerCase().includes(query.trim().toLowerCase())
+  )
 
   const createProject = async () => {
     if (!form.name.trim()) {
@@ -86,6 +106,13 @@ export function ProjectsClient({ initialProjects }: { initialProjects: ProjectCa
         </Button>
       </div>
 
+      {projects.length > 0 && (
+        <div className="relative max-w-md">
+          <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-gray-500" />
+          <Input value={query} onChange={event => setQuery(event.target.value)} placeholder="Search projects" className="pl-9" />
+        </div>
+      )}
+
       {projects.length === 0 ? (
         <section className="rounded-2xl border border-white/[0.08] bg-[#181818] p-10 text-center">
           <FolderOpen className="mx-auto h-12 w-12 text-gray-600" />
@@ -97,9 +124,15 @@ export function ProjectsClient({ initialProjects }: { initialProjects: ProjectCa
             Create your first project
           </Button>
         </section>
+      ) : filteredProjects.length === 0 ? (
+        <section className="rounded-2xl border border-white/[0.08] bg-[#181818] p-8 text-center">
+          <Search className="mx-auto h-8 w-8 text-gray-600" />
+          <h2 className="mt-3 text-lg font-semibold text-white">No matching projects</h2>
+          <p className="mt-1 text-sm text-gray-500">Try a different name or description.</p>
+        </section>
       ) : (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {projects.map(project => (
+          {filteredProjects.map(project => (
             <article key={project.id} className="group rounded-2xl border border-white/[0.08] bg-[#181818] p-5 transition-colors hover:border-white/[0.14] hover:bg-[#1d1d1d]">
               <div className="flex items-start justify-between gap-3">
                 <Link href={`/projects/${project.id}`} className="min-w-0 flex-1">
@@ -126,10 +159,10 @@ export function ProjectsClient({ initialProjects }: { initialProjects: ProjectCa
               </div>
 
               <div className="mt-5 grid grid-cols-4 gap-2 text-center text-xs">
-                <Metric icon={<MessageSquare />} label="Chats" value={project.stats?.chatCount || 0} />
-                <Metric icon={<Upload />} label="Files" value={project.stats?.fileCount || 0} />
-                <Metric icon={<Search />} label="Artifacts" value={project.stats?.artifactCount || 0} />
-                <Metric icon={<Brain />} label="Memory" value={project.stats?.memoryCount || 0} />
+                <Metric href={`/projects/${project.id}?tab=chats`} icon={<MessageSquare />} label="Chats" value={statsLoaded ? project.stats?.chatCount || 0 : null} />
+                <Metric href={`/projects/${project.id}?tab=files`} icon={<Upload />} label="Files" value={statsLoaded ? project.stats?.fileCount || 0 : null} />
+                <Metric href={`/projects/${project.id}?tab=artifacts`} icon={<Search />} label="Artifacts" value={statsLoaded ? project.stats?.artifactCount || 0 : null} />
+                <Metric href={`/projects/${project.id}?tab=memory`} icon={<Brain />} label="Memory" value={statsLoaded ? project.stats?.memoryCount || 0 : null} />
               </div>
             </article>
           ))}
@@ -180,12 +213,12 @@ export function ProjectsClient({ initialProjects }: { initialProjects: ProjectCa
   )
 }
 
-function Metric({ icon, label, value }: { icon: React.ReactNode; label: string; value: number }) {
+function Metric({ href, icon, label, value }: { href: string; icon: React.ReactNode; label: string; value: number | null }) {
   return (
-    <div className="rounded-lg border border-white/[0.06] bg-white/[0.025] p-2">
+    <Link href={href} className="rounded-lg border border-white/[0.06] bg-white/[0.025] p-2 transition-colors hover:border-violet-400/20 hover:bg-violet-500/[0.06]">
       <div className="mx-auto h-3.5 w-3.5 text-violet-300">{icon}</div>
-      <p className="mt-1 font-medium text-gray-200">{value}</p>
+      <p className="mt-1 font-medium text-gray-200">{value ?? '-'}</p>
       <p className="text-[10px] text-gray-500">{label}</p>
-    </div>
+    </Link>
   )
 }

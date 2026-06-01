@@ -261,10 +261,18 @@ type ActiveProject = {
   instructions?: string | null
 }
 
+type SidebarProject = {
+  id: string
+  name: string
+  conversations: Conversation[]
+}
+
 export default function ChatPage() {
   const [selectedModel, setSelectedModel] = useState(AI_MODELS[0].id)
   const [reasoningMode, setReasoningMode] = useState<ReasoningMode>('thinking')
   const [conversations, setConversations] = useState<Conversation[]>([])
+  const [normalConversations, setNormalConversations] = useState<Conversation[]>([])
+  const [sidebarProjects, setSidebarProjects] = useState<SidebarProject[]>([])
   const [currentConversation, setCurrentConversation] = useState<Conversation | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
   const [isLoading, setIsLoading] = useState(false)
@@ -373,16 +381,29 @@ export default function ChatPage() {
 
   const loadConversations = async () => {
     try {
-      const url = projectId ? `/api/conversations?projectId=${encodeURIComponent(projectId)}` : '/api/conversations'
-      const response = await fetch(url, {
-        signal: AbortSignal.timeout(10000),
-      })
-      if (response.ok) {
-        const data = await response.json()
-        setConversations(data)
+      const currentUrl = projectId ? `/api/conversations?projectId=${encodeURIComponent(projectId)}` : '/api/conversations'
+      const [currentResponse, normalResponse, sidebarResponse] = await Promise.all([
+        fetch(currentUrl, { signal: AbortSignal.timeout(10000) }),
+        projectId ? fetch('/api/conversations', { signal: AbortSignal.timeout(10000) }) : Promise.resolve(null),
+        fetch('/api/projects?view=sidebar', { signal: AbortSignal.timeout(10000) }),
+      ])
+
+      const currentData = currentResponse.ok ? await currentResponse.json() : []
+      setConversations(currentData)
+      setNormalConversations(normalResponse?.ok ? await normalResponse.json() : currentData)
+
+      if (sidebarResponse.ok) {
+        const sidebarData = await sidebarResponse.json()
+        const projectConversations = (sidebarData.conversations || []) as Conversation[]
+        setSidebarProjects((sidebarData.projects || []).map((project: ActiveProject) => ({
+          id: project.id,
+          name: project.name,
+          conversations: projectConversations.filter(conversation => conversation.project_id === project.id),
+        })))
       }
     } catch (error) {
       setConversations([])
+      if (!projectId) setNormalConversations([])
     }
   }
 
@@ -615,6 +636,13 @@ export default function ChatPage() {
       setConversations((prev) =>
         prev.map((c) => c.id === conversationId ? { ...c, title } : c)
       )
+      setNormalConversations((prev) =>
+        prev.map((c) => c.id === conversationId ? { ...c, title } : c)
+      )
+      setSidebarProjects(prev => prev.map(project => ({
+        ...project,
+        conversations: project.conversations.map(conversation => conversation.id === conversationId ? { ...conversation, title } : conversation),
+      })))
 
       // Update current conversation if it matches
       setCurrentConversation((prev) =>
@@ -703,9 +731,43 @@ export default function ChatPage() {
     }
   }
 
+  const handleSidebarSelectConversation = (id: string, targetProjectId?: string | null) => {
+    if ((targetProjectId || null) !== (projectId || null)) {
+      router.push(targetProjectId
+        ? `/chat?projectId=${encodeURIComponent(targetProjectId)}&conversationId=${encodeURIComponent(id)}`
+        : `/chat?conversationId=${encodeURIComponent(id)}`)
+      return
+    }
+    router.replace(targetProjectId
+      ? `/chat?projectId=${encodeURIComponent(targetProjectId)}&conversationId=${encodeURIComponent(id)}`
+      : `/chat?conversationId=${encodeURIComponent(id)}`, { scroll: false })
+    handleSelectConversation(id)
+  }
+
+  const handleSidebarNewChat = () => {
+    if (projectId) {
+      router.push('/chat')
+      return
+    }
+    handleNewChat()
+  }
+
+  const handleNewProjectChat = (targetProjectId: string) => {
+    if (targetProjectId === projectId) {
+      handleNewChat()
+      return
+    }
+    router.push(`/chat?projectId=${encodeURIComponent(targetProjectId)}`)
+  }
+
   const handleDeleteConversation = async (id: string) => {
-    const deletedConversation = conversations.find((c) => c.id === id)
+    const deletedConversation = conversations.find((c) => c.id === id) || normalConversations.find((c) => c.id === id)
     setConversations((prev) => prev.filter((c) => c.id !== id))
+    setNormalConversations(prev => prev.filter(conversation => conversation.id !== id))
+    setSidebarProjects(prev => prev.map(project => ({
+      ...project,
+      conversations: project.conversations.filter(conversation => conversation.id !== id),
+    })))
 
     // Clear artifact for deleted conversation
     try {
@@ -875,6 +937,13 @@ export default function ChatPage() {
         conversation = await response.json()
         setCurrentConversation(conversation)
         setConversations((prev) => [conversation!, ...prev])
+        if (projectId) {
+          setSidebarProjects(prev => prev.map(project => project.id === projectId
+            ? { ...project, conversations: [conversation!, ...project.conversations] }
+            : project))
+        } else {
+          setNormalConversations(prev => [conversation!, ...prev])
+        }
 
         // Mark this as the selected conversation
         selectedConversationIdRef.current = conversation!.id
@@ -2125,11 +2194,14 @@ Default to artifact:html with a complete single-file HTML document for visual, p
   return (
     <div className="flex h-[100dvh] overflow-hidden bg-[#0f0f0f] md:h-screen">
       <Sidebar
-        conversations={conversations}
+        conversations={normalConversations}
+        projects={sidebarProjects}
+        activeProjectId={projectId}
         currentConversationId={currentConversation?.id}
         pendingConversationIds={Object.keys(pendingResponses)}
-        onSelectConversation={handleSelectConversation}
-        onNewChat={handleNewChat}
+        onSelectConversation={handleSidebarSelectConversation}
+        onNewChat={handleSidebarNewChat}
+        onNewProjectChat={handleNewProjectChat}
         onDeleteConversation={handleDeleteConversation}
         userProfile={userProfile}
       />
