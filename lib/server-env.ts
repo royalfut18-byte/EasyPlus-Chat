@@ -17,6 +17,13 @@ export function readServerEnv(name: string): string | undefined {
   return value && value !== '""' && value !== "''" ? value : undefined
 }
 
+export function getServerEnvStatus(name: string): { exists: boolean; configured: boolean } {
+  return {
+    exists: Object.prototype.hasOwnProperty.call(process.env, name),
+    configured: Boolean(readServerEnv(name)),
+  }
+}
+
 export function readFirstServerEnv(names: string[]): { value?: string; source?: string } {
   for (const name of names) {
     const value = readServerEnv(name)

@@ -1,7 +1,7 @@
 import 'server-only'
 
 import type { ChatMessage } from '@/types/models'
-import { readServerEnv } from '@/lib/server-env'
+import { getServerEnvStatus, readServerEnv } from '@/lib/server-env'
 
 const DEFAULT_AZURE_DEEPSEEK_MODEL = 'DeepSeek-V4-Pro'
 const REQUEST_TIMEOUT_MS = 120_000
@@ -10,10 +10,14 @@ const AVAILABILITY_CACHE_MS = 5 * 60_000
 
 export interface AzureDeepSeekDiagnostics {
   configured: boolean
+  apiKeyConfigured: boolean
   baseUrlConfigured: boolean
   modelConfigured: boolean
   probeOk: boolean
   status: number | null
+  endpointHost: string | null
+  endpointPath: '/openai/v1/chat/completions' | string
+  lastProbeAt: string
   safeReason: string
 }
 
@@ -27,13 +31,22 @@ function getProviderConfig() {
   const apiKey = readServerEnv('AZURE_DEEPSEEK_API_KEY')
   const baseUrl = readServerEnv('AZURE_DEEPSEEK_BASE_URL')
   const model = readServerEnv('AZURE_DEEPSEEK_MODEL') || DEFAULT_AZURE_DEEPSEEK_MODEL
+  const apiKeyEnv = getServerEnvStatus('AZURE_DEEPSEEK_API_KEY')
+  const baseUrlEnv = getServerEnvStatus('AZURE_DEEPSEEK_BASE_URL')
+  const modelEnv = getServerEnvStatus('AZURE_DEEPSEEK_MODEL')
 
   return {
     apiKey,
     baseUrl: baseUrl ? normalizeBaseUrl(baseUrl) : undefined,
+    apiKeyConfigured: Boolean(apiKey),
     baseUrlConfigured: Boolean(baseUrl),
     model,
-    modelConfigured: Boolean(readServerEnv('AZURE_DEEPSEEK_MODEL')),
+    modelConfigured: Boolean(model),
+    envStatus: {
+      apiKey: apiKeyEnv,
+      baseUrl: baseUrlEnv,
+      model: modelEnv,
+    },
   }
 }
 
@@ -48,10 +61,14 @@ function getSafeTimeoutError(): Error {
   return new Error('DeepSeek V4 Pro is taking too long to respond. Please try again.')
 }
 
-function getHeaders(apiKey: string): Record<string, string> {
+type AuthMode = 'api-key' | 'bearer'
+
+function getHeaders(apiKey: string, authMode: AuthMode): Record<string, string> {
   return {
     'Content-Type': 'application/json',
-    'api-key': apiKey,
+    ...(authMode === 'api-key'
+      ? { 'api-key': apiKey }
+      : { Authorization: `Bearer ${apiKey}` }),
   }
 }
 
@@ -59,35 +76,71 @@ function getChatCompletionsUrl(baseUrl: string): string {
   return `${baseUrl}/chat/completions`
 }
 
+function getEndpointMetadata(baseUrl?: string): { endpointHost: string | null; endpointPath: string } {
+  if (!baseUrl) return { endpointHost: null, endpointPath: '/chat/completions' }
+  try {
+    const url = new URL(getChatCompletionsUrl(baseUrl))
+    return { endpointHost: url.hostname, endpointPath: url.pathname }
+  } catch {
+    return { endpointHost: null, endpointPath: '/chat/completions' }
+  }
+}
+
+async function fetchWithAuthFallback(
+  url: string,
+  apiKey: string,
+  init: Omit<RequestInit, 'headers'>
+): Promise<{ response: Response; authMode: AuthMode }> {
+  let authMode: AuthMode = 'api-key'
+  let response = await fetch(url, { ...init, headers: getHeaders(apiKey, authMode) })
+  if (response.status !== 401 && response.status !== 403) return { response, authMode }
+
+  await response.body?.cancel().catch(() => {})
+  authMode = 'bearer'
+  console.warn('[Azure DeepSeek] Retrying with alternate server-side auth header', {
+    firstStatus: response.status,
+    authMode,
+  })
+  response = await fetch(url, { ...init, headers: getHeaders(apiKey, authMode) })
+  return { response, authMode }
+}
+
 export async function getAzureDeepSeekDiagnostics(force = false): Promise<AzureDeepSeekDiagnostics> {
   const now = Date.now()
+  const lastProbeAt = new Date(now).toISOString()
   if (!force && availabilityCache && now - availabilityCache.checkedAt < AVAILABILITY_CACHE_MS) {
     return availabilityCache.diagnostics
   }
 
-  const { apiKey, baseUrl, model, baseUrlConfigured, modelConfigured } = getProviderConfig()
+  const { apiKey, baseUrl, model, apiKeyConfigured, baseUrlConfigured, modelConfigured, envStatus } = getProviderConfig()
+  const endpoint = getEndpointMetadata(baseUrl)
   if (!apiKey || !baseUrl) {
     const diagnostics = {
       configured: Boolean(apiKey && baseUrl),
+      apiKeyConfigured,
       baseUrlConfigured,
       modelConfigured,
       probeOk: false,
       status: null,
+      ...endpoint,
+      lastProbeAt,
       safeReason: !apiKey ? 'Missing Azure API key configuration' : 'Missing Azure base URL configuration',
     }
     console.error('[Azure DeepSeek] Missing provider configuration', {
-      apiKeyConfigured: Boolean(apiKey),
+      apiKeyConfigured,
       baseUrlConfigured,
       modelConfigured,
+      envStatus,
+      ...endpoint,
+      model,
     })
     availabilityCache = { checkedAt: now, diagnostics }
     return diagnostics
   }
 
   try {
-    const response = await fetch(getChatCompletionsUrl(baseUrl), {
+    const { response, authMode } = await fetchWithAuthFallback(getChatCompletionsUrl(baseUrl), apiKey, {
       method: 'POST',
-      headers: getHeaders(apiKey),
       body: JSON.stringify({
         model,
         messages: [{ role: 'user', content: 'hi' }],
@@ -99,13 +152,15 @@ export async function getAzureDeepSeekDiagnostics(force = false): Promise<AzureD
     })
 
     if (!response.ok) {
-      const errorText = await response.text().catch(() => '')
       const diagnostics = {
         configured: true,
+        apiKeyConfigured,
         baseUrlConfigured,
         modelConfigured,
         probeOk: false,
         status: response.status,
+        ...endpoint,
+        lastProbeAt,
         safeReason: response.status === 401 || response.status === 403
           ? 'Invalid Azure key or unauthorized deployment'
           : response.status === 404
@@ -116,9 +171,11 @@ export async function getAzureDeepSeekDiagnostics(force = false): Promise<AzureD
       }
       console.error('[Azure DeepSeek] Availability probe failed', {
         status: response.status,
+        authMode,
         baseUrlConfigured,
         modelConfigured,
-        error: errorText.substring(0, 300),
+        ...endpoint,
+        model,
       })
       availabilityCache = { checkedAt: now, diagnostics }
       return diagnostics
@@ -129,26 +186,35 @@ export async function getAzureDeepSeekDiagnostics(force = false): Promise<AzureD
     const available = typeof content === 'string' && content.trim().length > 0
     const diagnostics = {
       configured: true,
+      apiKeyConfigured,
       baseUrlConfigured,
       modelConfigured,
       probeOk: available,
       status: response.status,
+      ...endpoint,
+      lastProbeAt,
       safeReason: available ? 'Available' : 'Azure provider returned no content',
     }
     console.info('[Azure DeepSeek] Availability probe completed', {
       probeOk: available,
       status: response.status,
+      authMode,
       baseUrlConfigured,
       modelConfigured,
+      ...endpoint,
+      model,
     })
     availabilityCache = { checkedAt: now, diagnostics }
   } catch (error: any) {
     const diagnostics = {
       configured: true,
+      apiKeyConfigured,
       baseUrlConfigured,
       modelConfigured,
       probeOk: false,
       status: null,
+      ...endpoint,
+      lastProbeAt,
       safeReason: error?.name === 'TimeoutError' ? 'Azure provider probe timed out' : 'Azure provider is unreachable',
     }
     console.error('[Azure DeepSeek] Availability probe exception', {
@@ -156,6 +222,8 @@ export async function getAzureDeepSeekDiagnostics(force = false): Promise<AzureD
       timeoutHit: error?.name === 'TimeoutError',
       baseUrlConfigured,
       modelConfigured,
+      ...endpoint,
+      model,
     })
     availabilityCache = { checkedAt: now, diagnostics }
   }
@@ -173,13 +241,17 @@ export async function streamAzureDeepSeekResponse(
   temperature: number = 0.7,
   maxTokens: number = 4096
 ): Promise<ReadableStream> {
-  const { apiKey, baseUrl, model, baseUrlConfigured, modelConfigured } = getProviderConfig()
+  const { apiKey, baseUrl, model, apiKeyConfigured, baseUrlConfigured, modelConfigured, envStatus } = getProviderConfig()
+  const endpoint = getEndpointMetadata(baseUrl)
 
   if (!apiKey || !baseUrl) {
     console.error('[Azure DeepSeek] Missing provider configuration', {
-      apiKeyConfigured: Boolean(apiKey),
+      apiKeyConfigured,
       baseUrlConfigured,
       modelConfigured,
+      envStatus,
+      ...endpoint,
+      model,
     })
     throw getSafeProviderError()
   }
@@ -188,9 +260,8 @@ export async function streamAzureDeepSeekResponse(
   const totalTimeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
 
   try {
-    const response = await fetch(getChatCompletionsUrl(baseUrl), {
+    const { response, authMode } = await fetchWithAuthFallback(getChatCompletionsUrl(baseUrl), apiKey, {
       method: 'POST',
-      headers: getHeaders(apiKey),
       body: JSON.stringify({
         model,
         messages: [
@@ -207,12 +278,13 @@ export async function streamAzureDeepSeekResponse(
     })
 
     if (!response.ok || !response.body) {
-      const errorText = await response.text().catch(() => '')
       console.error('[Azure DeepSeek] Request failed', {
         status: response.status,
+        authMode,
         baseUrlConfigured,
         modelConfigured,
-        error: errorText.substring(0, 300),
+        ...endpoint,
+        model,
       })
       throw getSafeProviderError(response.status)
     }
