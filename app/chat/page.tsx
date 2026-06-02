@@ -324,6 +324,7 @@ export default function ChatPage() {
   const selectedConversationIdRef = useRef<string | null>(null)
   const conversationRequestSeqRef = useRef(0)
   const pendingResponsesRef = useRef<Record<string, PendingResponse>>({})
+  const modelAvailabilityFetchStartedRef = useRef(false)
   const router = useRouter()
   const searchParams = useSearchParams()
   const projectId = searchParams.get('projectId')
@@ -376,21 +377,34 @@ export default function ChatPage() {
   }, [projectId])
 
   useEffect(() => {
-    let active = true
-    fetch('/api/models', { cache: 'no-store' })
-      .then(response => response.ok ? response.json() : null)
-      .then(data => {
-        if (!active || !Array.isArray(data?.availableModelIds)) return
-        const availableModelIds = data.availableModelIds as string[]
+    if (
+      modelAvailabilityFetchStartedRef.current ||
+      isLoading ||
+      isCreatingConversation ||
+      isSendingRef.current
+    ) {
+      return
+    }
 
-        setAvailableModelIdsForDefaults(availableModelIds)
-      })
-      .catch(() => {})
+    let active = true
+    const timer = setTimeout(() => {
+      if (isSendingRef.current) return
+      modelAvailabilityFetchStartedRef.current = true
+
+      fetch('/api/models', { cache: 'no-store' })
+        .then(response => response.ok ? response.json() : null)
+        .then(data => {
+          if (!active || !Array.isArray(data?.availableModelIds)) return
+          setAvailableModelIdsForDefaults(data.availableModelIds as string[])
+        })
+        .catch(() => {})
+    }, 5000)
 
     return () => {
       active = false
+      clearTimeout(timer)
     }
-  }, [])
+  }, [isCreatingConversation, isLoading])
 
   useEffect(() => {
     if (
