@@ -1685,7 +1685,8 @@ Rules:
 
       const data = await response.json().catch(() => ({}))
       if (!response.ok || !data?.image) {
-        throw new Error(data?.error || 'Could not generate image right now. Please try again.')
+        const message = data?.error || 'Could not generate image right now. Please try again.'
+        throw new Error(data?.suggestion ? `${message} ${data.suggestion}` : message)
       }
 
       if (typeof data.image.conversationId === 'string') {

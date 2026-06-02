@@ -8,6 +8,9 @@ import { downloadObjectFromR2, getR2ConfigStatus, uploadObjectToR2 } from '@/lib
 export const runtime = 'nodejs'
 export const maxDuration = 300
 
+const IMAGE_POLICY_MESSAGE = 'This image request may involve a real public figure, protected likeness, or restricted content. Try a fictional or non-identifiable person instead.'
+const IMAGE_POLICY_SUGGESTION = 'Try: Create a fictional world-class Argentinian footballer returning to a blue-and-red football club, dramatic stadium lighting, sports poster style, no real-person likeness.'
+
 function safeFileName(prompt: string): string {
   const slug = prompt
     .toLowerCase()
@@ -53,7 +56,7 @@ export async function GET(request: NextRequest) {
     } = await supabase.auth.getUser()
 
     if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      return NextResponse.json({ error: 'Your session expired. Please reload or sign in again.' }, { status: 401 })
     }
 
     const conversationId = request.nextUrl.searchParams.get('conversationId')
@@ -121,7 +124,7 @@ export async function POST(request: NextRequest) {
     } = await supabase.auth.getUser()
 
     if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      return NextResponse.json({ error: 'Your session expired. Please reload or sign in again.' }, { status: 401 })
     }
 
     const entitlementBlock = getEntitlementBlockResponse(await getAccountEntitlement(db, user.id))
@@ -364,6 +367,7 @@ export async function POST(request: NextRequest) {
       })
     } catch (error: any) {
       console.error('[Image Generation] Storage upload failed after Azure generation', {
+        category: 'storage',
         message: error?.message,
         errorCode: error?.Code || error?.code || error?.$metadata?.httpStatusCode || null,
         storageConfigured: storageStatus.configured,
@@ -416,6 +420,7 @@ export async function POST(request: NextRequest) {
 
     if (attachmentError || !attachment?.id) {
       console.error('[Image Generation] Attachment row insert failed', {
+        category: 'db',
         message: attachmentError?.message,
         code: attachmentError?.code,
         dbInsertAttempted: true,
@@ -461,13 +466,21 @@ export async function POST(request: NextRequest) {
       headers: { 'Cache-Control': 'private, no-store, max-age=0' },
     })
   } catch (error: any) {
+    const category = typeof error?.category === 'string' ? error.category : 'unknown'
+    const isPolicyBlock = category === 'content_policy' || category === 'public_figure_or_likeness'
     console.error('[Image Generation] Request failed', {
       message: error?.message,
       name: error?.name,
+      category,
+      status: typeof error?.status === 'number' ? error.status : null,
+      generationBlockedByPolicy: isPolicyBlock,
+      r2Reached: false,
+      dbReached: false,
     })
     const safeError = typeof error?.message === 'string' && (
       error.message === 'Enter a more detailed image prompt.' ||
       error.message === 'Image Generation is busy. Please try again in a moment.' ||
+      error.message === IMAGE_POLICY_MESSAGE ||
       error.message === 'Image generated but could not be saved.' ||
       error.message === 'Could not edit the previous image. Try generating a new image.' ||
       error.message === 'Image editing is not supported by the current image model yet.'
@@ -476,8 +489,11 @@ export async function POST(request: NextRequest) {
       : 'Image Generation is temporarily unavailable.'
 
     return NextResponse.json(
-      { error: safeError },
-      { status: 500 }
+      {
+        error: safeError,
+        ...(isPolicyBlock ? { suggestion: IMAGE_POLICY_SUGGESTION } : {}),
+      },
+      { status: typeof error?.status === 'number' ? error.status : 500 }
     )
   }
 }

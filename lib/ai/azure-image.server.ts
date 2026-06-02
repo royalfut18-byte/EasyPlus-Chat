@@ -15,13 +15,14 @@ export interface AzureImageResult {
 }
 
 export type AzureImageErrorCategory =
-  | 'configuration'
-  | 'authentication'
-  | 'not_found'
+  | 'content_policy'
+  | 'public_figure_or_likeness'
   | 'rate_limit'
-  | 'provider'
-  | 'response'
-  | 'network'
+  | 'auth'
+  | 'storage'
+  | 'db'
+  | 'provider_unavailable'
+  | 'unknown'
 
 export interface AzureImageDiagnostics {
   configured: boolean
@@ -136,18 +137,85 @@ function getMissingConfigDiagnostics(lastProbeAt: string): AzureImageDiagnostics
     model,
     authMode: null,
     lastProbeAt,
-    errorCategory: 'configuration',
+    errorCategory: 'provider_unavailable',
     envStatus,
     safeReason: !apiKey ? 'Missing Azure API key configuration' : 'Missing Azure base URL configuration',
   }
 }
 
-function getErrorDetails(status: number): { category: AzureImageErrorCategory; safeReason: string } {
-  if (status === 401 || status === 403) return { category: 'authentication', safeReason: 'Invalid Azure key or unauthorized image deployment' }
-  if (status === 404) return { category: 'not_found', safeReason: 'Azure image deployment endpoint not found' }
-  if (status === 429) return { category: 'rate_limit', safeReason: 'Azure image provider is busy' }
-  if (status >= 500) return { category: 'provider', safeReason: 'Azure image provider failed' }
-  return { category: 'provider', safeReason: 'Azure image provider request failed' }
+function getProviderErrorCode(data: unknown): string | null {
+  const code = (data as any)?.error?.inner_error?.code ||
+    (data as any)?.error?.innererror?.code ||
+    (data as any)?.error?.code ||
+    (data as any)?.code
+  return typeof code === 'string' && code.trim() ? code.trim().slice(0, 120) : null
+}
+
+function getProviderErrorText(data: unknown): string {
+  try {
+    return JSON.stringify(data).toLowerCase().slice(0, 4000)
+  } catch {
+    return ''
+  }
+}
+
+function getErrorDetails(status: number, data?: unknown): {
+  category: AzureImageErrorCategory
+  safeReason: string
+  providerErrorCode: string | null
+} {
+  const providerErrorCode = getProviderErrorCode(data)
+  const providerErrorText = getProviderErrorText(data)
+  const publicFigureIndicators = [
+    'public figure',
+    'protected likeness',
+    'celebrity',
+    'real person',
+    'real-person',
+    'face likeness',
+  ]
+  const contentPolicyIndicators = [
+    'content policy',
+    'content_policy',
+    'content filter',
+    'content_filter',
+    'safety system',
+    'responsible ai',
+    'disallowed content',
+    'policy violation',
+    'rejected by safety',
+    'moderation',
+  ]
+
+  if (publicFigureIndicators.some(indicator => providerErrorText.includes(indicator))) {
+    return {
+      category: 'public_figure_or_likeness',
+      safeReason: 'Image request blocked by public figure or protected likeness policy',
+      providerErrorCode,
+    }
+  }
+  if (contentPolicyIndicators.some(indicator => providerErrorText.includes(indicator))) {
+    return {
+      category: 'content_policy',
+      safeReason: 'Image request blocked by provider content policy',
+      providerErrorCode,
+    }
+  }
+  if (status === 401 || status === 403) return { category: 'auth', safeReason: 'Invalid Azure key or unauthorized image deployment', providerErrorCode }
+  if (status === 404) return { category: 'provider_unavailable', safeReason: 'Azure image deployment endpoint not found', providerErrorCode }
+  if (status === 429) return { category: 'rate_limit', safeReason: 'Azure image provider is busy', providerErrorCode }
+  if (status >= 500) return { category: 'provider_unavailable', safeReason: 'Azure image provider failed', providerErrorCode }
+  return { category: 'unknown', safeReason: 'Azure image provider request failed', providerErrorCode }
+}
+
+function getUserFacingError(category: AzureImageErrorCategory): string {
+  if (category === 'content_policy' || category === 'public_figure_or_likeness') {
+    return 'This image request may involve a real public figure, protected likeness, or restricted content. Try a fictional or non-identifiable person instead.'
+  }
+  if (category === 'rate_limit') {
+    return 'Image Generation is busy. Please try again in a moment.'
+  }
+  return 'Image Generation is temporarily unavailable.'
 }
 
 async function fetchWithAuthFallback(
@@ -208,7 +276,7 @@ async function requestImage(prompt: string, size: AzureImageSize, timeoutMs: num
       'Image Generation is temporarily unavailable.',
       null,
       !apiKey ? 'Missing Azure API key configuration' : 'Missing Azure base URL configuration',
-      'configuration'
+      'provider_unavailable'
     )
   }
 
@@ -230,7 +298,7 @@ async function requestImage(prompt: string, size: AzureImageSize, timeoutMs: num
   })
 
   if (!response.ok) {
-    const { category, safeReason } = getErrorDetails(status)
+    const { category, safeReason, providerErrorCode } = getErrorDetails(status, data)
     lastRequestDiagnostics = {
       configured: true,
       apiKeyConfigured,
@@ -258,11 +326,13 @@ async function requestImage(prompt: string, size: AzureImageSize, timeoutMs: num
       envStatus,
       safeReason,
       category,
+      providerErrorCode,
+      generationBlockedByPolicy: category === 'content_policy' || category === 'public_figure_or_likeness',
+      r2Reached: false,
+      dbReached: false,
     })
     throw new AzureImageRequestError(
-      category === 'rate_limit'
-        ? 'Image Generation is busy. Please try again in a moment.'
-        : 'Image Generation is temporarily unavailable.',
+      getUserFacingError(category),
       status,
       safeReason,
       category
@@ -332,7 +402,7 @@ async function requestImage(prompt: string, size: AzureImageSize, timeoutMs: num
     model,
     authMode,
     lastProbeAt: new Date().toISOString(),
-    errorCategory: 'response',
+    errorCategory: 'unknown',
     envStatus,
     safeReason: 'Azure image provider returned no image data',
   }
@@ -340,7 +410,7 @@ async function requestImage(prompt: string, size: AzureImageSize, timeoutMs: num
     'Image Generation is temporarily unavailable.',
     status,
     'Azure image provider returned no image data',
-    'response'
+    'unknown'
   )
 }
 
@@ -357,7 +427,7 @@ async function requestImageEdit(
       'Image Generation is temporarily unavailable.',
       null,
       !apiKey ? 'Missing Azure API key configuration' : 'Missing Azure base URL configuration',
-      'configuration'
+      'provider_unavailable'
     )
   }
 
@@ -378,7 +448,7 @@ async function requestImageEdit(
   const data = await response.json().catch(async () => ({ error: await response.text().catch(() => '') }))
 
   if (!response.ok) {
-    const { category, safeReason } = getErrorDetails(status)
+    const { category, safeReason, providerErrorCode } = getErrorDetails(status, data)
     console.error('[Azure Image] Edit request failed', {
       status,
       authMode,
@@ -388,13 +458,19 @@ async function requestImageEdit(
       model,
       safeReason,
       category,
+      providerErrorCode,
+      generationBlockedByPolicy: category === 'content_policy' || category === 'public_figure_or_likeness',
+      r2Reached: false,
+      dbReached: false,
     })
     throw new AzureImageRequestError(
       status === 404 || status === 405
         ? 'Image editing is not supported by the current image model yet.'
-        : category === 'rate_limit'
-          ? 'Image Generation is busy. Please try again in a moment.'
-          : 'Could not edit the previous image. Try generating a new image.',
+        : category === 'content_policy' || category === 'public_figure_or_likeness'
+          ? getUserFacingError(category)
+          : category === 'rate_limit'
+            ? getUserFacingError(category)
+            : 'Could not edit the previous image. Try generating a new image.',
       status,
       status === 404 || status === 405 ? 'Azure image edit endpoint is unsupported' : safeReason,
       category
@@ -412,7 +488,7 @@ async function requestImageEdit(
       'Could not edit the previous image. Try generating a new image.',
       status,
       'Azure image edit provider returned no image data',
-      'response'
+      'unknown'
     )
   }
 
