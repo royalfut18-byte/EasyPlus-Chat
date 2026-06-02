@@ -4,8 +4,6 @@ import { getServerEnvStatus, readServerEnv } from '@/lib/server-env'
 
 const DEFAULT_AZURE_IMAGE_MODEL = 'gpt-image-2'
 const REQUEST_TIMEOUT_MS = 180_000
-const PROBE_TIMEOUT_MS = 120_000
-const AVAILABILITY_CACHE_MS = 5 * 60_000
 
 export const AZURE_IMAGE_SIZES = ['1024x1024', '1024x1536', '1536x1024'] as const
 export type AzureImageSize = typeof AZURE_IMAGE_SIZES[number]
@@ -16,6 +14,15 @@ export interface AzureImageResult {
   sizeBytes: number
 }
 
+export type AzureImageErrorCategory =
+  | 'configuration'
+  | 'authentication'
+  | 'not_found'
+  | 'rate_limit'
+  | 'provider'
+  | 'response'
+  | 'network'
+
 export interface AzureImageDiagnostics {
   configured: boolean
   apiKeyConfigured: boolean
@@ -25,7 +32,10 @@ export interface AzureImageDiagnostics {
   status: number | null
   endpointHost: string | null
   endpointPath: string
+  model: string
+  authMode: AuthMode | null
   lastProbeAt: string
+  errorCategory: AzureImageErrorCategory | null
   envStatus: {
     apiKey: { exists: boolean; configured: boolean }
     baseUrl: { exists: boolean; configured: boolean }
@@ -34,7 +44,7 @@ export interface AzureImageDiagnostics {
   safeReason: string
 }
 
-let availabilityCache: { checkedAt: number; diagnostics: AzureImageDiagnostics } | null = null
+let lastRequestDiagnostics: AzureImageDiagnostics | null = null
 
 function normalizeBaseUrl(baseUrl: string): string {
   return baseUrl.replace(/\/+$/, '')
@@ -73,7 +83,8 @@ class AzureImageRequestError extends Error {
   constructor(
     message: string,
     public readonly status: number | null,
-    public readonly safeReason: string
+    public readonly safeReason: string,
+    public readonly category: AzureImageErrorCategory
   ) {
     super(message)
     this.name = 'AzureImageRequestError'
@@ -108,7 +119,7 @@ function getEndpointPath(baseUrl?: string): string {
 }
 
 function getMissingConfigDiagnostics(lastProbeAt: string): AzureImageDiagnostics {
-  const { apiKey, baseUrl, apiKeyConfigured, baseUrlConfigured, modelConfigured, envStatus } = getProviderConfig()
+  const { apiKey, baseUrl, apiKeyConfigured, baseUrlConfigured, model, modelConfigured, envStatus } = getProviderConfig()
   return {
     configured: Boolean(apiKey && baseUrl),
     apiKeyConfigured,
@@ -118,18 +129,21 @@ function getMissingConfigDiagnostics(lastProbeAt: string): AzureImageDiagnostics
     status: null,
     endpointHost: getEndpointHost(baseUrl),
     endpointPath: getEndpointPath(baseUrl),
+    model,
+    authMode: null,
     lastProbeAt,
+    errorCategory: 'configuration',
     envStatus,
     safeReason: !apiKey ? 'Missing Azure API key configuration' : 'Missing Azure base URL configuration',
   }
 }
 
-function getSafeReason(status: number): string {
-  if (status === 401 || status === 403) return 'Invalid Azure key or unauthorized image deployment'
-  if (status === 404) return 'Azure image deployment endpoint not found'
-  if (status === 429) return 'Azure image provider is busy'
-  if (status >= 500) return 'Azure image provider failed'
-  return 'Azure image provider request failed'
+function getErrorDetails(status: number): { category: AzureImageErrorCategory; safeReason: string } {
+  if (status === 401 || status === 403) return { category: 'authentication', safeReason: 'Invalid Azure key or unauthorized image deployment' }
+  if (status === 404) return { category: 'not_found', safeReason: 'Azure image deployment endpoint not found' }
+  if (status === 429) return { category: 'rate_limit', safeReason: 'Azure image provider is busy' }
+  if (status >= 500) return { category: 'provider', safeReason: 'Azure image provider failed' }
+  return { category: 'provider', safeReason: 'Azure image provider request failed' }
 }
 
 async function fetchWithAuthFallback(
@@ -188,7 +202,8 @@ async function requestImage(prompt: string, size: AzureImageSize, timeoutMs: num
     throw new AzureImageRequestError(
       'Image Generation is temporarily unavailable.',
       null,
-      !apiKey ? 'Missing Azure API key configuration' : 'Missing Azure base URL configuration'
+      !apiKey ? 'Missing Azure API key configuration' : 'Missing Azure base URL configuration',
+      'configuration'
     )
   }
 
@@ -210,7 +225,23 @@ async function requestImage(prompt: string, size: AzureImageSize, timeoutMs: num
   })
 
   if (!response.ok) {
-    const safeReason = getSafeReason(status)
+    const { category, safeReason } = getErrorDetails(status)
+    lastRequestDiagnostics = {
+      configured: true,
+      apiKeyConfigured,
+      baseUrlConfigured,
+      modelConfigured,
+      probeOk: false,
+      status,
+      endpointHost,
+      endpointPath,
+      model,
+      authMode,
+      lastProbeAt: new Date().toISOString(),
+      errorCategory: category,
+      envStatus,
+      safeReason,
+    }
     console.error('[Azure Image] Request failed', {
       status,
       authMode,
@@ -221,15 +252,60 @@ async function requestImage(prompt: string, size: AzureImageSize, timeoutMs: num
       model,
       envStatus,
       safeReason,
+      category,
     })
-    throw new AzureImageRequestError('Image Generation is temporarily unavailable.', status, safeReason)
+    throw new AzureImageRequestError(
+      category === 'rate_limit'
+        ? 'Image Generation is busy. Please try again in a moment.'
+        : 'Image Generation is temporarily unavailable.',
+      status,
+      safeReason,
+      category
+    )
   }
 
   const base64 = parseBase64Image(data)
-  if (base64) return { base64, status }
+  if (base64) {
+    lastRequestDiagnostics = {
+      configured: true,
+      apiKeyConfigured,
+      baseUrlConfigured,
+      modelConfigured,
+      probeOk: true,
+      status,
+      endpointHost,
+      endpointPath,
+      model,
+      authMode,
+      lastProbeAt: new Date().toISOString(),
+      errorCategory: null,
+      envStatus,
+      safeReason: 'Available',
+    }
+    return { base64, status }
+  }
 
   const imageUrl = parseImageUrl(data)
-  if (imageUrl) return { base64: await fetchImageUrlAsBase64(imageUrl), status }
+  if (imageUrl) {
+    const base64FromUrl = await fetchImageUrlAsBase64(imageUrl)
+    lastRequestDiagnostics = {
+      configured: true,
+      apiKeyConfigured,
+      baseUrlConfigured,
+      modelConfigured,
+      probeOk: true,
+      status,
+      endpointHost,
+      endpointPath,
+      model,
+      authMode,
+      lastProbeAt: new Date().toISOString(),
+      errorCategory: null,
+      envStatus,
+      safeReason: 'Available',
+    }
+    return { base64: base64FromUrl, status }
+  }
 
   console.error('[Azure Image] Response did not include image data', {
     status,
@@ -239,7 +315,28 @@ async function requestImage(prompt: string, size: AzureImageSize, timeoutMs: num
     endpointPath,
     model,
   })
-  throw new AzureImageRequestError('Image Generation is temporarily unavailable.', status, 'Azure image provider returned no image data')
+  lastRequestDiagnostics = {
+    configured: true,
+    apiKeyConfigured,
+    baseUrlConfigured,
+    modelConfigured,
+    probeOk: false,
+    status,
+    endpointHost,
+    endpointPath,
+    model,
+    authMode,
+    lastProbeAt: new Date().toISOString(),
+    errorCategory: 'response',
+    envStatus,
+    safeReason: 'Azure image provider returned no image data',
+  }
+  throw new AzureImageRequestError(
+    'Image Generation is temporarily unavailable.',
+    status,
+    'Azure image provider returned no image data',
+    'response'
+  )
 }
 
 export function isValidAzureImageSize(size: unknown): size is AzureImageSize {
@@ -267,12 +364,9 @@ export async function generateAzureImage(prompt: string, size: AzureImageSize): 
   }
 }
 
-export async function getAzureImageDiagnostics(force = false): Promise<AzureImageDiagnostics> {
+export async function getAzureImageDiagnostics(_force = false): Promise<AzureImageDiagnostics> {
   const now = Date.now()
   const lastProbeAt = new Date(now).toISOString()
-  if (!force && availabilityCache && now - availabilityCache.checkedAt < AVAILABILITY_CACHE_MS) {
-    return availabilityCache.diagnostics
-  }
 
   const config = getProviderConfig()
   if (!config.apiKey || !config.baseUrl) {
@@ -286,71 +380,28 @@ export async function getAzureImageDiagnostics(force = false): Promise<AzureImag
       endpointPath: getEndpointPath(config.baseUrl),
       model: config.model,
     })
-    availabilityCache = { checkedAt: now, diagnostics }
+    lastRequestDiagnostics = diagnostics
     return diagnostics
   }
 
-  try {
-    const probe = await requestImage('A simple white dot on a plain black background', '1024x1024', PROBE_TIMEOUT_MS)
-    const diagnostics: AzureImageDiagnostics = {
-      configured: true,
-      apiKeyConfigured: config.apiKeyConfigured,
-      baseUrlConfigured: config.baseUrlConfigured,
-      modelConfigured: config.modelConfigured,
-      probeOk: true,
-      status: probe.status,
-      endpointHost: getEndpointHost(config.baseUrl),
-      endpointPath: getEndpointPath(config.baseUrl),
-      lastProbeAt,
-      envStatus: config.envStatus,
-      safeReason: 'Available',
-    }
-    console.info('[Azure Image] Availability probe completed', {
-      probeOk: true,
-      status: probe.status,
-      baseUrlConfigured: config.baseUrlConfigured,
-      modelConfigured: config.modelConfigured,
-      endpointHost: getEndpointHost(config.baseUrl),
-      endpointPath: getEndpointPath(config.baseUrl),
-      model: config.model,
-      envStatus: config.envStatus,
-    })
-    availabilityCache = { checkedAt: now, diagnostics }
-  } catch (error: any) {
-    const timeoutHit = error?.name === 'TimeoutError' || error?.name === 'AbortError'
-    const diagnostics: AzureImageDiagnostics = {
-      configured: true,
-      apiKeyConfigured: config.apiKeyConfigured,
-      baseUrlConfigured: config.baseUrlConfigured,
-      modelConfigured: config.modelConfigured,
-      probeOk: false,
-      status: error instanceof AzureImageRequestError ? error.status : null,
-      endpointHost: getEndpointHost(config.baseUrl),
-      endpointPath: getEndpointPath(config.baseUrl),
-      lastProbeAt,
-      envStatus: config.envStatus,
-      safeReason: timeoutHit
-        ? 'Azure image provider probe timed out'
-        : error instanceof AzureImageRequestError
-          ? error.safeReason
-          : 'Azure image provider is unavailable',
-    }
-    console.error('[Azure Image] Availability probe exception', {
-      message: error?.message,
-      timeoutHit,
-      baseUrlConfigured: config.baseUrlConfigured,
-      modelConfigured: config.modelConfigured,
-      endpointHost: getEndpointHost(config.baseUrl),
-      endpointPath: getEndpointPath(config.baseUrl),
-      model: config.model,
-      envStatus: config.envStatus,
-    })
-    availabilityCache = { checkedAt: now, diagnostics }
+  return lastRequestDiagnostics || {
+    configured: true,
+    apiKeyConfigured: config.apiKeyConfigured,
+    baseUrlConfigured: config.baseUrlConfigured,
+    modelConfigured: config.modelConfigured,
+    probeOk: true,
+    status: null,
+    endpointHost: getEndpointHost(config.baseUrl),
+    endpointPath: getEndpointPath(config.baseUrl),
+    model: config.model,
+    authMode: null,
+    lastProbeAt,
+    errorCategory: null,
+    envStatus: config.envStatus,
+    safeReason: 'Configured; availability is checked on generation',
   }
-
-  return availabilityCache.diagnostics
 }
 
 export async function isAzureImageAvailable(): Promise<boolean> {
-  return (await getAzureImageDiagnostics()).probeOk
+  return (await getAzureImageDiagnostics()).configured
 }

@@ -98,11 +98,22 @@ export async function POST(request: NextRequest) {
       storageConfigured: storageStatus.configured,
     })
 
-    await uploadObjectToR2({
-      key: storageKey,
-      body: imageBuffer,
-      mimeType: generated.mimeType,
-    })
+    try {
+      await uploadObjectToR2({
+        key: storageKey,
+        body: imageBuffer,
+        mimeType: generated.mimeType,
+      })
+    } catch (error: any) {
+      console.error('[Image Generation] Storage upload failed after Azure generation', {
+        message: error?.message,
+        storageConfigured: storageStatus.configured,
+      })
+      return NextResponse.json(
+        { error: 'Image generated but could not be saved.' },
+        { status: 503 }
+      )
+    }
 
     const { data: attachment, error: attachmentError } = await db
       .from('attachments')
@@ -131,7 +142,7 @@ export async function POST(request: NextRequest) {
         message: attachmentError?.message,
       })
       return NextResponse.json(
-        { error: 'Image Generation is temporarily unavailable.' },
+        { error: 'Image generated but could not be saved.' },
         { status: 500 }
       )
     }
@@ -163,8 +174,16 @@ export async function POST(request: NextRequest) {
       message: error?.message,
       name: error?.name,
     })
+    const safeError = typeof error?.message === 'string' && (
+      error.message === 'Enter a more detailed image prompt.' ||
+      error.message === 'Image Generation is busy. Please try again in a moment.' ||
+      error.message === 'Image generated but could not be saved.'
+    )
+      ? error.message
+      : 'Image Generation is temporarily unavailable.'
+
     return NextResponse.json(
-      { error: error?.message === 'Enter a more detailed image prompt.' ? error.message : 'Image Generation is temporarily unavailable.' },
+      { error: safeError },
       { status: 500 }
     )
   }
