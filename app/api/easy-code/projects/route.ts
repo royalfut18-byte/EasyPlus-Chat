@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { createEasyCodeProjectFromPrompt, listEasyCodeProjects, requireEasyCodeUser, sanitizeEasyCodePrompt } from '@/lib/easy-code.server'
+import { createEasyCodeProjectShell, listEasyCodeProjects, requireEasyCodeUser, sanitizeEasyCodePrompt } from '@/lib/easy-code.server'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
@@ -32,7 +32,7 @@ export async function POST(request: NextRequest) {
     const prompt = sanitizeEasyCodePrompt(body?.prompt)
     if (prompt.length < 5) return NextResponse.json({ error: 'Describe what you want to build.' }, { status: 400 })
 
-    const result = await createEasyCodeProjectFromPrompt(user.id, prompt)
+    const result = await createEasyCodeProjectShell(user.id, prompt)
     return NextResponse.json(result, { headers: { 'Cache-Control': 'private, no-store, max-age=0' } })
   } catch (error: any) {
     console.error('[Easy Code] Project create failed', {

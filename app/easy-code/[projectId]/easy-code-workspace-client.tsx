@@ -1,9 +1,9 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, Code2, Copy, Download, File, FilePlus, FolderOpen, Loader2, MessageSquare, Monitor, Save, Send, Trash2 } from 'lucide-react'
+import { ArrowLeft, CheckCircle2, Circle, Code2, Copy, Download, File, FilePlus, FolderOpen, Loader2, MessageSquare, Monitor, RefreshCw, Save, Send, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface EasyCodeProject {
@@ -11,6 +11,14 @@ interface EasyCodeProject {
   title: string
   description: string | null
   framework: string | null
+  generation_status?: 'idle' | 'generating' | 'ready' | 'failed'
+  generation_phase?: string | null
+  generation_error?: string | null
+  generation_metadata?: {
+    progress?: Array<{ label: string; state: 'done' | 'active' | 'pending' }>
+    filesCreated?: string[]
+    lastError?: string | null
+  }
   updated_at: string
 }
 
@@ -60,7 +68,7 @@ export function EasyCodeWorkspaceClient({
   initialFiles: EasyCodeFile[]
   initialMessages: EasyCodeMessage[]
 }) {
-  const [project] = useState(initialProject)
+  const [project, setProject] = useState(initialProject)
   const [files, setFiles] = useState(initialFiles)
   const [messages, setMessages] = useState(initialMessages)
   const [selectedPath, setSelectedPath] = useState(initialFiles[0]?.path || '')
@@ -70,12 +78,21 @@ export function EasyCodeWorkspaceClient({
   const [isGenerating, setIsGenerating] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<MobileTab>('files')
+  const initialGenerationStartedRef = useRef(false)
   const router = useRouter()
 
   const selectedFile = useMemo(() => files.find(file => file.path === selectedPath) || null, [files, selectedPath])
   const hasUnsavedChanges = selectedFile ? draft !== selectedFile.content : false
   const hasStaticPreview = files.some(file => file.path.toLowerCase() === 'index.html')
   const latestAssistant = [...messages].reverse().find(message => message.role === 'assistant')
+  const generationStatus = project.generation_status || (files.length > 0 ? 'ready' : 'idle')
+  const progressSteps = project.generation_metadata?.progress || [
+    { label: 'Project created', state: 'done' as const },
+    { label: 'Planning file structure', state: generationStatus === 'generating' ? 'active' as const : 'pending' as const },
+    { label: 'Writing files', state: 'pending' as const },
+    { label: 'Saving files', state: 'pending' as const },
+    { label: 'Preparing preview', state: 'pending' as const },
+  ]
 
   const selectFile = (file: EasyCodeFile) => {
     setSelectedPath(file.path)
@@ -87,6 +104,7 @@ export function EasyCodeWorkspaceClient({
     const response = await fetch(`/api/easy-code/projects/${project.id}`, { cache: 'no-store' })
     const data = await response.json().catch(() => ({}))
     if (response.ok) {
+      if (data.project) setProject(data.project)
       setFiles(data.files || [])
       setMessages(data.messages || [])
       const nextSelected = data.files?.find((file: EasyCodeFile) => file.path === selectedPath) || data.files?.[0]
@@ -95,6 +113,56 @@ export function EasyCodeWorkspaceClient({
         setDraft(nextSelected.content)
       }
     }
+  }
+
+  const generateInitialProject = async () => {
+    if (initialGenerationStartedRef.current) return
+    initialGenerationStartedRef.current = true
+    setIsGenerating(true)
+    setError(null)
+    try {
+      const response = await fetch(`/api/easy-code/projects/${project.id}/generate`, { method: 'POST' })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(data.error || 'Project was created but generation failed.')
+      if (data.project) setProject(data.project)
+      setFiles(data.files || [])
+      setMessages(data.messages || [])
+      const firstFile = data.files?.[0]
+      if (firstFile) {
+        setSelectedPath(firstFile.path)
+        setDraft(firstFile.content)
+      }
+    } catch (error: any) {
+      setError(error?.message === 'Failed to fetch'
+        ? 'The generation request timed out. Retry from the workspace.'
+        : error?.message || 'Project was created but generation failed.')
+      await refreshProject().catch(() => {})
+    } finally {
+      setIsGenerating(false)
+    }
+  }
+
+  useEffect(() => {
+    if (
+      generationStatus === 'generating' &&
+      project.generation_phase === 'creating_project' &&
+      files.length === 0
+    ) {
+      generateInitialProject()
+    }
+  }, [files.length, generationStatus, project.generation_phase])
+
+  useEffect(() => {
+    if (generationStatus !== 'generating') return
+    const timer = window.setInterval(() => {
+      refreshProject().catch(() => {})
+    }, 1500)
+    return () => window.clearInterval(timer)
+  }, [generationStatus, project.id, selectedPath])
+
+  const retryGeneration = () => {
+    initialGenerationStartedRef.current = false
+    generateInitialProject()
   }
 
   const saveFile = async () => {
@@ -333,6 +401,48 @@ export function EasyCodeWorkspaceClient({
               Ask Easy Code
             </div>
             <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3 scrollbar-thin">
+              <div className="rounded-2xl border border-white/[0.07] bg-[#101010] p-3">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500">Build progress</p>
+                  <span className={cn(
+                    'rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]',
+                    generationStatus === 'failed'
+                      ? 'bg-red-500/10 text-red-200'
+                      : generationStatus === 'ready'
+                        ? 'bg-emerald-500/10 text-emerald-200'
+                        : 'bg-violet-500/10 text-violet-200'
+                  )}>
+                    {generationStatus}
+                  </span>
+                </div>
+                <div className="mt-3 space-y-2">
+                  {progressSteps.map(step => (
+                    <div key={step.label} className="flex items-center gap-2 text-xs text-gray-300">
+                      {step.state === 'done' ? (
+                        <CheckCircle2 className="h-3.5 w-3.5 text-emerald-300" />
+                      ) : step.state === 'active' ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin text-violet-300" />
+                      ) : (
+                        <Circle className="h-3.5 w-3.5 text-gray-700" />
+                      )}
+                      <span>{step.label}</span>
+                    </div>
+                  ))}
+                </div>
+                {project.generation_metadata?.filesCreated?.length ? (
+                  <div className="mt-3 flex flex-wrap gap-1">
+                    {project.generation_metadata.filesCreated.slice(0, 10).map(path => (
+                      <span key={path} className="rounded-full bg-white/[0.04] px-2 py-0.5 text-[10px] text-gray-400">{path}</span>
+                    ))}
+                  </div>
+                ) : null}
+                {generationStatus === 'failed' && (
+                  <button onClick={retryGeneration} className="mt-3 inline-flex items-center gap-2 rounded-full bg-violet-600 px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-violet-500">
+                    <RefreshCw className="h-3.5 w-3.5" />
+                    Retry generation
+                  </button>
+                )}
+              </div>
               {messages.length === 0 ? (
                 <p className="rounded-2xl border border-white/[0.07] bg-white/[0.025] p-3 text-sm text-gray-500">Ask for changes, bug fixes, new files, or README improvements.</p>
               ) : messages.map(message => (
@@ -350,7 +460,15 @@ export function EasyCodeWorkspaceClient({
               {isGenerating && (
                 <div className="flex items-center gap-2 rounded-2xl bg-white/[0.04] p-3 text-sm text-gray-300">
                   <Loader2 className="h-4 w-4 animate-spin text-violet-300" />
-                  DeepSeek is editing project files...
+                  {project.generation_phase === 'creating_project'
+                    ? 'Creating project...'
+                    : project.generation_phase === 'planning'
+                      ? 'Planning file structure...'
+                      : project.generation_phase === 'saving_files'
+                        ? 'Saving files...'
+                        : project.generation_phase === 'building_preview'
+                          ? 'Preparing preview...'
+                          : 'DeepSeek is editing project files...'}
                 </div>
               )}
               {latestAssistant?.metadata?.instructions?.length ? (

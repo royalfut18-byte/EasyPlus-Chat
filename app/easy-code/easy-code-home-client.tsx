@@ -12,6 +12,7 @@ interface EasyCodeProject {
   title: string
   description: string | null
   framework: string | null
+  generation_status?: 'idle' | 'generating' | 'ready' | 'failed'
   updated_at: string
   created_at: string
 }
@@ -74,7 +75,7 @@ export function EasyCodeHomeClient({ initialProjects }: { initialProjects: EasyC
         </div>
         <h1 className="text-4xl font-semibold tracking-tight sm:text-6xl">What do you want to build?</h1>
         <p className="mt-4 max-w-2xl text-base leading-relaxed text-gray-400 sm:text-lg">
-          Generate, edit, preview, and download full coding projects with AI.
+          Describe your app, website, script, or tool. Easy Code will generate the files, preview it, and let you download the project.
         </p>
 
         <div className="mt-8 w-full rounded-[28px] border border-white/[0.10] bg-[#191919] p-3 shadow-2xl shadow-black/30">
@@ -157,9 +158,16 @@ export function EasyCodeHomeClient({ initialProjects }: { initialProjects: EasyC
                 <p className="mt-2 line-clamp-2 text-sm text-gray-500">{project.description || 'Easy Code project'}</p>
                 <div className="mt-4 flex items-center justify-between text-xs text-gray-500">
                   <span>{project.framework || 'project'}</span>
-                  <span className="inline-flex items-center gap-1">
-                    <Download className="h-3 w-3" />
-                    ZIP ready
+                  <span className={cn(
+                    'inline-flex items-center gap-1 rounded-full px-2 py-1',
+                    project.generation_status === 'failed'
+                      ? 'bg-red-500/10 text-red-200'
+                      : project.generation_status === 'generating'
+                        ? 'bg-amber-500/10 text-amber-200'
+                        : 'bg-emerald-500/10 text-emerald-200'
+                  )}>
+                    {project.generation_status === 'generating' ? <Loader2 className="h-3 w-3 animate-spin" /> : <Download className="h-3 w-3" />}
+                    {project.generation_status === 'failed' ? 'Failed' : project.generation_status === 'generating' ? 'Generating' : 'Ready'}
                   </span>
                 </div>
               </Link>

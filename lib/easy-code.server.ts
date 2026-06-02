@@ -20,6 +20,11 @@ export interface EasyCodeProject {
   description: string | null
   framework: string | null
   status: string
+  generation_status?: 'idle' | 'generating' | 'ready' | 'failed'
+  generation_phase?: string | null
+  generation_error?: string | null
+  generation_metadata?: any
+  last_generated_at?: string | null
   created_at: string
   updated_at: string
 }
@@ -297,7 +302,57 @@ export async function getEasyCodeMessages(userId: string, projectId: string): Pr
   return data || []
 }
 
-export async function createEasyCodeProjectFromPrompt(userId: string, prompt: string) {
+export function buildEasyCodeProgress(phase: string, filesCreated: string[] = [], error?: string | null) {
+  const order = ['creating_project', 'planning', 'generating_files', 'saving_files', 'building_preview', 'complete']
+  const currentIndex = order.indexOf(phase)
+  const stateFor = (step: string) => {
+    if (phase === 'failed') return 'pending'
+    const stepIndex = order.indexOf(step)
+    if (currentIndex > stepIndex) return 'done'
+    if (currentIndex === stepIndex) return 'active'
+    return 'pending'
+  }
+  return {
+    progress: [
+      { label: 'Project created', state: phase === 'creating_project' ? 'active' : 'done' },
+      { label: 'Planning file structure', state: stateFor('planning') },
+      { label: 'Writing files', state: stateFor('generating_files') },
+      { label: 'Saving files', state: stateFor('saving_files') },
+      { label: 'Preparing preview', state: stateFor('building_preview') },
+      { label: 'Ready to download', state: phase === 'complete' ? 'done' : 'pending' },
+    ],
+    filesCreated,
+    lastError: error || null,
+  }
+}
+
+async function updateEasyCodeGenerationState(
+  userId: string,
+  projectId: string,
+  updates: {
+    status?: 'idle' | 'generating' | 'ready' | 'failed'
+    phase?: string | null
+    error?: string | null
+    metadata?: any
+    title?: string | null
+    framework?: string | null
+    lastGeneratedAt?: string | null
+  }
+) {
+  const db = await getDb()
+  const payload: Record<string, any> = { updated_at: new Date().toISOString() }
+  if (updates.status) payload.generation_status = updates.status
+  if ('phase' in updates) payload.generation_phase = updates.phase
+  if ('error' in updates) payload.generation_error = updates.error
+  if ('metadata' in updates) payload.generation_metadata = updates.metadata || {}
+  if ('title' in updates && updates.title) payload.title = updates.title
+  if ('framework' in updates) payload.framework = updates.framework
+  if ('lastGeneratedAt' in updates) payload.last_generated_at = updates.lastGeneratedAt
+  const { error } = await db.from('easy_code_projects').update(payload).eq('id', projectId).eq('user_id', userId)
+  if (error) throw error
+}
+
+export async function createEasyCodeProjectShell(userId: string, prompt: string) {
   const db = await getDb()
   const cleanPrompt = sanitizeEasyCodePrompt(prompt)
   if (cleanPrompt.length < 5) throw new Error('Describe what you want to build.')
@@ -310,46 +365,118 @@ export async function createEasyCodeProjectFromPrompt(userId: string, prompt: st
       title,
       description: cleanPrompt,
       framework: 'detecting',
+      generation_status: 'generating',
+      generation_phase: 'creating_project',
+      generation_error: null,
+      generation_metadata: buildEasyCodeProgress('creating_project'),
     })
     .select('*')
     .single()
   if (error || !project?.id) throw error || new Error('Could not create project.')
 
   await db.from('easy_code_messages').insert({ project_id: project.id, user_id: userId, role: 'user', content: cleanPrompt })
-  const aiResult = await generateEasyCodeFiles({
-    mode: 'create',
-    project,
-    files: [],
-    messages: [],
-    instruction: cleanPrompt,
-  })
-  await applyEasyCodeAiResult(userId, project.id, aiResult)
-  await db.from('easy_code_projects')
-    .update({
-      title: aiResult.title || project.title,
-      framework: aiResult.framework || project.framework,
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', project.id)
-    .eq('user_id', userId)
-  await db.from('easy_code_messages').insert({
-    project_id: project.id,
-    user_id: userId,
-    role: 'assistant',
-    content: aiResult.summary,
-    metadata: {
-      instructions: aiResult.instructions,
-      changedFiles: aiResult.files.map(file => ({ path: file.newPath || file.path, operation: file.operation })),
-      previewType: aiResult.previewType,
-    },
-  })
+  const messages = await getEasyCodeMessages(userId, project.id)
+  return { project, files: [], messages }
+}
 
+export async function createEasyCodeProjectFromPrompt(userId: string, prompt: string) {
+  const { project } = await createEasyCodeProjectShell(userId, prompt)
+  await runEasyCodeInitialGeneration(userId, project.id)
   const [freshProject, freshFiles, freshMessages] = await Promise.all([
     getEasyCodeProject(userId, project.id),
     getEasyCodeFiles(userId, project.id),
     getEasyCodeMessages(userId, project.id),
   ])
-  return { project: freshProject, files: freshFiles, messages: freshMessages, aiResult }
+  return { project: freshProject, files: freshFiles, messages: freshMessages, aiResult: null }
+}
+
+export async function runEasyCodeInitialGeneration(userId: string, projectId: string) {
+  const project = await getEasyCodeProject(userId, projectId)
+  if (!project) throw new Error('Project not found.')
+  const cleanPrompt = sanitizeEasyCodePrompt(project.description || project.title)
+
+  try {
+    await updateEasyCodeGenerationState(userId, projectId, {
+      status: 'generating',
+      phase: 'planning',
+      error: null,
+      metadata: buildEasyCodeProgress('planning'),
+    })
+
+    const aiResult = await generateEasyCodeFiles({
+      mode: 'create',
+      project,
+      files: [],
+      messages: await getEasyCodeMessages(userId, projectId),
+      instruction: cleanPrompt,
+    })
+
+    const filesCreated = aiResult.files.map(file => file.newPath || file.path)
+    await updateEasyCodeGenerationState(userId, projectId, {
+      status: 'generating',
+      phase: 'generating_files',
+      metadata: buildEasyCodeProgress('generating_files', filesCreated),
+    })
+    await updateEasyCodeGenerationState(userId, projectId, {
+      status: 'generating',
+      phase: 'saving_files',
+      metadata: buildEasyCodeProgress('saving_files', filesCreated),
+    })
+
+    await applyEasyCodeAiResult(userId, projectId, aiResult)
+    const db = await getDb()
+    await db.from('easy_code_projects')
+      .update({
+        title: aiResult.title || project.title,
+        framework: aiResult.framework || project.framework,
+        generation_status: 'generating',
+        generation_phase: 'building_preview',
+        generation_metadata: buildEasyCodeProgress('building_preview', filesCreated),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', projectId)
+      .eq('user_id', userId)
+    await db.from('easy_code_messages').insert({
+      project_id: projectId,
+      user_id: userId,
+      role: 'assistant',
+      content: aiResult.summary,
+      metadata: {
+        instructions: aiResult.instructions,
+        changedFiles: aiResult.files.map(file => ({ path: file.newPath || file.path, operation: file.operation })),
+        previewType: aiResult.previewType,
+      },
+    })
+
+    await updateEasyCodeGenerationState(userId, projectId, {
+      status: 'ready',
+      phase: 'complete',
+      error: null,
+      metadata: buildEasyCodeProgress('complete', filesCreated),
+      title: aiResult.title || project.title,
+      framework: aiResult.framework || project.framework,
+      lastGeneratedAt: new Date().toISOString(),
+    })
+
+    const [freshProject, freshFiles, freshMessages] = await Promise.all([
+      getEasyCodeProject(userId, projectId),
+      getEasyCodeFiles(userId, projectId),
+      getEasyCodeMessages(userId, projectId),
+    ])
+    return { project: freshProject, files: freshFiles, messages: freshMessages, aiResult }
+  } catch (error: any) {
+    const message = typeof error?.message === 'string' && error.message
+      ? error.message
+      : 'Project was created but generation failed.'
+    await updateEasyCodeGenerationState(userId, projectId, {
+      status: 'failed',
+      phase: 'failed',
+      error: message,
+      metadata: buildEasyCodeProgress('failed', [], message),
+    }).catch(() => {})
+    console.error('[Easy Code] Initial generation failed', { message, projectId })
+    throw new Error(message)
+  }
 }
 
 export async function generateEasyCodeFiles(input: {
