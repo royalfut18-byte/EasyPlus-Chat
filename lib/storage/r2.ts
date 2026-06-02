@@ -1,3 +1,5 @@
+import 'server-only'
+
 import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { readServerEnv } from '@/lib/server-env'
@@ -101,4 +103,18 @@ export async function uploadObjectToR2(params: {
     key: params.key,
     bucket: R2_BUCKET_NAME,
   }
+}
+
+export async function downloadObjectFromR2(key: string): Promise<Buffer> {
+  const client = getR2Client()
+  const response = await client.send(new GetObjectCommand({
+    Bucket: R2_BUCKET_NAME,
+    Key: key,
+  }))
+
+  if (!response.Body) {
+    throw new Error('Stored object body is empty')
+  }
+
+  return Buffer.from(await response.Body.transformToByteArray())
 }

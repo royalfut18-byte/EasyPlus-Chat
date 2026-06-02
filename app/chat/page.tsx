@@ -12,7 +12,7 @@ import { MessageBubble } from '@/components/chat/message-bubble'
 import { ChatInput } from '@/components/chat/chat-input'
 import { Sidebar } from '@/components/chat/sidebar'
 import { ArtifactPanel } from '@/components/chat/artifact-panel'
-import { ImageGenerationPanel, type GeneratedImage, type ImageGenerationSize } from '@/components/chat/image-generation-panel'
+import { ImageGenerationPanel, type GeneratedImage, type ImageGenerationOptions, type ImageGenerationSize } from '@/components/chat/image-generation-panel'
 import { toast } from '@/components/ui/use-toast'
 import { AI_MODELS } from '@/types/models'
 import { cn } from '@/lib/utils'
@@ -272,6 +272,7 @@ export default function ChatPage() {
   const [selectedModel, setSelectedModel] = useState(AI_MODELS[0].id)
   const [generatedImages, setGeneratedImages] = useState<GeneratedImage[]>([])
   const [isGeneratingImage, setIsGeneratingImage] = useState(false)
+  const [imageConversationId, setImageConversationId] = useState<string | null>(null)
   const [reasoningMode, setReasoningMode] = useState<ReasoningMode>('thinking')
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [normalConversations, setNormalConversations] = useState<Conversation[]>([])
@@ -369,6 +370,27 @@ export default function ChatPage() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
+
+  useEffect(() => {
+    if (selectedModel !== 'image-generation' || !imageConversationId) return
+
+    const controller = new AbortController()
+    fetch(`/api/image-generation?conversationId=${encodeURIComponent(imageConversationId)}`, {
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        const data = await response.json().catch(() => ({}))
+        if (!response.ok) throw new Error(data?.error || 'Could not load generated images.')
+        setGeneratedImages(Array.isArray(data.images) ? data.images : [])
+      })
+      .catch((error) => {
+        if (error?.name !== 'AbortError') {
+          console.error('[Image Generation] History load failed')
+        }
+      })
+
+    return () => controller.abort()
+  }, [imageConversationId, selectedModel])
 
   const loadUserProfile = async () => {
     try {
@@ -677,6 +699,7 @@ export default function ChatPage() {
     setIsArtifactOpen(false)
     setArtifactMessageId(null)
     setGeneratedImages([])
+    setImageConversationId(null)
   }
 
   const handleSelectConversation = async (id: string) => {
@@ -695,6 +718,7 @@ export default function ChatPage() {
     // IMMEDIATELY update UI
     setCurrentConversation(conv)
     setSelectedModel(conv.model_used)
+    setImageConversationId(conv.model_used === 'image-generation' ? conv.id : null)
     setReasoningMode(conv.reasoning_mode || 'thinking')
     setIsArtifactOpen(false)
     setActiveArtifact(null)
@@ -1574,7 +1598,7 @@ Rules:
     setWebSearchEnabled(!webSearchEnabled)
   }
 
-  const handleGenerateImage = async (prompt: string, size: ImageGenerationSize) => {
+  const handleGenerateImage = async (prompt: string, size: ImageGenerationSize, options: ImageGenerationOptions = {}) => {
     if (isGeneratingImage) return
     setIsGeneratingImage(true)
 
@@ -1585,8 +1609,9 @@ Rules:
         body: JSON.stringify({
           prompt,
           size,
-          conversationId: currentConversation?.id,
-          projectId: currentConversation?.id ? projectId || undefined : undefined,
+          conversationId: imageConversationId || currentConversation?.id,
+          projectId: imageConversationId || currentConversation?.id ? projectId || undefined : undefined,
+          ...options,
         }),
       })
 
@@ -1595,6 +1620,9 @@ Rules:
         throw new Error(data?.error || 'Could not generate image right now. Please try again.')
       }
 
+      if (typeof data.image.conversationId === 'string') {
+        setImageConversationId(data.image.conversationId)
+      }
       setGeneratedImages((prev) => [...prev, data.image as GeneratedImage])
       toast({
         title: 'Image generated',
@@ -1613,7 +1641,12 @@ Rules:
   }
 
   const handleRegenerateImage = async (image: GeneratedImage) => {
-    await handleGenerateImage(image.prompt, image.size)
+    await handleGenerateImage(image.prompt, image.size, image.mode === 'image_edit'
+      ? {
+          usePreviousImage: true,
+          referenceImageAttachmentId: image.referenceAttachmentId || undefined,
+        }
+      : { forceNewImage: true })
   }
 
   const handleRegenerateResponse = async (assistantMessageId: string) => {

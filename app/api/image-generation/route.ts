@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { randomUUID } from 'crypto'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { getAccountEntitlement, getEntitlementBlockResponse } from '@/lib/account-entitlements.server'
-import { generateAzureImage, isValidAzureImageSize, sanitizeImagePrompt } from '@/lib/ai/azure-image.server'
-import { getR2ConfigStatus, uploadObjectToR2 } from '@/lib/storage/r2'
+import { editAzureImage, generateAzureImage, isValidAzureImageSize, sanitizeImagePrompt } from '@/lib/ai/azure-image.server'
+import { downloadObjectFromR2, getR2ConfigStatus, uploadObjectToR2 } from '@/lib/storage/r2'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
@@ -32,6 +32,84 @@ function imageConversationTitle(prompt: string): string {
 
   const title = cleanPrompt.length > 56 ? `${cleanPrompt.slice(0, 56).trim()}...` : cleanPrompt
   return `Image: ${title}`
+}
+
+function looksLikeContextualImagePrompt(prompt: string): boolean {
+  return /\b(add|change|edit|make it|make the|remove|replace|keep|same|darker|lighter|more realistic|background|next to it|instead|text saying)\b/i.test(prompt)
+}
+
+function buildEditPrompt(prompt: string, previousPrompt?: string | null): string {
+  const previousContext = previousPrompt
+    ? ` The previous image was created from this prompt: "${previousPrompt}".`
+    : ''
+  return `Edit the provided image. Keep the same composition, style, lighting, and subjects unless the requested change requires otherwise.${previousContext} Apply only this requested change: ${prompt}`
+}
+
+export async function GET(request: NextRequest) {
+  try {
+    const supabase = await createClient()
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
+
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const conversationId = request.nextUrl.searchParams.get('conversationId')
+    if (!conversationId) {
+      return NextResponse.json({ error: 'Conversation is required.' }, { status: 400 })
+    }
+
+    const { data: conversation } = await supabase
+      .from('conversations')
+      .select('id')
+      .eq('id', conversationId)
+      .eq('user_id', user.id)
+      .limit(1)
+      .single()
+
+    if (!conversation) {
+      return NextResponse.json({ error: 'Conversation not found.' }, { status: 404 })
+    }
+
+    const { data: attachments, error } = await supabase
+      .from('attachments')
+      .select('id, file_name, mime_type, important_details, created_at')
+      .eq('user_id', user.id)
+      .eq('conversation_id', conversationId)
+      .eq('file_type', 'generated_image')
+      .order('created_at', { ascending: true })
+
+    if (error) throw error
+
+    return NextResponse.json({
+      images: (attachments || []).map((attachment: any) => ({
+        id: attachment.id,
+        attachmentId: attachment.id,
+        conversationId,
+        prompt: attachment.important_details?.prompt || 'Generated image',
+        size: attachment.important_details?.size || '1024x1024',
+        imageUrl: fileUrl(attachment.id),
+        downloadUrl: fileUrl(attachment.id, true),
+        filename: attachment.file_name,
+        mimeType: attachment.mime_type || 'image/png',
+        sizeBytes: attachment.important_details?.sizeBytes || 0,
+        format: 'png',
+        mode: attachment.important_details?.mode || 'text_to_image',
+        referenceAttachmentId: attachment.important_details?.referenceAttachmentId || null,
+        createdAt: attachment.created_at,
+      })),
+    }, {
+      headers: { 'Cache-Control': 'private, no-store, max-age=0' },
+    })
+  } catch (error: any) {
+    console.error('[Image Generation] History load failed', {
+      message: error?.message,
+      code: error?.code,
+    })
+    return NextResponse.json({ error: 'Could not load generated images.' }, { status: 500 })
+  }
 }
 
 export async function POST(request: NextRequest) {
@@ -65,6 +143,11 @@ export async function POST(request: NextRequest) {
     const size = body?.size
     const conversationId = typeof body?.conversationId === 'string' ? body.conversationId : null
     const projectId = typeof body?.projectId === 'string' ? body.projectId : null
+    const referenceImageAttachmentId = typeof body?.referenceImageAttachmentId === 'string'
+      ? body.referenceImageAttachmentId
+      : null
+    const usePreviousImage = body?.usePreviousImage === true
+    const forceNewImage = body?.forceNewImage === true
 
     if (!prompt || prompt.length < 3) {
       return NextResponse.json({ error: 'Enter a more detailed image prompt.' }, { status: 400 })
@@ -155,16 +238,112 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const generated = await generateAzureImage(prompt, size)
+    let referenceAttachment: any = null
+    const shouldUseReference = !forceNewImage && (
+      !!referenceImageAttachmentId ||
+      usePreviousImage ||
+      looksLikeContextualImagePrompt(prompt)
+    )
+
+    if (shouldUseReference) {
+      let referenceQuery = db
+        .from('attachments')
+        .select('id, conversation_id, user_id, file_type, mime_type, storage_path, important_details')
+        .eq('user_id', user.id)
+        .eq('conversation_id', attachmentConversationId)
+        .eq('file_type', 'generated_image')
+
+      referenceQuery = referenceImageAttachmentId
+        ? referenceQuery.eq('id', referenceImageAttachmentId).limit(1).single()
+        : referenceQuery.order('created_at', { ascending: false }).limit(1).maybeSingle()
+
+      const { data: referenceRow, error: referenceError } = await referenceQuery
+      if (referenceError) {
+        console.error('[Image Generation] Reference attachment lookup failed', {
+          message: referenceError.message,
+          code: referenceError.code,
+          referenceSelected: true,
+          referenceAttachmentIdExists: !!referenceImageAttachmentId,
+        })
+        return NextResponse.json(
+          { error: 'Could not load the previous image reference.' },
+          { status: 500 }
+        )
+      }
+
+      referenceAttachment = referenceRow
+    }
+
+    let generated
+    let generationMode: 'text_to_image' | 'image_edit' = 'text_to_image'
+    if (referenceAttachment) {
+      const referenceMimeType = typeof referenceAttachment.mime_type === 'string'
+        ? referenceAttachment.mime_type
+        : ''
+      const referenceStorageKey = referenceAttachment.storage_path ||
+        referenceAttachment.important_details?.storageKey ||
+        referenceAttachment.important_details?.storagePath
+
+      if (!referenceMimeType.startsWith('image/') || !referenceStorageKey) {
+        return NextResponse.json(
+          { error: 'Could not load the previous image reference.' },
+          { status: 500 }
+        )
+      }
+
+      let referenceImageBuffer: Buffer
+      try {
+        referenceImageBuffer = await downloadObjectFromR2(referenceStorageKey)
+        console.info('[Image Generation] Reference image loaded from storage', {
+          mode: 'image_edit',
+          referenceSelected: true,
+          referenceAttachmentIdExists: true,
+          r2ReferenceFetchSuccess: true,
+          referenceMimeType,
+          referenceSizeBytes: referenceImageBuffer.byteLength,
+        })
+      } catch (error: any) {
+        console.error('[Image Generation] Reference image storage fetch failed', {
+          message: error?.message,
+          mode: 'image_edit',
+          referenceSelected: true,
+          referenceAttachmentIdExists: true,
+          r2ReferenceFetchSuccess: false,
+        })
+        return NextResponse.json(
+          { error: 'Could not load the previous image reference.' },
+          { status: 500 }
+        )
+      }
+
+      generationMode = 'image_edit'
+      generated = await editAzureImage(
+        buildEditPrompt(prompt, referenceAttachment.important_details?.prompt),
+        size,
+        referenceImageBuffer,
+        referenceMimeType
+      )
+    } else {
+      console.info('[Image Generation] Starting new image generation', {
+        mode: 'text_to_image',
+        referenceSelected: shouldUseReference,
+        referenceAttachmentIdExists: !!referenceImageAttachmentId,
+      })
+      generated = await generateAzureImage(prompt, size)
+    }
+
     const imageBuffer = Buffer.from(generated.base64, 'base64')
     const imageId = randomUUID()
     const filename = safeFileName(prompt)
     const storageKey = `uploads/${user.id}/generated-images/${imageId}/${filename}`
 
     console.info('[Image Generation] Saving generated image to storage', {
+      mode: generationMode,
+      referenceSelected: !!referenceAttachment,
       size,
       sizeBytes: generated.sizeBytes,
       decodedBytes: imageBuffer.byteLength,
+      outputDecodeSuccess: imageBuffer.byteLength > 0,
       mimeType: generated.mimeType,
       storageConfigured: storageStatus.configured,
       uploadAttempted: true,
@@ -200,6 +379,7 @@ export async function POST(request: NextRequest) {
     }
 
     console.info('[Image Generation] Attachment insert starting', {
+      mode: generationMode,
       dbInsertAttempted: true,
       mimeType: generated.mimeType,
       sizeBytes: generated.sizeBytes,
@@ -222,8 +402,13 @@ export async function POST(request: NextRequest) {
           storagePath: storageKey,
           bucket: uploadResult.bucket,
           generated: true,
+          kind: 'image_generation',
+          prompt,
           size,
           sizeBytes: generated.sizeBytes,
+          mode: generationMode,
+          referenceAttachmentId: referenceAttachment?.id || null,
+          parentAttachmentId: referenceAttachment?.id || null,
         },
       })
       .select('id')
@@ -245,6 +430,8 @@ export async function POST(request: NextRequest) {
     }
 
     console.info('[Image Generation] Storage save completed', {
+      mode: generationMode,
+      referenceSelected: !!referenceAttachment,
       size,
       sizeBytes: generated.sizeBytes,
       uploadSuccess: true,
@@ -256,6 +443,7 @@ export async function POST(request: NextRequest) {
       success: true,
       image: {
         id: imageId,
+        attachmentId: attachment.id,
         conversationId: attachmentConversationId,
         prompt,
         size,
@@ -265,6 +453,8 @@ export async function POST(request: NextRequest) {
         mimeType: generated.mimeType,
         sizeBytes: generated.sizeBytes,
         format: 'png',
+        mode: generationMode,
+        referenceAttachmentId: referenceAttachment?.id || null,
         createdAt: new Date().toISOString(),
       },
     }, {
@@ -278,7 +468,9 @@ export async function POST(request: NextRequest) {
     const safeError = typeof error?.message === 'string' && (
       error.message === 'Enter a more detailed image prompt.' ||
       error.message === 'Image Generation is busy. Please try again in a moment.' ||
-      error.message === 'Image generated but could not be saved.'
+      error.message === 'Image generated but could not be saved.' ||
+      error.message === 'Could not edit the previous image. Try generating a new image.' ||
+      error.message === 'Image editing is not supported by the current image model yet.'
     )
       ? error.message
       : 'Image Generation is temporarily unavailable.'

@@ -1,14 +1,16 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Download, ExternalLink, ImageIcon, Loader2, RefreshCw, Sparkles } from 'lucide-react'
+import { Download, ExternalLink, ImageIcon, Loader2, RefreshCw, Sparkles, WandSparkles } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 export type ImageGenerationSize = '1024x1024' | '1024x1536' | '1536x1024'
 
 export interface GeneratedImage {
   id: string
+  attachmentId: string
+  conversationId: string
   prompt: string
   size: ImageGenerationSize
   imageUrl: string
@@ -17,7 +19,15 @@ export interface GeneratedImage {
   mimeType: string
   sizeBytes: number
   format: 'png'
+  mode: 'text_to_image' | 'image_edit'
+  referenceAttachmentId?: string | null
   createdAt: string
+}
+
+export interface ImageGenerationOptions {
+  forceNewImage?: boolean
+  usePreviousImage?: boolean
+  referenceImageAttachmentId?: string
 }
 
 const SIZE_OPTIONS: Array<{ value: ImageGenerationSize; label: string; description: string }> = [
@@ -35,7 +45,7 @@ const EXAMPLE_PROMPTS = [
 interface ImageGenerationPanelProps {
   generatedImages: GeneratedImage[]
   isGenerating: boolean
-  onGenerate: (prompt: string, size: ImageGenerationSize) => Promise<void>
+  onGenerate: (prompt: string, size: ImageGenerationSize, options?: ImageGenerationOptions) => Promise<void>
   onRegenerate: (image: GeneratedImage) => Promise<void>
 }
 
@@ -53,12 +63,23 @@ export function ImageGenerationPanel({
 }: ImageGenerationPanelProps) {
   const [prompt, setPrompt] = useState('')
   const [size, setSize] = useState<ImageGenerationSize>('1024x1024')
+  const [usePreviousImage, setUsePreviousImage] = useState(false)
+  const [referenceImageAttachmentId, setReferenceImageAttachmentId] = useState<string | null>(null)
   const canGenerate = prompt.trim().length >= 3 && !isGenerating
   const latestImages = useMemo(() => [...generatedImages].reverse(), [generatedImages])
+  const hasPreviousImage = generatedImages.length > 0
+
+  useEffect(() => {
+    if (hasPreviousImage) setUsePreviousImage(true)
+  }, [hasPreviousImage])
 
   const submit = async () => {
     if (!canGenerate) return
-    await onGenerate(prompt.trim(), size).catch(() => {})
+    await onGenerate(prompt.trim(), size, {
+      forceNewImage: !usePreviousImage,
+      usePreviousImage,
+      referenceImageAttachmentId: referenceImageAttachmentId || undefined,
+    }).catch(() => {})
   }
 
   return (
@@ -118,6 +139,48 @@ export function ImageGenerationPanel({
               </button>
             ))}
           </div>
+
+          {hasPreviousImage && (
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setUsePreviousImage(true)}
+                disabled={isGenerating}
+                className={cn(
+                  'rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
+                  usePreviousImage
+                    ? 'border-pink-300/30 bg-pink-500/10 text-pink-100'
+                    : 'border-white/[0.08] bg-white/[0.025] text-gray-400 hover:bg-white/[0.06]',
+                  isGenerating && 'cursor-not-allowed opacity-60'
+                )}
+              >
+                Continue from previous image
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setUsePreviousImage(false)
+                  setReferenceImageAttachmentId(null)
+                }}
+                disabled={isGenerating}
+                className={cn(
+                  'rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
+                  !usePreviousImage
+                    ? 'border-white/20 bg-white/[0.08] text-white'
+                    : 'border-white/[0.08] bg-white/[0.025] text-gray-400 hover:bg-white/[0.06]',
+                  isGenerating && 'cursor-not-allowed opacity-60'
+                )}
+              >
+                New image
+              </button>
+              {usePreviousImage && (
+                <span className="inline-flex items-center gap-1.5 text-xs text-pink-100/80">
+                  <WandSparkles className="h-3.5 w-3.5" />
+                  Using previous image as reference
+                </span>
+              )}
+            </div>
+          )}
 
           <div className="flex flex-wrap gap-2">
             {EXAMPLE_PROMPTS.map((example) => (
@@ -220,6 +283,9 @@ export function ImageGenerationPanel({
                     <span className="rounded-full bg-white/[0.04] px-2.5 py-1">{image.size}</span>
                     <span className="rounded-full bg-white/[0.04] px-2.5 py-1">PNG</span>
                     <span className="rounded-full bg-white/[0.04] px-2.5 py-1">{formatBytes(image.sizeBytes)}</span>
+                    {image.mode === 'image_edit' && (
+                      <span className="rounded-full bg-pink-500/10 px-2.5 py-1 text-pink-200">Edited from previous image</span>
+                    )}
                   </div>
                   <div className="mt-auto flex flex-wrap gap-2">
                     <a
@@ -246,6 +312,18 @@ export function ImageGenerationPanel({
                     >
                       <RefreshCw className="h-3.5 w-3.5" />
                       Regenerate
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setReferenceImageAttachmentId(image.attachmentId)
+                        setUsePreviousImage(true)
+                      }}
+                      disabled={isGenerating}
+                      className="inline-flex h-9 items-center gap-2 rounded-full border border-white/[0.10] px-3 text-xs font-medium text-gray-300 transition-colors hover:bg-white/[0.06] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      <WandSparkles className="h-3.5 w-3.5" />
+                      Use as reference
                     </button>
                   </div>
                 </div>

@@ -77,6 +77,10 @@ function getImagesUrl(baseUrl: string): string {
   return `${baseUrl}/images/generations`
 }
 
+function getImageEditsUrl(baseUrl: string): string {
+  return `${baseUrl}/images/edits`
+}
+
 type AuthMode = 'api-key' | 'bearer'
 
 class AzureImageRequestError extends Error {
@@ -91,9 +95,9 @@ class AzureImageRequestError extends Error {
   }
 }
 
-function getHeaders(apiKey: string, authMode: AuthMode): Record<string, string> {
+function getHeaders(apiKey: string, authMode: AuthMode, contentType?: string): Record<string, string> {
   return {
-    'Content-Type': 'application/json',
+    ...(contentType ? { 'Content-Type': contentType } : {}),
     ...(authMode === 'api-key'
       ? { 'api-key': apiKey }
       : { Authorization: `Bearer ${apiKey}` }),
@@ -149,10 +153,11 @@ function getErrorDetails(status: number): { category: AzureImageErrorCategory; s
 async function fetchWithAuthFallback(
   url: string,
   apiKey: string,
-  init: Omit<RequestInit, 'headers'>
+  init: Omit<RequestInit, 'headers'>,
+  contentType?: string
 ): Promise<{ response: Response; authMode: AuthMode }> {
   let authMode: AuthMode = 'api-key'
-  let response = await fetch(url, { ...init, headers: getHeaders(apiKey, authMode) })
+  let response = await fetch(url, { ...init, headers: getHeaders(apiKey, authMode, contentType) })
   if (response.status !== 401 && response.status !== 403) return { response, authMode }
 
   await response.body?.cancel().catch(() => {})
@@ -161,7 +166,7 @@ async function fetchWithAuthFallback(
     firstStatus: response.status,
     authMode,
   })
-  response = await fetch(url, { ...init, headers: getHeaders(apiKey, authMode) })
+  response = await fetch(url, { ...init, headers: getHeaders(apiKey, authMode, contentType) })
   return { response, authMode }
 }
 
@@ -216,7 +221,7 @@ async function requestImage(prompt: string, size: AzureImageSize, timeoutMs: num
       size,
     }),
     signal: AbortSignal.timeout(timeoutMs),
-  })
+  }, 'application/json')
 
   const status = response.status
   const data = await response.json().catch(async () => {
@@ -339,6 +344,81 @@ async function requestImage(prompt: string, size: AzureImageSize, timeoutMs: num
   )
 }
 
+async function requestImageEdit(
+  prompt: string,
+  size: AzureImageSize,
+  referenceImage: Buffer,
+  referenceMimeType: string,
+  timeoutMs: number
+): Promise<{ base64: string; status: number }> {
+  const { apiKey, baseUrl, model, apiKeyConfigured, baseUrlConfigured, modelConfigured, envStatus } = getProviderConfig()
+  if (!apiKey || !baseUrl) {
+    throw new AzureImageRequestError(
+      'Image Generation is temporarily unavailable.',
+      null,
+      !apiKey ? 'Missing Azure API key configuration' : 'Missing Azure base URL configuration',
+      'configuration'
+    )
+  }
+
+  const endpointPath = '/images/edits'
+  const formData = new FormData()
+  formData.append('image[]', new Blob([new Uint8Array(referenceImage)], { type: referenceMimeType }), 'reference.png')
+  formData.append('prompt', prompt)
+  formData.append('model', model)
+  formData.append('size', size)
+  formData.append('n', '1')
+
+  const { response, authMode } = await fetchWithAuthFallback(getImageEditsUrl(baseUrl), apiKey, {
+    method: 'POST',
+    body: formData,
+    signal: AbortSignal.timeout(timeoutMs),
+  })
+  const status = response.status
+  const data = await response.json().catch(async () => ({ error: await response.text().catch(() => '') }))
+
+  if (!response.ok) {
+    const { category, safeReason } = getErrorDetails(status)
+    console.error('[Azure Image] Edit request failed', {
+      status,
+      authMode,
+      baseUrlConfigured,
+      modelConfigured,
+      endpointPath,
+      model,
+      safeReason,
+      category,
+    })
+    throw new AzureImageRequestError(
+      status === 404 || status === 405
+        ? 'Image editing is not supported by the current image model yet.'
+        : category === 'rate_limit'
+          ? 'Image Generation is busy. Please try again in a moment.'
+          : 'Could not edit the previous image. Try generating a new image.',
+      status,
+      status === 404 || status === 405 ? 'Azure image edit endpoint is unsupported' : safeReason,
+      category
+    )
+  }
+
+  const base64 = parseBase64Image(data)
+  if (!base64) {
+    console.error('[Azure Image] Edit response did not include image data', {
+      status,
+      endpointPath,
+      model,
+    })
+    throw new AzureImageRequestError(
+      'Could not edit the previous image. Try generating a new image.',
+      status,
+      'Azure image edit provider returned no image data',
+      'response'
+    )
+  }
+
+  return { base64, status }
+}
+
 export function isValidAzureImageSize(size: unknown): size is AzureImageSize {
   return typeof size === 'string' && (AZURE_IMAGE_SIZES as readonly string[]).includes(size)
 }
@@ -356,6 +436,27 @@ export async function generateAzureImage(prompt: string, size: AzureImageSize): 
     size,
     sizeBytes,
     endpointPath: '/images/generations',
+  })
+  return {
+    base64: result.base64,
+    mimeType: 'image/png',
+    sizeBytes,
+  }
+}
+
+export async function editAzureImage(
+  prompt: string,
+  size: AzureImageSize,
+  referenceImage: Buffer,
+  referenceMimeType: string
+): Promise<AzureImageResult> {
+  const result = await requestImageEdit(prompt, size, referenceImage, referenceMimeType, REQUEST_TIMEOUT_MS)
+  const sizeBytes = Buffer.byteLength(result.base64, 'base64')
+  console.info('[Azure Image] Edit completed', {
+    status: result.status,
+    size,
+    sizeBytes,
+    endpointPath: '/images/edits',
   })
   return {
     base64: result.base64,
