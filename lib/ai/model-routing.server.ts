@@ -17,13 +17,11 @@ export interface InternalAIModel extends AIModel {
 const INTERNAL_AI_MODELS: InternalAIModel[] = [
   {
     ...AI_MODELS[0],
-    provider: 'anthropic',
-    bedrockModelId: 'au.anthropic.claude-opus-4-6-v1',
+    provider: 'azure',
   },
   {
     ...AI_MODELS[1],
-    provider: 'anthropic',
-    bedrockModelId: 'global.anthropic.claude-opus-4-5-20251101-v1:0',
+    provider: 'azure',
   },
   {
     ...AI_MODELS[2],
