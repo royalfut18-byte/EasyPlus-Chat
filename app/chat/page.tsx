@@ -394,9 +394,7 @@ export default function ChatPage() {
           return preferredModel
         })
       })
-      .catch(() => {
-        setSelectedModel((current) => current === 'image-generation' ? 'claude-opus-4.8' : current)
-      })
+      .catch(() => {})
 
     return () => {
       active = false

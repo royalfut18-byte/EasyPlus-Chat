@@ -25,11 +25,13 @@ export function ModelSelector({ selectedModel, onSelectModel, disabled = false, 
   const [availableModelIds, setAvailableModelIds] = useState<Set<string>>(
     () => new Set([
       DEFAULT_CHAT_MODEL_ID,
-      ...AI_MODELS.filter(model => !['image-generation'].includes(model.id)).map(model => model.id),
+      ...AI_MODELS.map(model => model.id),
     ])
   )
+  const [availabilityLoaded, setAvailabilityLoaded] = useState(false)
   const activeModel = AI_MODELS.find(model => model.id === selectedModel) || AI_MODELS[0]
-  const isAvailable = (model: AIModel) => availableModelIds.has(model.id)
+  const isAvailable = (model: AIModel) => !availabilityLoaded || availableModelIds.has(model.id)
+  const isConfirmedUnavailable = (model: AIModel) => availabilityLoaded && !availableModelIds.has(model.id)
 
   useEffect(() => {
     let active = true
@@ -38,8 +40,11 @@ export function ModelSelector({ selectedModel, onSelectModel, disabled = false, 
       .then(data => {
         if (!active || !Array.isArray(data?.availableModelIds)) return
         setAvailableModelIds(new Set(data.availableModelIds))
+        setAvailabilityLoaded(true)
       })
-      .catch(() => {})
+      .catch(() => {
+        if (active) setAvailabilityLoaded(false)
+      })
     return () => {
       active = false
     }
@@ -127,7 +132,7 @@ export function ModelSelector({ selectedModel, onSelectModel, disabled = false, 
             {UI_MODELS.map(model => (
               <DropdownMenuItem
                 key={model.id}
-                disabled={!isAvailable(model)}
+                disabled={isConfirmedUnavailable(model)}
                 onSelect={() => isAvailable(model) && onSelectModel(model.id)}
                 className="flex cursor-pointer items-center gap-2 text-gray-200 focus:bg-white/[0.07] focus:text-white"
               >
@@ -136,7 +141,7 @@ export function ModelSelector({ selectedModel, onSelectModel, disabled = false, 
                   {getShortName(model.name)}
                   {model.description && <span className="mt-0.5 block text-[10px] leading-tight text-gray-500">{model.description}</span>}
                 </span>
-                {!isAvailable(model) && <span className="text-[10px] text-gray-500">Unavailable</span>}
+                {isConfirmedUnavailable(model) && <span className="text-[10px] text-gray-500">Unavailable</span>}
                 {selectedModel === model.id && <Check className="h-4 w-4 text-violet-300" />}
               </DropdownMenuItem>
             ))}
@@ -155,14 +160,14 @@ export function ModelSelector({ selectedModel, onSelectModel, disabled = false, 
         <motion.button
           key={model.id}
           onClick={() => !disabled && isAvailable(model) && onSelectModel(model.id)}
-          disabled={disabled || !isAvailable(model)}
-          title={!isAvailable(model) ? `${model.name} is temporarily unavailable` : disabled ? (disabledReason || 'Start a new chat to switch models') : model.description}
+          disabled={disabled || isConfirmedUnavailable(model)}
+          title={isConfirmedUnavailable(model) ? `${model.name} is temporarily unavailable` : disabled ? (disabledReason || 'Start a new chat to switch models') : model.description}
           className={cn(
             'relative flex h-8 items-center gap-1.5 rounded-full border px-2.5 text-xs font-medium transition-colors md:px-3',
             selectedModel === model.id
               ? 'border-white/[0.10] bg-white/[0.06]'
               : 'border-transparent bg-transparent hover:bg-white/[0.045]',
-            (disabled || !isAvailable(model)) && 'opacity-60 cursor-not-allowed'
+            (disabled || isConfirmedUnavailable(model)) && 'opacity-60 cursor-not-allowed'
           )}
           style={getSelectedGlow(model)}
           whileTap={disabled ? {} : { scale: 0.98 }}
