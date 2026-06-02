@@ -95,25 +95,46 @@ export async function POST(request: NextRequest) {
     console.info('[Image Generation] Saving generated image to storage', {
       size,
       sizeBytes: generated.sizeBytes,
+      decodedBytes: imageBuffer.byteLength,
+      mimeType: generated.mimeType,
       storageConfigured: storageStatus.configured,
+      uploadAttempted: true,
     })
 
+    let uploadResult: { key: string; bucket: string }
     try {
-      await uploadObjectToR2({
+      uploadResult = await uploadObjectToR2({
         key: storageKey,
         body: imageBuffer,
+        mimeType: generated.mimeType,
+      })
+      console.info('[Image Generation] R2 upload completed', {
+        uploadSuccess: true,
+        bucket: uploadResult.bucket,
+        sizeBytes: imageBuffer.byteLength,
         mimeType: generated.mimeType,
       })
     } catch (error: any) {
       console.error('[Image Generation] Storage upload failed after Azure generation', {
         message: error?.message,
+        errorCode: error?.Code || error?.code || error?.$metadata?.httpStatusCode || null,
         storageConfigured: storageStatus.configured,
+        uploadAttempted: true,
+        uploadSuccess: false,
+        sizeBytes: imageBuffer.byteLength,
+        mimeType: generated.mimeType,
       })
       return NextResponse.json(
         { error: 'Image generated but could not be saved.' },
         { status: 503 }
       )
     }
+
+    console.info('[Image Generation] Attachment insert starting', {
+      dbInsertAttempted: true,
+      mimeType: generated.mimeType,
+      sizeBytes: generated.sizeBytes,
+    })
 
     const { data: attachment, error: attachmentError } = await db
       .from('attachments')
@@ -125,10 +146,12 @@ export async function POST(request: NextRequest) {
         file_type: 'generated_image',
         mime_type: generated.mimeType,
         storage_path: storageKey,
-        processing_status: 'ready',
         purpose_note: 'Generated image from Image Generation',
         important_details: {
           storageProvider: 'r2',
+          storageKey,
+          storagePath: storageKey,
+          bucket: uploadResult.bucket,
           generated: true,
           size,
           sizeBytes: generated.sizeBytes,
@@ -140,6 +163,11 @@ export async function POST(request: NextRequest) {
     if (attachmentError || !attachment?.id) {
       console.error('[Image Generation] Attachment row insert failed', {
         message: attachmentError?.message,
+        code: attachmentError?.code,
+        dbInsertAttempted: true,
+        dbInsertSuccess: false,
+        mimeType: generated.mimeType,
+        sizeBytes: generated.sizeBytes,
       })
       return NextResponse.json(
         { error: 'Image generated but could not be saved.' },
@@ -150,6 +178,9 @@ export async function POST(request: NextRequest) {
     console.info('[Image Generation] Storage save completed', {
       size,
       sizeBytes: generated.sizeBytes,
+      uploadSuccess: true,
+      dbInsertSuccess: true,
+      mimeType: generated.mimeType,
     })
 
     return NextResponse.json({
