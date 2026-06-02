@@ -23,7 +23,7 @@ export async function GET() {
 
   return NextResponse.json({
     azureDeepseek: deepseek,
-    azureImage: {
+    azureImageGeneration: {
       ...imageGeneration,
       r2Configured: r2.configured,
       missingStorageEnv: r2.missing,

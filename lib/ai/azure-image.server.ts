@@ -24,8 +24,13 @@ export interface AzureImageDiagnostics {
   probeOk: boolean
   status: number | null
   endpointHost: string | null
-  endpointPath: '/images/generations'
+  endpointPath: string
   lastProbeAt: string
+  envStatus: {
+    apiKey: { exists: boolean; configured: boolean }
+    baseUrl: { exists: boolean; configured: boolean }
+    model: { exists: boolean; configured: boolean }
+  }
   safeReason: string
 }
 
@@ -93,8 +98,17 @@ function getEndpointHost(baseUrl?: string): string | null {
   }
 }
 
+function getEndpointPath(baseUrl?: string): string {
+  if (!baseUrl) return '/images/generations'
+  try {
+    return new URL(getImagesUrl(baseUrl)).pathname
+  } catch {
+    return '/images/generations'
+  }
+}
+
 function getMissingConfigDiagnostics(lastProbeAt: string): AzureImageDiagnostics {
-  const { apiKey, baseUrl, apiKeyConfigured, baseUrlConfigured, modelConfigured } = getProviderConfig()
+  const { apiKey, baseUrl, apiKeyConfigured, baseUrlConfigured, modelConfigured, envStatus } = getProviderConfig()
   return {
     configured: Boolean(apiKey && baseUrl),
     apiKeyConfigured,
@@ -103,8 +117,9 @@ function getMissingConfigDiagnostics(lastProbeAt: string): AzureImageDiagnostics
     probeOk: false,
     status: null,
     endpointHost: getEndpointHost(baseUrl),
-    endpointPath: '/images/generations',
+    endpointPath: getEndpointPath(baseUrl),
     lastProbeAt,
+    envStatus,
     safeReason: !apiKey ? 'Missing Azure API key configuration' : 'Missing Azure base URL configuration',
   }
 }
@@ -159,6 +174,7 @@ async function fetchImageUrlAsBase64(url: string): Promise<string> {
 async function requestImage(prompt: string, size: AzureImageSize, timeoutMs: number): Promise<{ base64: string; status: number }> {
   const { apiKey, baseUrl, model, apiKeyConfigured, baseUrlConfigured, modelConfigured, envStatus } = getProviderConfig()
   const endpointHost = getEndpointHost(baseUrl)
+  const endpointPath = getEndpointPath(baseUrl)
   if (!apiKey || !baseUrl) {
     console.error('[Azure Image] Missing provider configuration', {
       apiKeyConfigured,
@@ -166,7 +182,7 @@ async function requestImage(prompt: string, size: AzureImageSize, timeoutMs: num
       modelConfigured,
       envStatus,
       endpointHost,
-      endpointPath: '/images/generations',
+      endpointPath,
       model,
     })
     throw new AzureImageRequestError(
@@ -201,8 +217,9 @@ async function requestImage(prompt: string, size: AzureImageSize, timeoutMs: num
       baseUrlConfigured,
       modelConfigured,
       endpointHost,
-      endpointPath: '/images/generations',
+      endpointPath,
       model,
+      envStatus,
       safeReason,
     })
     throw new AzureImageRequestError('Image Generation is temporarily unavailable.', status, safeReason)
@@ -219,7 +236,7 @@ async function requestImage(prompt: string, size: AzureImageSize, timeoutMs: num
     baseUrlConfigured,
     modelConfigured,
     endpointHost,
-    endpointPath: '/images/generations',
+    endpointPath,
     model,
   })
   throw new AzureImageRequestError('Image Generation is temporarily unavailable.', status, 'Azure image provider returned no image data')
@@ -266,7 +283,7 @@ export async function getAzureImageDiagnostics(force = false): Promise<AzureImag
       modelConfigured: config.modelConfigured,
       envStatus: config.envStatus,
       endpointHost: getEndpointHost(config.baseUrl),
-      endpointPath: '/images/generations',
+      endpointPath: getEndpointPath(config.baseUrl),
       model: config.model,
     })
     availabilityCache = { checkedAt: now, diagnostics }
@@ -283,8 +300,9 @@ export async function getAzureImageDiagnostics(force = false): Promise<AzureImag
       probeOk: true,
       status: probe.status,
       endpointHost: getEndpointHost(config.baseUrl),
-      endpointPath: '/images/generations',
+      endpointPath: getEndpointPath(config.baseUrl),
       lastProbeAt,
+      envStatus: config.envStatus,
       safeReason: 'Available',
     }
     console.info('[Azure Image] Availability probe completed', {
@@ -293,8 +311,9 @@ export async function getAzureImageDiagnostics(force = false): Promise<AzureImag
       baseUrlConfigured: config.baseUrlConfigured,
       modelConfigured: config.modelConfigured,
       endpointHost: getEndpointHost(config.baseUrl),
-      endpointPath: '/images/generations',
+      endpointPath: getEndpointPath(config.baseUrl),
       model: config.model,
+      envStatus: config.envStatus,
     })
     availabilityCache = { checkedAt: now, diagnostics }
   } catch (error: any) {
@@ -307,8 +326,9 @@ export async function getAzureImageDiagnostics(force = false): Promise<AzureImag
       probeOk: false,
       status: error instanceof AzureImageRequestError ? error.status : null,
       endpointHost: getEndpointHost(config.baseUrl),
-      endpointPath: '/images/generations',
+      endpointPath: getEndpointPath(config.baseUrl),
       lastProbeAt,
+      envStatus: config.envStatus,
       safeReason: timeoutHit
         ? 'Azure image provider probe timed out'
         : error instanceof AzureImageRequestError
@@ -321,8 +341,9 @@ export async function getAzureImageDiagnostics(force = false): Promise<AzureImag
       baseUrlConfigured: config.baseUrlConfigured,
       modelConfigured: config.modelConfigured,
       endpointHost: getEndpointHost(config.baseUrl),
-      endpointPath: '/images/generations',
+      endpointPath: getEndpointPath(config.baseUrl),
       model: config.model,
+      envStatus: config.envStatus,
     })
     availabilityCache = { checkedAt: now, diagnostics }
   }

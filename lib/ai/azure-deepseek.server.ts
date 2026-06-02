@@ -18,6 +18,11 @@ export interface AzureDeepSeekDiagnostics {
   endpointHost: string | null
   endpointPath: '/openai/v1/chat/completions' | string
   lastProbeAt: string
+  envStatus: {
+    apiKey: { exists: boolean; configured: boolean }
+    baseUrl: { exists: boolean; configured: boolean }
+    model: { exists: boolean; configured: boolean }
+  }
   safeReason: string
 }
 
@@ -124,6 +129,7 @@ export async function getAzureDeepSeekDiagnostics(force = false): Promise<AzureD
       status: null,
       ...endpoint,
       lastProbeAt,
+      envStatus,
       safeReason: !apiKey ? 'Missing Azure API key configuration' : 'Missing Azure base URL configuration',
     }
     console.error('[Azure DeepSeek] Missing provider configuration', {
@@ -161,6 +167,7 @@ export async function getAzureDeepSeekDiagnostics(force = false): Promise<AzureD
         status: response.status,
         ...endpoint,
         lastProbeAt,
+        envStatus,
         safeReason: response.status === 401 || response.status === 403
           ? 'Invalid Azure key or unauthorized deployment'
           : response.status === 404
@@ -176,6 +183,7 @@ export async function getAzureDeepSeekDiagnostics(force = false): Promise<AzureD
         modelConfigured,
         ...endpoint,
         model,
+        envStatus,
       })
       availabilityCache = { checkedAt: now, diagnostics }
       return diagnostics
@@ -193,6 +201,7 @@ export async function getAzureDeepSeekDiagnostics(force = false): Promise<AzureD
       status: response.status,
       ...endpoint,
       lastProbeAt,
+      envStatus,
       safeReason: available ? 'Available' : 'Azure provider returned no content',
     }
     console.info('[Azure DeepSeek] Availability probe completed', {
@@ -203,6 +212,7 @@ export async function getAzureDeepSeekDiagnostics(force = false): Promise<AzureD
       modelConfigured,
       ...endpoint,
       model,
+      envStatus,
     })
     availabilityCache = { checkedAt: now, diagnostics }
   } catch (error: any) {
@@ -215,6 +225,7 @@ export async function getAzureDeepSeekDiagnostics(force = false): Promise<AzureD
       status: null,
       ...endpoint,
       lastProbeAt,
+      envStatus,
       safeReason: error?.name === 'TimeoutError' ? 'Azure provider probe timed out' : 'Azure provider is unreachable',
     }
     console.error('[Azure DeepSeek] Availability probe exception', {
@@ -224,6 +235,7 @@ export async function getAzureDeepSeekDiagnostics(force = false): Promise<AzureD
       modelConfigured,
       ...endpoint,
       model,
+      envStatus,
     })
     availabilityCache = { checkedAt: now, diagnostics }
   }
