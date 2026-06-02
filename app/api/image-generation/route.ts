@@ -26,6 +26,14 @@ function fileUrl(attachmentId: string, download = false): string {
   return `/api/attachments/file?${params.toString()}`
 }
 
+function imageConversationTitle(prompt: string): string {
+  const cleanPrompt = prompt.replace(/\s+/g, ' ').trim()
+  if (!cleanPrompt) return 'Image Generation'
+
+  const title = cleanPrompt.length > 56 ? `${cleanPrompt.slice(0, 56).trim()}...` : cleanPrompt
+  return `Image: ${title}`
+}
+
 export async function POST(request: NextRequest) {
   try {
     const supabase = await createClient()
@@ -66,6 +74,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unsupported image size.' }, { status: 400 })
     }
 
+    let attachmentConversationId: string | null = conversationId
+    let attachmentProjectId: string | null = projectId
+
     if (conversationId) {
       const { data: conversation } = await db
         .from('conversations')
@@ -82,8 +93,66 @@ export async function POST(request: NextRequest) {
       if ((conversation.project_id || null) !== projectId) {
         return NextResponse.json({ error: 'Project does not match this conversation.' }, { status: 403 })
       }
-    } else if (projectId) {
-      return NextResponse.json({ error: 'Project image generation must belong to a conversation.' }, { status: 400 })
+
+      attachmentProjectId = conversation.project_id || null
+    } else {
+      const insertPayload: any = {
+        user_id: user.id,
+        title: imageConversationTitle(prompt),
+        model_used: 'image-generation',
+      }
+
+      if (projectId) {
+        const { data: projectRow, error: projectError } = await db
+          .from('projects')
+          .select('id, user_id')
+          .eq('id', projectId)
+          .limit(1)
+          .single()
+
+        if (projectError || !projectRow || projectRow.user_id !== user.id) {
+          return NextResponse.json({ error: 'Invalid project' }, { status: 403 })
+        }
+
+        insertPayload.project_id = projectId
+      }
+
+      const { data: newConversation, error: conversationError } = await db
+        .from('conversations')
+        .insert(insertPayload)
+        .select('id, project_id')
+        .single()
+
+      if (conversationError || !newConversation?.id) {
+        console.error('[Image Generation] Conversation row insert failed before image generation', {
+          message: conversationError?.message,
+          code: conversationError?.code,
+          dbInsertAttempted: true,
+          dbInsertSuccess: false,
+        })
+        return NextResponse.json(
+          { error: 'Image Generation is temporarily unavailable.' },
+          { status: 500 }
+        )
+      }
+
+      attachmentConversationId = newConversation.id
+      attachmentProjectId = newConversation.project_id || null
+
+      console.info('[Image Generation] Conversation row created for generated image', {
+        dbInsertSuccess: true,
+        hasProject: !!attachmentProjectId,
+      })
+    }
+
+    if (!attachmentConversationId) {
+      console.error('[Image Generation] Missing attachment conversation after validation', {
+        dbInsertAttempted: false,
+      })
+      return NextResponse.json(
+        { error: 'Image Generation is temporarily unavailable.' },
+        { status: 500 }
+      )
     }
 
     const generated = await generateAzureImage(prompt, size)
@@ -140,8 +209,8 @@ export async function POST(request: NextRequest) {
       .from('attachments')
       .insert({
         user_id: user.id,
-        conversation_id: conversationId,
-        project_id: projectId,
+        conversation_id: attachmentConversationId,
+        project_id: attachmentProjectId,
         file_name: filename,
         file_type: 'generated_image',
         mime_type: generated.mimeType,
@@ -187,6 +256,7 @@ export async function POST(request: NextRequest) {
       success: true,
       image: {
         id: imageId,
+        conversationId: attachmentConversationId,
         prompt,
         size,
         imageUrl: fileUrl(attachment.id),
