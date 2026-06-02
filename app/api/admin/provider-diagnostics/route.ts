@@ -22,8 +22,8 @@ export async function GET() {
   const r2 = getR2ConfigStatus()
 
   return NextResponse.json({
-    deepseek,
-    imageGeneration: {
+    azureDeepseek: deepseek,
+    azureImage: {
       ...imageGeneration,
       r2Configured: r2.configured,
       missingStorageEnv: r2.missing,

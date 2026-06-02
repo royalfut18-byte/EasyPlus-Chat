@@ -33,8 +33,8 @@ function normalizeBaseUrl(baseUrl: string): string {
 }
 
 function getProviderConfig() {
-  const apiKey = readServerEnv('AZURE_FOUNDRY_API_KEY')
-  const baseUrl = readServerEnv('AZURE_OPENAI_BASE_URL')
+  const apiKey = readServerEnv('AZURE_IMAGE_API_KEY')
+  const baseUrl = readServerEnv('AZURE_IMAGE_BASE_URL')
   const model = readServerEnv('AZURE_IMAGE_MODEL') || DEFAULT_AZURE_IMAGE_MODEL
 
   return {

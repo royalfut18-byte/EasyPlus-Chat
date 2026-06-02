@@ -3,7 +3,7 @@ import 'server-only'
 import { AI_MODELS, type AIModel } from '@/types/models'
 import { isAzureDeepSeekAvailable } from '@/lib/ai/azure-deepseek.server'
 import { isAzureImageAvailable } from '@/lib/ai/azure-image.server'
-import { readFirstServerEnv } from '@/lib/server-env'
+import { readServerEnv } from '@/lib/server-env'
 import { isR2Configured } from '@/lib/storage/r2'
 
 export type AIProvider = 'anthropic' | 'google' | 'azure' | 'image'
@@ -72,12 +72,12 @@ export function isModelAvailable(modelId: string): boolean {
   const model = getInternalModel(modelId)
   if (!model) return false
   if (model.provider === 'azure') {
-    return Boolean(readFirstServerEnv(['AZURE_FOUNDRY_API_KEY']).value && readFirstServerEnv(['AZURE_OPENAI_BASE_URL']).value)
+    return Boolean(readServerEnv('AZURE_DEEPSEEK_API_KEY') && readServerEnv('AZURE_DEEPSEEK_BASE_URL'))
   }
   if (model.provider === 'image') {
     return Boolean(
-      readFirstServerEnv(['AZURE_FOUNDRY_API_KEY']).value &&
-      readFirstServerEnv(['AZURE_OPENAI_BASE_URL']).value &&
+      readServerEnv('AZURE_IMAGE_API_KEY') &&
+      readServerEnv('AZURE_IMAGE_BASE_URL') &&
       isR2Configured()
     )
   }
