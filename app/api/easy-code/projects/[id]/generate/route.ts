@@ -21,13 +21,15 @@ export async function POST(_request: NextRequest, { params }: { params: Promise<
     const result = await runEasyCodeInitialGeneration(user.id, id)
     return NextResponse.json(result, { headers: { 'Cache-Control': 'private, no-store, max-age=0' } })
   } catch (error: any) {
+    const timeoutHit = /aborted|timeout|timed out/i.test(error?.message || '') || error?.name === 'AbortError' || error?.name === 'TimeoutError'
     console.error('[Easy Code] Generate route failed', {
       message: error?.message,
       phase: 'generate_project',
+      timeoutHit,
     })
     return NextResponse.json(
       { error: error?.message || 'Project was created but generation failed.' },
-      { status: 500 }
+      { status: timeoutHit ? 504 : 500 }
     )
   }
 }

@@ -88,6 +88,9 @@ export function EasyCodeWorkspaceClient({
   const latestAssistant = [...messages].reverse().find(message => message.role === 'assistant')
   const generationStatus = project.generation_status || (files.length > 0 ? 'ready' : 'idle')
   const isDownloadReady = generationStatus === 'ready' && meaningfulFiles.length >= 2
+  const isGenerationStale = generationStatus === 'generating' &&
+    project.updated_at &&
+    Date.now() - new Date(project.updated_at).getTime() > 120_000
   const progressSteps = project.generation_metadata?.progress || [
     { label: 'Project created', state: 'done' as const },
     { label: 'Planning file structure', state: generationStatus === 'generating' ? 'active' as const : 'pending' as const },
@@ -135,9 +138,10 @@ export function EasyCodeWorkspaceClient({
         setDraft(firstFile.content)
       }
     } catch (error: any) {
-      setError(error?.message === 'Failed to fetch'
+      const message = error?.message || ''
+      setError(message === 'Failed to fetch' || /aborted|timeout|timed out/i.test(message)
         ? 'The generation request timed out. Retry from the workspace.'
-        : error?.message || 'Project was created but generation failed.')
+        : message || 'Project was created but generation failed.')
       await refreshProject().catch(() => {})
     } finally {
       setIsGenerating(false)
@@ -445,11 +449,14 @@ export function EasyCodeWorkspaceClient({
                     ))}
                   </div>
                 ) : null}
-                {(generationStatus === 'failed' || generationStatus === 'incomplete') && (
+                {(generationStatus === 'failed' || generationStatus === 'incomplete' || isGenerationStale) && (
                   <button onClick={retryGeneration} className="mt-3 inline-flex items-center gap-2 rounded-full bg-violet-600 px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-violet-500">
                     <RefreshCw className="h-3.5 w-3.5" />
                     Retry generation
                   </button>
+                )}
+                {isGenerationStale && (
+                  <p className="mt-2 text-xs text-amber-200">Generation appears stuck. Retry will reuse this project.</p>
                 )}
               </div>
               {messages.length === 0 ? (

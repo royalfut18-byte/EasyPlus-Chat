@@ -10,6 +10,8 @@ export const EASY_CODE_MAX_FILES_PER_AI_CALL = 28
 export const EASY_CODE_MAX_FILE_BYTES = 220_000
 export const EASY_CODE_MAX_PROJECT_FILES = 120
 export const EASY_CODE_MAX_ZIP_BYTES = 12 * 1024 * 1024
+const EASY_CODE_DEEPSEEK_TIMEOUT_MS = 55_000
+const EASY_CODE_REPAIR_TIMEOUT_MS = 30_000
 
 export type EasyCodeOperation = 'create' | 'update' | 'delete' | 'rename'
 
@@ -116,6 +118,30 @@ function throwIfEasyCodeIdempotencySchemaError(error: any) {
     phase: 'client_request_id_schema_check',
   })
   throw new Error(EASY_CODE_IDEMPOTENCY_MIGRATION_ERROR)
+}
+
+function isTimeoutError(error: any): boolean {
+  return error?.name === 'AbortError' ||
+    error?.name === 'TimeoutError' ||
+    /aborted|timeout|timed out/i.test(error?.message || '')
+}
+
+function getSafeEasyCodeError(error: any): string {
+  if (isTimeoutError(error)) return 'Easy Code generation timed out. Retry generation.'
+  return typeof error?.message === 'string' && error.message
+    ? error.message
+    : 'Project was created but generation failed.'
+}
+
+function isStaticLandingPageRequest(input: string): boolean {
+  const text = input.toLowerCase()
+  const asksForOtherStack = /\b(react|next\.?js|vite|typescript|node|express|python|flask|fastapi|vue|svelte|angular)\b/.test(text)
+  return !asksForOtherStack && /\b(landing page|website|web site|webpage|homepage|portfolio|business|carwash|car wash|detailing)\b/.test(text)
+}
+
+function getMissingStaticStarterFiles(files: Array<Pick<EasyCodeFile, 'path'> | Pick<EasyCodeAiFile, 'path' | 'newPath'>>): string[] {
+  const paths = new Set(files.map((file: any) => (file.newPath || file.path || '').toLowerCase()))
+  return ['index.html', 'styles.css', 'script.js', 'README.md'].filter(path => !paths.has(path.toLowerCase()))
 }
 
 export function sanitizeEasyCodePrompt(input: unknown): string {
@@ -227,7 +253,11 @@ function extractJson(text: string): string {
   throw new Error('The AI returned invalid file data. Try again.')
 }
 
-async function callAzureDeepSeekJson(messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>, maxTokens = 8192): Promise<string> {
+async function callAzureDeepSeekJson(
+  messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>,
+  maxTokens = 8192,
+  options: { timeoutMs?: number; phase?: string; projectId?: string } = {}
+): Promise<string> {
   const apiKey = readServerEnv('AZURE_DEEPSEEK_API_KEY')
   const baseUrl = readServerEnv('AZURE_DEEPSEEK_BASE_URL')?.replace(/\/+$/, '')
   const model = readServerEnv('AZURE_DEEPSEEK_MODEL') || 'DeepSeek-V4-Pro'
@@ -251,6 +281,15 @@ async function callAzureDeepSeekJson(messages: Array<{ role: 'system' | 'user' |
     response_format: { type: 'json_object' },
   }
 
+  const timeoutMs = options.timeoutMs || EASY_CODE_DEEPSEEK_TIMEOUT_MS
+  const startedAt = Date.now()
+  console.info('[Easy Code] DeepSeek request started', {
+    projectId: options.projectId || null,
+    phase: options.phase || 'deepseek_generation',
+    maxTokens,
+    timeoutMs,
+  })
+
   async function request(authMode: 'api-key' | 'bearer') {
     return fetch(`${baseUrl}/chat/completions`, {
       method: 'POST',
@@ -259,20 +298,43 @@ async function callAzureDeepSeekJson(messages: Array<{ role: 'system' | 'user' |
         ...(authMode === 'api-key' ? { 'api-key': safeApiKey } : { Authorization: `Bearer ${safeApiKey}` }),
       },
       body: JSON.stringify(requestBody),
-      signal: AbortSignal.timeout(120_000),
+      signal: AbortSignal.timeout(timeoutMs),
     })
   }
 
-  let response = await request('api-key')
+  let response: Response
+  try {
+    response = await request('api-key')
+  } catch (error: any) {
+    console.error('[Easy Code] DeepSeek request timed out or failed before response', {
+      projectId: options.projectId || null,
+      phase: options.phase || 'deepseek_generation',
+      timeoutHit: isTimeoutError(error),
+      durationMs: Date.now() - startedAt,
+    })
+    throw error
+  }
   if (response.status === 401 || response.status === 403) {
     await response.body?.cancel().catch(() => {})
-    response = await request('bearer')
+    try {
+      response = await request('bearer')
+    } catch (error: any) {
+      console.error('[Easy Code] DeepSeek fallback request timed out or failed before response', {
+        projectId: options.projectId || null,
+        phase: options.phase || 'deepseek_generation',
+        timeoutHit: isTimeoutError(error),
+        durationMs: Date.now() - startedAt,
+      })
+      throw error
+    }
   }
 
   if (!response.ok) {
     console.error('[Easy Code] DeepSeek request failed', {
       status: response.status,
-      phase: 'deepseek_generation',
+      projectId: options.projectId || null,
+      phase: options.phase || 'deepseek_generation',
+      durationMs: Date.now() - startedAt,
     })
     throw new Error(response.status === 429 ? 'Could not generate files. Please try again in a moment.' : 'Could not generate files.')
   }
@@ -280,23 +342,50 @@ async function callAzureDeepSeekJson(messages: Array<{ role: 'system' | 'user' |
   const data = await response.json().catch(() => null)
   const content = data?.choices?.[0]?.message?.content
   if (typeof content !== 'string' || !content.trim()) {
+    console.error('[Easy Code] DeepSeek returned empty content', {
+      projectId: options.projectId || null,
+      phase: options.phase || 'deepseek_generation',
+      durationMs: Date.now() - startedAt,
+    })
     throw new Error('The AI returned invalid file data. Try again.')
   }
+  console.info('[Easy Code] DeepSeek request ended', {
+    projectId: options.projectId || null,
+    phase: options.phase || 'deepseek_generation',
+    durationMs: Date.now() - startedAt,
+    responseChars: content.length,
+  })
   return content
 }
 
-async function parseEasyCodeJson(text: string): Promise<EasyCodeAiResult> {
+async function parseEasyCodeJson(text: string, projectId?: string): Promise<EasyCodeAiResult> {
   try {
-    return normalizeAiResult(JSON.parse(extractJson(text)))
-  } catch {
+    const result = normalizeAiResult(JSON.parse(extractJson(text)))
+    console.info('[Easy Code] JSON parse succeeded', { projectId: projectId || null, fileCount: result.files.length })
+    return result
+  } catch (parseError: any) {
+    console.warn('[Easy Code] JSON parse failed, attempting one repair pass', {
+      projectId: projectId || null,
+      message: parseError?.message,
+    })
     const repaired = await callAzureDeepSeekJson([
       {
         role: 'system',
         content: 'Return only valid JSON matching this schema: {"summary":string,"files":[{"path":string,"language":string,"content":string,"operation":"create|update|delete|rename","newPath":string}],"instructions":string[],"previewType":"static-html|unsupported","title":string,"framework":string}. Do not include markdown.',
       },
       { role: 'user', content: `Repair this invalid Easy Code response into valid JSON only:\n${text.slice(0, 20000)}` },
-    ], 8192)
-    return normalizeAiResult(JSON.parse(extractJson(repaired)))
+    ], 4096, { timeoutMs: EASY_CODE_REPAIR_TIMEOUT_MS, phase: 'json_repair', projectId })
+    try {
+      const result = normalizeAiResult(JSON.parse(extractJson(repaired)))
+      console.info('[Easy Code] JSON repair succeeded', { projectId: projectId || null, fileCount: result.files.length })
+      return result
+    } catch (repairError: any) {
+      console.error('[Easy Code] JSON repair failed', {
+        projectId: projectId || null,
+        message: repairError?.message,
+      })
+      throw repairError
+    }
   }
 }
 
@@ -517,12 +606,22 @@ export async function runEasyCodeInitialGeneration(userId: string, projectId: st
 
   try {
     if (project.generation_status === 'generating' && project.generation_phase !== 'creating_project') {
+      const updatedAt = project.updated_at ? Date.parse(project.updated_at) : 0
+      const staleGeneration = !updatedAt || Date.now() - updatedAt > 90_000
+      if (staleGeneration) {
+        console.warn('[Easy Code] Reclaiming stale generation', {
+          projectId,
+          phase: project.generation_phase,
+          updatedAt: project.updated_at,
+        })
+      } else {
       return {
         project,
         files: await getEasyCodeFiles(userId, projectId),
         messages: await getEasyCodeMessages(userId, projectId),
         aiResult: null,
         alreadyGenerating: true,
+      }
       }
     }
     const db = await getDb()
@@ -541,6 +640,13 @@ export async function runEasyCodeInitialGeneration(userId: string, projectId: st
       error: null,
       metadata: buildEasyCodeProgress('planning'),
     })
+    console.info('[Easy Code] Generation started', { projectId, mode: 'create' })
+    await updateEasyCodeGenerationState(userId, projectId, {
+      status: 'generating',
+      phase: 'generating_files',
+      error: null,
+      metadata: buildEasyCodeProgress('generating_files'),
+    })
 
     const aiResult = await generateEasyCodeFiles({
       mode: 'create',
@@ -548,9 +654,12 @@ export async function runEasyCodeInitialGeneration(userId: string, projectId: st
       files: [],
       messages: await getEasyCodeMessages(userId, projectId),
       instruction: cleanPrompt,
+      projectId,
     })
 
     const filesCreated = aiResult.files.map(file => file.newPath || file.path)
+    const staticLandingPage = isStaticLandingPageRequest(cleanPrompt)
+    const missingStarterFiles = staticLandingPage ? getMissingStaticStarterFiles(aiResult.files) : []
     const proposedReadiness = getEasyCodeReadiness(aiResult.files.map(file => ({
       path: file.newPath || file.path,
       content: file.operation === 'delete' ? '' : file.content || '',
@@ -562,13 +671,10 @@ export async function runEasyCodeInitialGeneration(userId: string, projectId: st
       rejectedFiles: 0,
       meaningfulFiles: proposedReadiness.meaningfulFileCount,
       hasIndexHtml: proposedReadiness.hasIndexHtml,
+      missingStarterFiles,
     })
+    if (missingStarterFiles.length > 0) throw new Error('Generation incomplete. Retry.')
     if (!proposedReadiness.ready) throw new Error('Generation incomplete. Retry.')
-    await updateEasyCodeGenerationState(userId, projectId, {
-      status: 'generating',
-      phase: 'generating_files',
-      metadata: buildEasyCodeProgress('generating_files', filesCreated),
-    })
     await updateEasyCodeGenerationState(userId, projectId, {
       status: 'generating',
       phase: 'saving_files',
@@ -581,12 +687,15 @@ export async function runEasyCodeInitialGeneration(userId: string, projectId: st
       ...project,
       framework: aiResult.framework || project.framework,
     })
+    const missingSavedStarterFiles = staticLandingPage ? getMissingStaticStarterFiles(savedFiles) : []
     console.info('[Easy Code] Generation files saved', {
       projectId,
       savedFiles: savedFiles.length,
       meaningfulFiles: savedReadiness.meaningfulFileCount,
       hasIndexHtml: savedReadiness.hasIndexHtml,
+      missingStarterFiles: missingSavedStarterFiles,
     })
+    if (missingSavedStarterFiles.length > 0) throw new Error('Generation incomplete. Retry.')
     if (!savedReadiness.ready) throw new Error('Generation incomplete. Retry.')
     await db.from('easy_code_projects')
       .update({
@@ -628,9 +737,7 @@ export async function runEasyCodeInitialGeneration(userId: string, projectId: st
     ])
     return { project: freshProject, files: freshFiles, messages: freshMessages, aiResult }
   } catch (error: any) {
-    const message = typeof error?.message === 'string' && error.message
-      ? error.message
-      : 'Project was created but generation failed.'
+    const message = getSafeEasyCodeError(error)
     const status = message === 'Generation incomplete. Retry.' ? 'incomplete' : 'failed'
     await updateEasyCodeGenerationState(userId, projectId, {
       status,
@@ -638,7 +745,7 @@ export async function runEasyCodeInitialGeneration(userId: string, projectId: st
       error: message,
       metadata: buildEasyCodeProgress('failed', [], message),
     }).catch(() => {})
-    console.error('[Easy Code] Initial generation failed', { message, projectId })
+    console.error('[Easy Code] Status updated to failed', { message, projectId, timeoutHit: isTimeoutError(error) })
     throw new Error(message)
   }
 }
@@ -650,7 +757,9 @@ export async function generateEasyCodeFiles(input: {
   messages: EasyCodeMessage[]
   instruction: string
   selectedPath?: string | null
+  projectId?: string
 }): Promise<EasyCodeAiResult> {
+  const staticLandingPage = input.mode === 'create' && isStaticLandingPageRequest(input.instruction)
   const fileTree = input.files.map(file => `${file.path} (${file.language || inferLanguage(file.path)}, ${file.size_bytes} bytes)`).join('\n') || 'No files yet.'
   const selectedFile = input.selectedPath
     ? input.files.find(file => file.path === input.selectedPath)
@@ -668,7 +777,7 @@ export async function generateEasyCodeFiles(input: {
     file.content.slice(0, 18000),
   ].join('\n')).join('\n\n')
 
-  const recentMessages = input.messages.slice(-10).map(message => `${message.role}: ${message.content}`).join('\n')
+  const recentMessages = staticLandingPage ? '' : input.messages.slice(-10).map(message => `${message.role}: ${message.content}`).join('\n')
   const system = `You are Easy Code, a Lovable + Codex-style coding workspace inside EasyPlus. Use DeepSeek V4 Pro as a precise coding agent.
 Return only strict JSON with this exact shape:
 {"summary":"...","title":"optional project title","framework":"html|react|next|vite|python|node|other","previewType":"static-html|unsupported","instructions":["..."],"files":[{"path":"relative/path","language":"html|css|javascript|typescript|tsx|python|json|markdown|text","content":"full file content","operation":"create|update|delete|rename","newPath":"optional/new/path"}]}
@@ -677,13 +786,29 @@ Rules:
 - Use only relative paths. No absolute paths, no ../ traversal.
 - Keep each file under ${EASY_CODE_MAX_FILE_BYTES} bytes.
 - Return at most ${EASY_CODE_MAX_FILES_PER_AI_CALL} files.
-- For web landing pages, websites, portfolios, and product pages, generate a complete static website with non-empty index.html, styles.css, script.js, and README.md files. Never return README only.
+- For simple landing pages, websites, portfolios, product pages, and business sites, generate only a lightweight static HTML project unless the user explicitly asks for React, Next.js, Vite, Node, or Python.
+- Static first pass must contain exactly these four non-empty files: index.html, styles.css, script.js, README.md. Never return README only.
 - Keep the first version compact but fully usable. Every created or updated file must have non-empty content.
 - For React/Vite/Next/Python/Node projects, generate files and README/run instructions, but previewType should be unsupported unless there is a root index.html.
 - Do not include secrets or API keys.
 - For edits, update only the files needed.`
 
-  const user = `Mode: ${input.mode}
+  const user = staticLandingPage
+    ? `Mode: create
+Project: ${input.project.title}
+Description: ${input.project.description || ''}
+Instruction: ${input.instruction}
+
+Generate a polished but compact static landing page. Return JSON only.
+Requirements:
+- framework must be "html"
+- previewType must be "static-html"
+- files must be exactly: index.html, styles.css, script.js, README.md
+- index.html should link styles.css and script.js
+- include hero, services, benefits, pricing/packages or offers, testimonials, contact CTA, and responsive mobile layout
+- script.js should add small safe interactions only, such as smooth scrolling or CTA handling
+- keep each file concise and complete`
+    : `Mode: ${input.mode}
 Project: ${input.project.title}
 Description: ${input.project.description || ''}
 Instruction: ${input.instruction}
@@ -697,11 +822,20 @@ ${recentMessages || 'None'}
 Relevant file contents:
 ${fileContext || 'None'}`
 
+  console.info('[Easy Code] DeepSeek generation prepared', {
+    projectId: input.projectId || null,
+    mode: input.mode,
+    staticLandingPage,
+  })
   const raw = await callAzureDeepSeekJson([
     { role: 'system', content: system },
     { role: 'user', content: user },
-  ], input.mode === 'create' ? 12000 : 10000)
-  return parseEasyCodeJson(raw)
+  ], staticLandingPage ? 4500 : input.mode === 'create' ? 8000 : 7000, {
+    timeoutMs: staticLandingPage ? 45_000 : EASY_CODE_DEEPSEEK_TIMEOUT_MS,
+    phase: staticLandingPage ? 'static_landing_generation' : 'deepseek_generation',
+    projectId: input.projectId,
+  })
+  return parseEasyCodeJson(raw, input.projectId)
 }
 
 export async function applyEasyCodeAiResult(userId: string, projectId: string, aiResult: EasyCodeAiResult) {
