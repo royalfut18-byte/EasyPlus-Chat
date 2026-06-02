@@ -1,8 +1,7 @@
 'use client'
 
-import { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
-import { AI_MODELS, DEFAULT_CHAT_MODEL_ID, UI_MODELS, type AIModel } from '@/types/models'
+import { AI_MODELS, UI_MODELS, type AIModel } from '@/types/models'
 import { AnthropicIcon } from '@/components/icons/anthropic-icon'
 import { ChatGPTIcon } from '@/components/icons/chatgpt-icon'
 import { Check, ChevronDown, Code2, ImageIcon, Sparkles, Lock } from 'lucide-react'
@@ -17,38 +16,15 @@ import {
 interface ModelSelectorProps {
   selectedModel: string
   onSelectModel: (modelId: string) => void
+  availableModelIds: string[] | null
   disabled?: boolean
   disabledReason?: string
 }
 
-export function ModelSelector({ selectedModel, onSelectModel, disabled = false, disabledReason }: ModelSelectorProps) {
-  const [availableModelIds, setAvailableModelIds] = useState<Set<string>>(
-    () => new Set([
-      DEFAULT_CHAT_MODEL_ID,
-      ...AI_MODELS.map(model => model.id),
-    ])
-  )
-  const [availabilityLoaded, setAvailabilityLoaded] = useState(false)
+export function ModelSelector({ selectedModel, onSelectModel, availableModelIds, disabled = false, disabledReason }: ModelSelectorProps) {
   const activeModel = AI_MODELS.find(model => model.id === selectedModel) || AI_MODELS[0]
-  const isAvailable = (model: AIModel) => !availabilityLoaded || availableModelIds.has(model.id)
-  const isConfirmedUnavailable = (model: AIModel) => availabilityLoaded && !availableModelIds.has(model.id)
-
-  useEffect(() => {
-    let active = true
-    fetch('/api/models', { cache: 'no-store' })
-      .then(response => response.ok ? response.json() : null)
-      .then(data => {
-        if (!active || !Array.isArray(data?.availableModelIds)) return
-        setAvailableModelIds(new Set(data.availableModelIds))
-        setAvailabilityLoaded(true)
-      })
-      .catch(() => {
-        if (active) setAvailabilityLoaded(false)
-      })
-    return () => {
-      active = false
-    }
-  }, [])
+  const isAvailable = (model: AIModel) => availableModelIds === null || availableModelIds.includes(model.id)
+  const isConfirmedUnavailable = (model: AIModel) => availableModelIds !== null && !availableModelIds.includes(model.id)
 
   const getSelectedGlow = (model: AIModel) => {
     if (selectedModel !== model.id) return undefined

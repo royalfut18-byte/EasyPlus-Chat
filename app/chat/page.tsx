@@ -376,30 +376,37 @@ export default function ChatPage() {
   }, [projectId])
 
   useEffect(() => {
-    if (currentConversation) return
-
     let active = true
     fetch('/api/models', { cache: 'no-store' })
       .then(response => response.ok ? response.json() : null)
       .then(data => {
         if (!active || !Array.isArray(data?.availableModelIds)) return
         const availableModelIds = data.availableModelIds as string[]
-        const preferredModel = getPreferredDefaultModelId(availableModelIds)
 
         setAvailableModelIdsForDefaults(availableModelIds)
-        setSelectedModel((current) => {
-          if (current !== DEFAULT_CHAT_MODEL_ID && current !== 'image-generation' && availableModelIds.includes(current)) {
-            return current
-          }
-          return preferredModel
-        })
       })
       .catch(() => {})
 
     return () => {
       active = false
     }
-  }, [currentConversation])
+  }, [])
+
+  useEffect(() => {
+    if (
+      !availableModelIdsForDefaults ||
+      currentConversation ||
+      isSendingRef.current ||
+      isLoading ||
+      isCreatingConversation
+    ) {
+      return
+    }
+
+    setSelectedModel((current) => availableModelIdsForDefaults.includes(current)
+      ? current
+      : getPreferredDefaultModelId(availableModelIdsForDefaults))
+  }, [availableModelIdsForDefaults, currentConversation, isCreatingConversation, isLoading])
 
   useEffect(() => {
     if (!queryConversationId || conversations.length === 0) return
@@ -2364,6 +2371,7 @@ Default to artifact:html with a complete single-file HTML document for visual, p
               <ModelSelector
                 selectedModel={selectedModel}
                 onSelectModel={setSelectedModel}
+                availableModelIds={availableModelIdsForDefaults}
                 disabled={currentConversation !== null}
                 disabledReason="Start a new chat to switch models"
               />
