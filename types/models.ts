@@ -47,6 +47,20 @@ export const AI_MODELS: AIModel[] = [
   },
 ]
 
+export const DEFAULT_CHAT_MODEL_ID = 'deepseek-v4-pro'
+
+export const UI_MODEL_ORDER = [
+  'deepseek-v4-pro',
+  'claude-opus-4.8',
+  'chat-gpt-5.5',
+  'gemini-3.1-pro',
+  'image-generation',
+] as const
+
+export const UI_MODELS: AIModel[] = UI_MODEL_ORDER
+  .map((modelId) => AI_MODELS.find((model) => model.id === modelId))
+  .filter((model): model is AIModel => Boolean(model))
+
 export interface ChatAttachment {
   type: 'image' | 'document'
   name: string

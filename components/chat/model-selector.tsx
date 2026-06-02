@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
-import { AI_MODELS, type AIModel } from '@/types/models'
+import { AI_MODELS, DEFAULT_CHAT_MODEL_ID, UI_MODELS, type AIModel } from '@/types/models'
 import { AnthropicIcon } from '@/components/icons/anthropic-icon'
 import { ChatGPTIcon } from '@/components/icons/chatgpt-icon'
 import { Check, ChevronDown, Code2, ImageIcon, Sparkles, Lock } from 'lucide-react'
@@ -23,7 +23,10 @@ interface ModelSelectorProps {
 
 export function ModelSelector({ selectedModel, onSelectModel, disabled = false, disabledReason }: ModelSelectorProps) {
   const [availableModelIds, setAvailableModelIds] = useState<Set<string>>(
-    () => new Set(AI_MODELS.filter(model => !['deepseek-v4-pro', 'image-generation'].includes(model.id)).map(model => model.id))
+    () => new Set([
+      DEFAULT_CHAT_MODEL_ID,
+      ...AI_MODELS.filter(model => !['image-generation'].includes(model.id)).map(model => model.id),
+    ])
   )
   const activeModel = AI_MODELS.find(model => model.id === selectedModel) || AI_MODELS[0]
   const isAvailable = (model: AIModel) => availableModelIds.has(model.id)
@@ -121,7 +124,7 @@ export function ModelSelector({ selectedModel, onSelectModel, disabled = false, 
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="w-56 border-white/[0.08] bg-[#202020]">
-            {AI_MODELS.map(model => (
+            {UI_MODELS.map(model => (
               <DropdownMenuItem
                 key={model.id}
                 disabled={!isAvailable(model)}
@@ -148,7 +151,7 @@ export function ModelSelector({ selectedModel, onSelectModel, disabled = false, 
           <span className="hidden md:inline">{disabledReason || 'Model locked for this chat'}</span>
         </div>
       )}
-      {AI_MODELS.map((model) => (
+      {UI_MODELS.map((model) => (
         <motion.button
           key={model.id}
           onClick={() => !disabled && isAvailable(model) && onSelectModel(model.id)}

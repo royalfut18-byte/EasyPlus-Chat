@@ -14,7 +14,7 @@ import { Sidebar } from '@/components/chat/sidebar'
 import { ArtifactPanel } from '@/components/chat/artifact-panel'
 import { ImageGenerationPanel, type GeneratedImage, type ImageGenerationOptions, type ImageGenerationSize } from '@/components/chat/image-generation-panel'
 import { toast } from '@/components/ui/use-toast'
-import { AI_MODELS } from '@/types/models'
+import { AI_MODELS, DEFAULT_CHAT_MODEL_ID } from '@/types/models'
 import { cn } from '@/lib/utils'
 import { parseArtifactFromResponse } from '@/lib/artifact-parser'
 import { sortMessagesChronologically, dedupeMessages, processMessages, processLoadedMessages, getStoredArtifact } from '@/lib/chat/message-utils'
@@ -268,15 +268,30 @@ type SidebarProject = {
   conversations: Conversation[]
 }
 
+function getFirstAvailableTextModelId(availableModelIds: string[]): string {
+  return AI_MODELS.find((model) =>
+    model.id !== 'image-generation' &&
+    availableModelIds.includes(model.id)
+  )?.id || 'claude-opus-4.8'
+}
+
+function getPreferredDefaultModelId(availableModelIds: string[] | null): string {
+  if (!availableModelIds) return DEFAULT_CHAT_MODEL_ID
+  return availableModelIds.includes(DEFAULT_CHAT_MODEL_ID)
+    ? DEFAULT_CHAT_MODEL_ID
+    : getFirstAvailableTextModelId(availableModelIds)
+}
+
 export default function ChatPage() {
-  const [selectedModel, setSelectedModel] = useState(AI_MODELS[0].id)
+  const [selectedModel, setSelectedModel] = useState(DEFAULT_CHAT_MODEL_ID)
   const [generatedImages, setGeneratedImages] = useState<GeneratedImage[]>([])
   const [isGeneratingImage, setIsGeneratingImage] = useState(false)
   const [imageConversationId, setImageConversationId] = useState<string | null>(null)
-  const [reasoningMode, setReasoningMode] = useState<ReasoningMode>('thinking')
+  const [reasoningMode, setReasoningMode] = useState<ReasoningMode>('instant')
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [normalConversations, setNormalConversations] = useState<Conversation[]>([])
   const [sidebarProjects, setSidebarProjects] = useState<SidebarProject[]>([])
+  const [availableModelIdsForDefaults, setAvailableModelIdsForDefaults] = useState<string[] | null>(null)
   const [currentConversation, setCurrentConversation] = useState<Conversation | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
   const [isLoading, setIsLoading] = useState(false)
@@ -359,6 +374,34 @@ export default function ChatPage() {
     loadActiveProject()
     handleNewChat()
   }, [projectId])
+
+  useEffect(() => {
+    if (currentConversation) return
+
+    let active = true
+    fetch('/api/models', { cache: 'no-store' })
+      .then(response => response.ok ? response.json() : null)
+      .then(data => {
+        if (!active || !Array.isArray(data?.availableModelIds)) return
+        const availableModelIds = data.availableModelIds as string[]
+        const preferredModel = getPreferredDefaultModelId(availableModelIds)
+
+        setAvailableModelIdsForDefaults(availableModelIds)
+        setSelectedModel((current) => {
+          if (current !== DEFAULT_CHAT_MODEL_ID && current !== 'image-generation' && availableModelIds.includes(current)) {
+            return current
+          }
+          return preferredModel
+        })
+      })
+      .catch(() => {
+        setSelectedModel((current) => current === 'image-generation' ? 'claude-opus-4.8' : current)
+      })
+
+    return () => {
+      active = false
+    }
+  }, [currentConversation])
 
   useEffect(() => {
     if (!queryConversationId || conversations.length === 0) return
@@ -687,7 +730,11 @@ export default function ChatPage() {
   }
 
   const handleNewChat = () => {
-    if (!currentConversation && messages.length === 0 && generatedImages.length === 0) return
+    if (!currentConversation && messages.length === 0 && generatedImages.length === 0) {
+      setSelectedModel(getPreferredDefaultModelId(availableModelIdsForDefaults))
+      setReasoningMode('instant')
+      return
+    }
 
     // Increment sequence to invalidate any pending requests
     ++conversationRequestSeqRef.current
@@ -700,6 +747,8 @@ export default function ChatPage() {
     setArtifactMessageId(null)
     setGeneratedImages([])
     setImageConversationId(null)
+    setSelectedModel(getPreferredDefaultModelId(availableModelIdsForDefaults))
+    setReasoningMode('instant')
   }
 
   const handleSelectConversation = async (id: string) => {
@@ -719,7 +768,7 @@ export default function ChatPage() {
     setCurrentConversation(conv)
     setSelectedModel(conv.model_used)
     setImageConversationId(conv.model_used === 'image-generation' ? conv.id : null)
-    setReasoningMode(conv.reasoning_mode || 'thinking')
+    setReasoningMode(conv.reasoning_mode || 'instant')
     setIsArtifactOpen(false)
     setActiveArtifact(null)
     setArtifactMessageId(null)
