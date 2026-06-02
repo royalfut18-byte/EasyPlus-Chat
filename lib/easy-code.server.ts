@@ -94,6 +94,30 @@ function getDb() {
   return createServiceClient() as Promise<any>
 }
 
+const EASY_CODE_IDEMPOTENCY_MIGRATION_ERROR =
+  'Easy Code database update required. Apply the client_request_id migration and reload the Supabase schema cache.'
+
+function isEasyCodeIdempotencySchemaError(error: any): boolean {
+  const detail = [error?.code, error?.message, error?.details, error?.hint]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase()
+  return detail.includes('client_request_id') && (
+    detail.includes('schema cache') ||
+    detail.includes('does not exist') ||
+    detail.includes('could not find')
+  )
+}
+
+function throwIfEasyCodeIdempotencySchemaError(error: any) {
+  if (!isEasyCodeIdempotencySchemaError(error)) return
+  console.error('[Easy Code] Idempotency schema migration required', {
+    code: error?.code || null,
+    phase: 'client_request_id_schema_check',
+  })
+  throw new Error(EASY_CODE_IDEMPOTENCY_MIGRATION_ERROR)
+}
+
 export function sanitizeEasyCodePrompt(input: unknown): string {
   if (typeof input !== 'string') return ''
   return input.replace(/\s+/g, ' ').trim().slice(0, EASY_CODE_MAX_PROMPT_LENGTH)
@@ -414,13 +438,15 @@ export async function createEasyCodeProjectShell(userId: string, prompt: string,
     : ''
 
   if (cleanClientRequestId) {
-    const { data: existing } = await db
+    const { data: existing, error: lookupError } = await db
       .from('easy_code_projects')
       .select('*')
       .eq('user_id', userId)
       .eq('client_request_id', cleanClientRequestId)
       .limit(1)
       .maybeSingle()
+    throwIfEasyCodeIdempotencySchemaError(lookupError)
+    if (lookupError) throw lookupError
     if (existing?.id) {
       console.info('[Easy Code] Reused idempotent project shell', { projectId: existing.id })
       const [files, messages] = await Promise.all([
@@ -447,14 +473,17 @@ export async function createEasyCodeProjectShell(userId: string, prompt: string,
     })
     .select('*')
     .single()
+  throwIfEasyCodeIdempotencySchemaError(error)
   if (error?.code === '23505' && cleanClientRequestId) {
-    const { data: existing } = await db
+    const { data: existing, error: lookupError } = await db
       .from('easy_code_projects')
       .select('*')
       .eq('user_id', userId)
       .eq('client_request_id', cleanClientRequestId)
       .limit(1)
       .single()
+    throwIfEasyCodeIdempotencySchemaError(lookupError)
+    if (lookupError) throw lookupError
     if (existing?.id) {
       const [files, messages] = await Promise.all([
         getEasyCodeFiles(userId, existing.id),

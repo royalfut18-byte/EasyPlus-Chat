@@ -41,6 +41,10 @@ export async function POST(request: NextRequest) {
       message: error?.message,
       phase: 'create_project',
     })
-    return NextResponse.json({ error: error?.message || 'Could not create project. Please try again.' }, { status: 500 })
+    const migrationRequired = error?.message?.startsWith('Easy Code database update required.')
+    return NextResponse.json(
+      { error: error?.message || 'Could not create project. Please try again.' },
+      { status: migrationRequired ? 503 : 500 }
+    )
   }
 }

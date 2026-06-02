@@ -1,3 +1,5 @@
+-- Safe repair for deployments where the idempotency migration was applied
+-- but PostgREST has not refreshed its schema cache yet.
 alter table public.easy_code_projects
   add column if not exists client_request_id text;
 
