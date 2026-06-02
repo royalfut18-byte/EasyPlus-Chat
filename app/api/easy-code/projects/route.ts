@@ -31,8 +31,10 @@ export async function POST(request: NextRequest) {
     const body = await request.json().catch(() => null)
     const prompt = sanitizeEasyCodePrompt(body?.prompt)
     if (prompt.length < 5) return NextResponse.json({ error: 'Describe what you want to build.' }, { status: 400 })
+    const clientRequestId = typeof body?.clientRequestId === 'string' ? body.clientRequestId.trim().slice(0, 100) : ''
+    if (!clientRequestId) return NextResponse.json({ error: 'Could not create project. Please try again.' }, { status: 400 })
 
-    const result = await createEasyCodeProjectShell(user.id, prompt)
+    const result = await createEasyCodeProjectShell(user.id, prompt, clientRequestId)
     return NextResponse.json(result, { headers: { 'Cache-Control': 'private, no-store, max-age=0' } })
   } catch (error: any) {
     console.error('[Easy Code] Project create failed', {

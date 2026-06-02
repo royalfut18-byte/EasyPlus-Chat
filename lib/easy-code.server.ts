@@ -20,13 +20,19 @@ export interface EasyCodeProject {
   description: string | null
   framework: string | null
   status: string
-  generation_status?: 'idle' | 'generating' | 'ready' | 'failed'
+  generation_status?: 'idle' | 'generating' | 'ready' | 'failed' | 'incomplete'
   generation_phase?: string | null
   generation_error?: string | null
   generation_metadata?: any
   last_generated_at?: string | null
   created_at: string
   updated_at: string
+}
+
+export interface EasyCodeProjectSummary extends EasyCodeProject {
+  file_count: number
+  meaningful_file_count: number
+  is_download_ready: boolean
 }
 
 export interface EasyCodeFile {
@@ -161,6 +167,31 @@ export function normalizeAiResult(raw: any): EasyCodeAiResult {
   }
 }
 
+export function getEasyCodeReadiness(
+  files: Array<Pick<EasyCodeFile, 'path'> & Partial<Pick<EasyCodeFile, 'content' | 'size_bytes'>>>,
+  project?: Pick<EasyCodeProject, 'description' | 'framework'> | null
+) {
+  const meaningfulFiles = files.filter(file => {
+    const path = file.path.toLowerCase()
+    const hasContent = typeof file.content === 'string'
+      ? file.content.trim().length > 0
+      : Number(file.size_bytes || 0) > 0
+    return path !== 'readme.md' && hasContent
+  })
+  const expectsStaticWebsite = project?.framework === 'html' ||
+    /\b(landing page|website|web site|webpage|portfolio|product page)\b/i.test(project?.description || '')
+  const hasIndexHtml = files.some(file => file.path.toLowerCase() === 'index.html' && (
+    typeof file.content === 'string' ? file.content.trim().length > 0 : Number(file.size_bytes || 0) > 0
+  ))
+  return {
+    ready: meaningfulFiles.length >= 2 && (!expectsStaticWebsite || hasIndexHtml),
+    fileCount: files.length,
+    meaningfulFileCount: meaningfulFiles.length,
+    hasIndexHtml,
+    expectsStaticWebsite,
+  }
+}
+
 function extractJson(text: string): string {
   const trimmed = text.trim()
   if (trimmed.startsWith('{') && trimmed.endsWith('}')) return trimmed
@@ -252,7 +283,7 @@ export async function requireEasyCodeUser(userId: string) {
   return null
 }
 
-export async function listEasyCodeProjects(userId: string): Promise<EasyCodeProject[]> {
+export async function listEasyCodeProjects(userId: string): Promise<EasyCodeProjectSummary[]> {
   const db = await getDb()
   const { data, error } = await db
     .from('easy_code_projects')
@@ -261,7 +292,29 @@ export async function listEasyCodeProjects(userId: string): Promise<EasyCodeProj
     .eq('status', 'active')
     .order('updated_at', { ascending: false })
   if (error) throw error
-  return data || []
+  const projects = data || []
+  if (projects.length === 0) return []
+  const { data: fileRows, error: fileError } = await db
+    .from('easy_code_files')
+    .select('project_id,path,size_bytes')
+    .eq('user_id', userId)
+    .in('project_id', projects.map((project: EasyCodeProject) => project.id))
+  if (fileError) throw fileError
+  const filesByProject = new Map<string, Array<{ path: string; size_bytes: number }>>()
+  for (const file of fileRows || []) {
+    const current = filesByProject.get(file.project_id) || []
+    current.push(file)
+    filesByProject.set(file.project_id, current)
+  }
+  return projects.map((project: EasyCodeProject) => {
+    const readiness = getEasyCodeReadiness(filesByProject.get(project.id) || [], project)
+    return {
+      ...project,
+      file_count: readiness.fileCount,
+      meaningful_file_count: readiness.meaningfulFileCount,
+      is_download_ready: project.generation_status === 'ready' && readiness.ready,
+    }
+  })
 }
 
 export async function getEasyCodeProject(userId: string, projectId: string): Promise<EasyCodeProject | null> {
@@ -330,7 +383,7 @@ async function updateEasyCodeGenerationState(
   userId: string,
   projectId: string,
   updates: {
-    status?: 'idle' | 'generating' | 'ready' | 'failed'
+    status?: 'idle' | 'generating' | 'ready' | 'failed' | 'incomplete'
     phase?: string | null
     error?: string | null
     metadata?: any
@@ -352,10 +405,31 @@ async function updateEasyCodeGenerationState(
   if (error) throw error
 }
 
-export async function createEasyCodeProjectShell(userId: string, prompt: string) {
+export async function createEasyCodeProjectShell(userId: string, prompt: string, clientRequestId?: string | null) {
   const db = await getDb()
   const cleanPrompt = sanitizeEasyCodePrompt(prompt)
   if (cleanPrompt.length < 5) throw new Error('Describe what you want to build.')
+  const cleanClientRequestId = typeof clientRequestId === 'string'
+    ? clientRequestId.trim().slice(0, 100)
+    : ''
+
+  if (cleanClientRequestId) {
+    const { data: existing } = await db
+      .from('easy_code_projects')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('client_request_id', cleanClientRequestId)
+      .limit(1)
+      .maybeSingle()
+    if (existing?.id) {
+      console.info('[Easy Code] Reused idempotent project shell', { projectId: existing.id })
+      const [files, messages] = await Promise.all([
+        getEasyCodeFiles(userId, existing.id),
+        getEasyCodeMessages(userId, existing.id),
+      ])
+      return { project: existing, files, messages, reused: true }
+    }
+  }
 
   const title = cleanPrompt.length > 56 ? `${cleanPrompt.slice(0, 56).trim()}...` : cleanPrompt
   const { data: project, error } = await db
@@ -369,14 +443,31 @@ export async function createEasyCodeProjectShell(userId: string, prompt: string)
       generation_phase: 'creating_project',
       generation_error: null,
       generation_metadata: buildEasyCodeProgress('creating_project'),
+      client_request_id: cleanClientRequestId || null,
     })
     .select('*')
     .single()
+  if (error?.code === '23505' && cleanClientRequestId) {
+    const { data: existing } = await db
+      .from('easy_code_projects')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('client_request_id', cleanClientRequestId)
+      .limit(1)
+      .single()
+    if (existing?.id) {
+      const [files, messages] = await Promise.all([
+        getEasyCodeFiles(userId, existing.id),
+        getEasyCodeMessages(userId, existing.id),
+      ])
+      return { project: existing, files, messages, reused: true }
+    }
+  }
   if (error || !project?.id) throw error || new Error('Could not create project.')
 
   await db.from('easy_code_messages').insert({ project_id: project.id, user_id: userId, role: 'user', content: cleanPrompt })
   const messages = await getEasyCodeMessages(userId, project.id)
-  return { project, files: [], messages }
+  return { project, files: [], messages, reused: false }
 }
 
 export async function createEasyCodeProjectFromPrompt(userId: string, prompt: string) {
@@ -396,6 +487,25 @@ export async function runEasyCodeInitialGeneration(userId: string, projectId: st
   const cleanPrompt = sanitizeEasyCodePrompt(project.description || project.title)
 
   try {
+    if (project.generation_status === 'generating' && project.generation_phase !== 'creating_project') {
+      return {
+        project,
+        files: await getEasyCodeFiles(userId, projectId),
+        messages: await getEasyCodeMessages(userId, projectId),
+        aiResult: null,
+        alreadyGenerating: true,
+      }
+    }
+    const db = await getDb()
+    const existingFiles = await getEasyCodeFiles(userId, projectId)
+    if (existingFiles.length > 0 && project.generation_status !== 'ready') {
+      const { error: clearError } = await db
+        .from('easy_code_files')
+        .delete()
+        .eq('project_id', projectId)
+        .eq('user_id', userId)
+      if (clearError) throw clearError
+    }
     await updateEasyCodeGenerationState(userId, projectId, {
       status: 'generating',
       phase: 'planning',
@@ -412,6 +522,19 @@ export async function runEasyCodeInitialGeneration(userId: string, projectId: st
     })
 
     const filesCreated = aiResult.files.map(file => file.newPath || file.path)
+    const proposedReadiness = getEasyCodeReadiness(aiResult.files.map(file => ({
+      path: file.newPath || file.path,
+      content: file.operation === 'delete' ? '' : file.content || '',
+    })), project)
+    console.info('[Easy Code] Generation output validated', {
+      projectId,
+      returnedFiles: aiResult.files.length,
+      validatedFiles: proposedReadiness.fileCount,
+      rejectedFiles: 0,
+      meaningfulFiles: proposedReadiness.meaningfulFileCount,
+      hasIndexHtml: proposedReadiness.hasIndexHtml,
+    })
+    if (!proposedReadiness.ready) throw new Error('Generation incomplete. Retry.')
     await updateEasyCodeGenerationState(userId, projectId, {
       status: 'generating',
       phase: 'generating_files',
@@ -424,7 +547,18 @@ export async function runEasyCodeInitialGeneration(userId: string, projectId: st
     })
 
     await applyEasyCodeAiResult(userId, projectId, aiResult)
-    const db = await getDb()
+    const savedFiles = await getEasyCodeFiles(userId, projectId)
+    const savedReadiness = getEasyCodeReadiness(savedFiles, {
+      ...project,
+      framework: aiResult.framework || project.framework,
+    })
+    console.info('[Easy Code] Generation files saved', {
+      projectId,
+      savedFiles: savedFiles.length,
+      meaningfulFiles: savedReadiness.meaningfulFileCount,
+      hasIndexHtml: savedReadiness.hasIndexHtml,
+    })
+    if (!savedReadiness.ready) throw new Error('Generation incomplete. Retry.')
     await db.from('easy_code_projects')
       .update({
         title: aiResult.title || project.title,
@@ -468,8 +602,9 @@ export async function runEasyCodeInitialGeneration(userId: string, projectId: st
     const message = typeof error?.message === 'string' && error.message
       ? error.message
       : 'Project was created but generation failed.'
+    const status = message === 'Generation incomplete. Retry.' ? 'incomplete' : 'failed'
     await updateEasyCodeGenerationState(userId, projectId, {
-      status: 'failed',
+      status,
       phase: 'failed',
       error: message,
       metadata: buildEasyCodeProgress('failed', [], message),
@@ -513,7 +648,8 @@ Rules:
 - Use only relative paths. No absolute paths, no ../ traversal.
 - Keep each file under ${EASY_CODE_MAX_FILE_BYTES} bytes.
 - Return at most ${EASY_CODE_MAX_FILES_PER_AI_CALL} files.
-- For web landing pages, prefer a static index.html plus styles.css and script.js so in-app preview works.
+- For web landing pages, websites, portfolios, and product pages, generate a complete static website with non-empty index.html, styles.css, script.js, and README.md files. Never return README only.
+- Keep the first version compact but fully usable. Every created or updated file must have non-empty content.
 - For React/Vite/Next/Python/Node projects, generate files and README/run instructions, but previewType should be unsupported unless there is a root index.html.
 - Do not include secrets or API keys.
 - For edits, update only the files needed.`
@@ -546,6 +682,11 @@ export async function applyEasyCodeAiResult(userId: string, projectId: string, a
     throw new Error('This Easy Code project has reached the file limit.')
   }
 
+  let savedFiles = 0
+  console.info('[Easy Code] Applying generated files', {
+    projectId,
+    returnedFiles: aiResult.files.length,
+  })
   for (const file of aiResult.files) {
     const path = validateEasyCodePath(file.path)
     if (file.operation === 'delete') {
@@ -562,6 +703,7 @@ export async function applyEasyCodeAiResult(userId: string, projectId: string, a
       continue
     }
     const content = file.content || ''
+    if (!content.trim()) throw new Error(`Generated file was empty: ${path}`)
     if (bytesOf(content) > EASY_CODE_MAX_FILE_BYTES) throw new Error(`File is too large: ${path}`)
     const { error } = await db.from('easy_code_files').upsert({
       project_id: projectId,
@@ -573,8 +715,10 @@ export async function applyEasyCodeAiResult(userId: string, projectId: string, a
       updated_at: new Date().toISOString(),
     }, { onConflict: 'project_id,path' })
     if (error) throw error
+    savedFiles += 1
   }
   await db.from('easy_code_projects').update({ updated_at: new Date().toISOString() }).eq('id', projectId).eq('user_id', userId)
+  console.info('[Easy Code] Applied generated files', { projectId, savedFiles })
 }
 
 export async function runEasyCodeEdit(userId: string, projectId: string, instruction: string, selectedPath?: string | null) {

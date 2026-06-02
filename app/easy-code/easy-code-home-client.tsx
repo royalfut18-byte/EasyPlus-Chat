@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { ArrowRight, Code2, Download, FolderOpen, Loader2, Sparkles } from 'lucide-react'
@@ -12,7 +12,10 @@ interface EasyCodeProject {
   title: string
   description: string | null
   framework: string | null
-  generation_status?: 'idle' | 'generating' | 'ready' | 'failed'
+  generation_status?: 'idle' | 'generating' | 'ready' | 'failed' | 'incomplete'
+  file_count?: number
+  meaningful_file_count?: number
+  is_download_ready?: boolean
   updated_at: string
   created_at: string
 }
@@ -31,26 +34,47 @@ export function EasyCodeHomeClient({ initialProjects }: { initialProjects: EasyC
   const [prompt, setPrompt] = useState('')
   const [isCreating, setIsCreating] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const createLockRef = useRef(false)
+  const clientRequestRef = useRef<{ prompt: string; id: string } | null>(null)
   const router = useRouter()
+
+  useEffect(() => {
+    const refreshProjects = async () => {
+      const response = await fetch('/api/easy-code/projects', { cache: 'no-store' }).catch(() => null)
+      if (!response?.ok) return
+      const data = await response.json().catch(() => ({}))
+      if (Array.isArray(data.projects)) setProjects(data.projects)
+    }
+    const timer = window.setInterval(refreshProjects, 3000)
+    return () => window.clearInterval(timer)
+  }, [])
 
   const createProject = async (value = prompt) => {
     const clean = value.trim()
-    if (clean.length < 5 || isCreating) return
+    if (clean.length < 5 || createLockRef.current) return
+    createLockRef.current = true
     setIsCreating(true)
     setError(null)
+    const clientRequestId = clientRequestRef.current?.prompt === clean
+      ? clientRequestRef.current.id
+      : crypto.randomUUID()
+    clientRequestRef.current = { prompt: clean, id: clientRequestId }
     try {
       const response = await fetch('/api/easy-code/projects', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: clean }),
+        body: JSON.stringify({ prompt: clean, clientRequestId }),
       })
       const data = await response.json().catch(() => ({}))
       if (!response.ok || !data?.project?.id) throw new Error(data?.error || 'Could not create project. Please try again.')
-      setProjects(prev => [data.project, ...prev])
+      setProjects(prev => [data.project, ...prev.filter(project => project.id !== data.project.id)])
       router.push(`/easy-code/${data.project.id}`)
     } catch (error: any) {
-      setError(error?.message || 'Could not create project. Please try again.')
+      setError(error?.message === 'Failed to fetch'
+        ? 'Could not confirm project creation. Please check Recent coding projects before retrying.'
+        : error?.message || 'Could not create project. Please try again.')
     } finally {
+      createLockRef.current = false
       setIsCreating(false)
     }
   }
@@ -160,16 +184,25 @@ export function EasyCodeHomeClient({ initialProjects }: { initialProjects: EasyC
                   <span>{project.framework || 'project'}</span>
                   <span className={cn(
                     'inline-flex items-center gap-1 rounded-full px-2 py-1',
-                    project.generation_status === 'failed'
+                    project.generation_status === 'failed' || project.generation_status === 'incomplete'
                       ? 'bg-red-500/10 text-red-200'
                       : project.generation_status === 'generating'
                         ? 'bg-amber-500/10 text-amber-200'
                         : 'bg-emerald-500/10 text-emerald-200'
                   )}>
                     {project.generation_status === 'generating' ? <Loader2 className="h-3 w-3 animate-spin" /> : <Download className="h-3 w-3" />}
-                    {project.generation_status === 'failed' ? 'Failed' : project.generation_status === 'generating' ? 'Generating' : 'Ready'}
+                    {project.generation_status === 'failed'
+                      ? 'Failed'
+                      : project.generation_status === 'incomplete'
+                        ? 'Incomplete'
+                        : project.generation_status === 'generating'
+                          ? 'Generating'
+                          : project.is_download_ready
+                            ? 'ZIP ready'
+                            : 'Incomplete'}
                   </span>
                 </div>
+                <p className="mt-2 text-xs text-gray-600">{project.file_count || 0} saved file{project.file_count === 1 ? '' : 's'}</p>
               </Link>
             ))}
           </div>

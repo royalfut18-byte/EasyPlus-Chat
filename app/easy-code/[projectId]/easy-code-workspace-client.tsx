@@ -11,7 +11,7 @@ interface EasyCodeProject {
   title: string
   description: string | null
   framework: string | null
-  generation_status?: 'idle' | 'generating' | 'ready' | 'failed'
+  generation_status?: 'idle' | 'generating' | 'ready' | 'failed' | 'incomplete'
   generation_phase?: string | null
   generation_error?: string | null
   generation_metadata?: {
@@ -84,8 +84,10 @@ export function EasyCodeWorkspaceClient({
   const selectedFile = useMemo(() => files.find(file => file.path === selectedPath) || null, [files, selectedPath])
   const hasUnsavedChanges = selectedFile ? draft !== selectedFile.content : false
   const hasStaticPreview = files.some(file => file.path.toLowerCase() === 'index.html')
+  const meaningfulFiles = files.filter(file => file.path.toLowerCase() !== 'readme.md' && file.content.trim().length > 0)
   const latestAssistant = [...messages].reverse().find(message => message.role === 'assistant')
   const generationStatus = project.generation_status || (files.length > 0 ? 'ready' : 'idle')
+  const isDownloadReady = generationStatus === 'ready' && meaningfulFiles.length >= 2
   const progressSteps = project.generation_metadata?.progress || [
     { label: 'Project created', state: 'done' as const },
     { label: 'Planning file structure', state: generationStatus === 'generating' ? 'active' as const : 'pending' as const },
@@ -282,10 +284,17 @@ export function EasyCodeWorkspaceClient({
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          <Link href={`/api/easy-code/projects/${project.id}/download`} className="inline-flex h-9 items-center gap-2 rounded-full bg-white px-3 text-xs font-semibold text-black transition-colors hover:bg-gray-200">
-            <Download className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Download ZIP</span>
-          </Link>
+          {isDownloadReady ? (
+            <Link href={`/api/easy-code/projects/${project.id}/download`} className="inline-flex h-9 items-center gap-2 rounded-full bg-white px-3 text-xs font-semibold text-black transition-colors hover:bg-gray-200">
+              <Download className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">Download ZIP</span>
+            </Link>
+          ) : (
+            <button disabled title="Project is not ready to download yet." className="inline-flex h-9 cursor-not-allowed items-center gap-2 rounded-full bg-white/40 px-3 text-xs font-semibold text-black/60">
+              <Download className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">Download ZIP</span>
+            </button>
+          )}
           <button onClick={() => router.refresh()} className="hidden rounded-full border border-white/[0.08] px-3 py-2 text-xs text-gray-300 transition-colors hover:bg-white/[0.06] md:inline-flex">
             Refresh
           </button>
@@ -406,7 +415,7 @@ export function EasyCodeWorkspaceClient({
                   <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500">Build progress</p>
                   <span className={cn(
                     'rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]',
-                    generationStatus === 'failed'
+                    generationStatus === 'failed' || generationStatus === 'incomplete'
                       ? 'bg-red-500/10 text-red-200'
                       : generationStatus === 'ready'
                         ? 'bg-emerald-500/10 text-emerald-200'
@@ -436,7 +445,7 @@ export function EasyCodeWorkspaceClient({
                     ))}
                   </div>
                 ) : null}
-                {generationStatus === 'failed' && (
+                {(generationStatus === 'failed' || generationStatus === 'incomplete') && (
                   <button onClick={retryGeneration} className="mt-3 inline-flex items-center gap-2 rounded-full bg-violet-600 px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-violet-500">
                     <RefreshCw className="h-3.5 w-3.5" />
                     Retry generation
