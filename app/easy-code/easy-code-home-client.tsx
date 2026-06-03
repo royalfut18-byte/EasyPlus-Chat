@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { ArrowRight, Code2, Download, FolderOpen, Loader2, Sparkles } from 'lucide-react'
+import { ArrowRight, Code2, Download, FolderOpen, Loader2, Sparkles, Trash2 } from 'lucide-react'
 import { Logo } from '@/components/brand/logo'
 import { cn } from '@/lib/utils'
 
@@ -33,6 +33,7 @@ export function EasyCodeHomeClient({ initialProjects }: { initialProjects: EasyC
   const [projects, setProjects] = useState(initialProjects)
   const [prompt, setPrompt] = useState('')
   const [isCreating, setIsCreating] = useState(false)
+  const [deletingProjectId, setDeletingProjectId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const createLockRef = useRef(false)
   const clientRequestRef = useRef<{ prompt: string; id: string } | null>(null)
@@ -76,6 +77,23 @@ export function EasyCodeHomeClient({ initialProjects }: { initialProjects: EasyC
     } finally {
       createLockRef.current = false
       setIsCreating(false)
+    }
+  }
+
+  const deleteProject = async (project: EasyCodeProject) => {
+    const confirmed = window.confirm('Delete this Easy Code project? This will remove its files and messages.')
+    if (!confirmed || deletingProjectId) return
+    setDeletingProjectId(project.id)
+    setError(null)
+    try {
+      const response = await fetch(`/api/easy-code/projects/${project.id}`, { method: 'DELETE' })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(data.error || 'Could not delete project.')
+      setProjects(prev => prev.filter(item => item.id !== project.id))
+    } catch (error: any) {
+      setError(error?.message || 'Could not delete project.')
+    } finally {
+      setDeletingProjectId(null)
     }
   }
 
@@ -164,11 +182,19 @@ export function EasyCodeHomeClient({ initialProjects }: { initialProjects: EasyC
         ) : (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {projects.map(project => (
-              <Link
+              <div
                 key={project.id}
-                href={`/easy-code/${project.id}`}
+                role="button"
+                tabIndex={0}
+                onClick={() => router.push(`/easy-code/${project.id}`)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault()
+                    router.push(`/easy-code/${project.id}`)
+                  }
+                }}
                 className={cn(
-                  'group rounded-[24px] border border-white/[0.08] bg-[#191919] p-5 transition-colors',
+                  'group cursor-pointer rounded-[24px] border border-white/[0.08] bg-[#191919] p-5 transition-colors',
                   'hover:border-violet-300/20 hover:bg-[#202020]'
                 )}
               >
@@ -176,7 +202,22 @@ export function EasyCodeHomeClient({ initialProjects }: { initialProjects: EasyC
                   <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-violet-500/10 text-violet-200">
                     <Code2 className="h-5 w-5" />
                   </div>
-                  <ArrowRight className="h-4 w-4 text-gray-600 transition-colors group-hover:text-violet-200" />
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.preventDefault()
+                        event.stopPropagation()
+                        deleteProject(project)
+                      }}
+                      disabled={deletingProjectId === project.id}
+                      className="rounded-full border border-red-400/10 p-2 text-red-300 opacity-80 transition-colors hover:bg-red-500/10 hover:text-red-200 disabled:cursor-not-allowed disabled:opacity-50"
+                      title="Delete project"
+                    >
+                      {deletingProjectId === project.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                    </button>
+                    <ArrowRight className="h-4 w-4 text-gray-600 transition-colors group-hover:text-violet-200" />
+                  </div>
                 </div>
                 <h3 className="mt-4 line-clamp-2 font-semibold text-white">{project.title}</h3>
                 <p className="mt-2 line-clamp-2 text-sm text-gray-500">{project.description || 'Easy Code project'}</p>
@@ -203,7 +244,7 @@ export function EasyCodeHomeClient({ initialProjects }: { initialProjects: EasyC
                   </span>
                 </div>
                 <p className="mt-2 text-xs text-gray-600">{project.file_count || 0} saved file{project.file_count === 1 ? '' : 's'}</p>
-              </Link>
+              </div>
             ))}
           </div>
         )}

@@ -70,16 +70,34 @@ export async function DELETE(_request: NextRequest, { params }: { params: Promis
     const entitlementBlock = await requireEasyCodeUser(user.id)
     if (entitlementBlock) return entitlementBlock
 
+    const project = await getEasyCodeProject(user.id, id)
+    if (!project) return NextResponse.json({ error: 'Project not found.' }, { status: 404 })
+
     const db = await createServiceClient() as any
-    const { error } = await db
+    const { error: filesError } = await db
+      .from('easy_code_files')
+      .delete()
+      .eq('project_id', id)
+      .eq('user_id', user.id)
+    if (filesError) throw filesError
+
+    const { error: messagesError } = await db
+      .from('easy_code_messages')
+      .delete()
+      .eq('project_id', id)
+      .eq('user_id', user.id)
+    if (messagesError) throw messagesError
+
+    const { error: projectError } = await db
       .from('easy_code_projects')
-      .update({ status: 'archived', updated_at: new Date().toISOString() })
+      .delete()
       .eq('id', id)
       .eq('user_id', user.id)
-    if (error) throw error
+    if (projectError) throw projectError
+    console.info('[Easy Code] Project deleted', { projectId: id, userId: user.id })
     return NextResponse.json({ success: true })
   } catch (error: any) {
-    console.error('[Easy Code] Project archive failed', { message: error?.message })
+    console.error('[Easy Code] Project delete failed', { message: error?.message })
     return NextResponse.json({ error: 'Could not delete project.' }, { status: 500 })
   }
 }

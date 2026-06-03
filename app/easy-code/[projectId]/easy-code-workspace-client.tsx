@@ -236,6 +236,7 @@ export function EasyCodeWorkspaceClient({
   const sendEasyCodeMessage = async () => {
     const clean = chatInput.trim()
     if (clean.length < 3 || isGenerating) return
+    const pendingPrompt = clean
     setIsGenerating(true)
     setError(null)
     setMessages(prev => [...prev, {
@@ -266,6 +267,7 @@ export function EasyCodeWorkspaceClient({
       setActiveTab('files')
     } catch (error: any) {
       setError(error?.message || 'Could not generate files.')
+      setChatInput(pendingPrompt)
       await refreshProject().catch(() => {})
     } finally {
       setIsGenerating(false)

@@ -23,16 +23,23 @@ export async function POST(request: NextRequest) {
     const result = await runEasyCodeEdit(user.id, projectId, instruction, selectedPath)
     return NextResponse.json(result, { headers: { 'Cache-Control': 'private, no-store, max-age=0' } })
   } catch (error: any) {
+    const rawMessage = typeof error?.message === 'string' ? error.message : ''
+    const timeoutHit = /aborted|timeout|timed out/i.test(rawMessage) || error?.name === 'AbortError' || error?.name === 'TimeoutError'
     console.error('[Easy Code] Chat edit failed', {
-      message: error?.message,
+      message: rawMessage,
       phase: 'easy_code_chat',
+      timeoutHit,
     })
-    const message = typeof error?.message === 'string' && (
-      error.message === 'The AI returned invalid file data. Try again.' ||
-      error.message === 'Could not generate files. Please try again in a moment.' ||
-      error.message === 'Could not generate files.' ||
-      error.message === 'This Easy Code project has reached the file limit.'
-    ) ? error.message : 'Could not generate files.'
-    return NextResponse.json({ error: message }, { status: 500 })
+    const message = timeoutHit
+      ? 'The request timed out. Try a smaller change.'
+      : rawMessage && (
+        rawMessage === 'The AI returned invalid file data. Try again.' ||
+        rawMessage === 'Could not generate files. Please try again in a moment.' ||
+        rawMessage === 'Could not generate files.' ||
+        rawMessage === 'No valid file changes were returned. Try again.' ||
+        rawMessage === 'Could not save updated files.' ||
+        rawMessage === 'This Easy Code project has reached the file limit.'
+      ) ? rawMessage : 'Could not generate files.'
+    return NextResponse.json({ error: message }, { status: timeoutHit ? 504 : 500 })
   }
 }

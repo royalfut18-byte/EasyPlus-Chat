@@ -282,6 +282,7 @@ function buildFallbackStaticSite(prompt: string, reason: string): EasyCodeAiResu
   --accent-2: #7c3cff;
   --line: rgba(255, 255, 255, 0.12);
 }
+
 * { box-sizing: border-box; }
 html { scroll-behavior: smooth; }
 body {
@@ -430,6 +431,124 @@ Open index.html in a browser. Edit the copy, prices, phone number, and email dir
   }
 }
 
+function buildFallbackStaticEdit(files: EasyCodeFile[], instruction: string, reason: string): EasyCodeAiResult {
+  const fileMap = new Map(files.map(file => [file.path.toLowerCase(), file]))
+  const index = fileMap.get('index.html')
+  const styles = fileMap.get('styles.css')
+  const script = fileMap.get('script.js')
+  const summary = `${reason} Easy Code applied a safe starter edit to the static site.`
+  const lowerInstruction = instruction.toLowerCase()
+  const wantsPricing = /\b(pricing|prices|packages|plans)\b/.test(lowerInstruction)
+  const wantsPremium = /\b(premium|better|visual|appealing|modern|polished|animations?|improve)\b/.test(lowerInstruction)
+  const operations: EasyCodeAiFile[] = []
+
+  if (index) {
+    let html = index.content
+    if (wantsPricing && !/\bid=["']pricing["']/i.test(html)) {
+      const pricingSection = `
+    <section id="pricing" class="section pricing-section">
+      <p class="section-kicker">Packages</p>
+      <h2>Choose the perfect clean.</h2>
+      <div class="pricing-grid">
+        <article><span>Express</span><strong>$29</strong><p>Quick exterior shine for busy days.</p></article>
+        <article class="featured"><span>Premium</span><strong>$79</strong><p>Interior refresh, exterior wash, and tire shine.</p></article>
+        <article><span>Signature</span><strong>$149</strong><p>Full detail with protection and finishing touches.</p></article>
+      </div>
+    </section>
+`
+      html = html.replace(/(\s*<section id=["']contact["'][\s\S]*$)/i, `${pricingSection}$1`)
+    }
+    if (wantsPremium && !/premium-ribbon/.test(html)) {
+      html = html.replace(/(<div class=["']hero-content["'][^>]*>)/i, `$1\n        <span class="premium-ribbon">Premium finish. Local service. Fast booking.</span>`)
+    }
+    operations.push({ path: 'index.html', language: 'html', content: html, operation: 'update' })
+  }
+
+  if (styles) {
+    const premiumCss = `
+
+/* Easy Code premium edit */
+.premium-ribbon {
+  display: inline-flex;
+  margin-bottom: 18px;
+  border: 1px solid rgba(255,255,255,0.16);
+  border-radius: 999px;
+  padding: 8px 14px;
+  color: #dff7ff;
+  background: linear-gradient(135deg, rgba(57,213,255,0.16), rgba(124,60,255,0.18));
+  box-shadow: 0 16px 40px rgba(57,213,255,0.12);
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+.pricing-section { position: relative; }
+.pricing-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 18px;
+  margin-top: 26px;
+}
+.pricing-grid article {
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  padding: 24px;
+  background: rgba(255,255,255,0.06);
+}
+.pricing-grid .featured {
+  background: linear-gradient(145deg, rgba(57,213,255,0.16), rgba(124,60,255,0.16));
+  transform: translateY(-6px);
+}
+.pricing-grid span { color: var(--muted); font-weight: 800; }
+.pricing-grid strong {
+  display: block;
+  margin: 12px 0;
+  font-size: 2.4rem;
+  letter-spacing: -0.06em;
+}
+.cards article, .hero-card, .contact, .testimonials {
+  transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+}
+.cards article:hover, .hero-card:hover {
+  transform: translateY(-4px);
+  border-color: rgba(57,213,255,0.28);
+  box-shadow: 0 28px 90px rgba(57,213,255,0.12);
+}
+@media (max-width: 760px) {
+  .pricing-grid { grid-template-columns: 1fr; }
+  .pricing-grid .featured { transform: none; }
+}
+`
+    operations.push({
+      path: 'styles.css',
+      language: 'css',
+      content: styles.content.includes('/* Easy Code premium edit */') ? styles.content : `${styles.content.trim()}\n${premiumCss}`,
+      operation: 'update',
+    })
+  }
+
+  if (script) {
+    const enhancement = `
+
+document.querySelectorAll('.button').forEach((button) => {
+  button.addEventListener('mouseenter', () => button.classList.add('is-hovered'));
+  button.addEventListener('mouseleave', () => button.classList.remove('is-hovered'));
+});`
+    operations.push({
+      path: 'script.js',
+      language: 'javascript',
+      content: script.content.includes("button.classList.add('is-hovered')") ? script.content : `${script.content.trim()}\n${enhancement}`,
+      operation: 'update',
+    })
+  }
+
+  return {
+    summary,
+    framework: 'html',
+    previewType: 'static-html',
+    instructions: ['Review the updated preview.', 'Download ZIP when you are happy with the changes.'],
+    files: operations,
+  }
+}
+
 export function sanitizeEasyCodePrompt(input: unknown): string {
   if (typeof input !== 'string') return ''
   return input.replace(/\s+/g, ' ').trim().slice(0, EASY_CODE_MAX_PROMPT_LENGTH)
@@ -470,7 +589,11 @@ export function validateEasyCodePath(path: unknown): string {
 }
 
 export function normalizeAiResult(raw: any): EasyCodeAiResult {
-  const files = Array.isArray(raw?.files) ? raw.files : []
+  const files = Array.isArray(raw?.files)
+    ? raw.files
+    : Array.isArray(raw?.operations)
+      ? raw.operations
+      : []
   const cleanFiles = files.slice(0, EASY_CODE_MAX_FILES_PER_AI_CALL).map((file: any) => {
     const operation = ['create', 'update', 'delete', 'rename'].includes(file?.operation)
       ? file.operation as EasyCodeOperation
@@ -1155,17 +1278,23 @@ export async function generateEasyCodeFiles(input: {
   projectId?: string
 }): Promise<EasyCodeAiResult> {
   const staticLandingPage = input.mode === 'create' && isStaticLandingPageRequest(input.instruction)
+  const staticProjectEdit = input.mode === 'edit' && (
+    input.project.framework === 'html' ||
+    input.files.some(file => file.path.toLowerCase() === 'index.html')
+  )
   const fileTree = input.files.map(file => `${file.path} (${file.language || inferLanguage(file.path)}, ${file.size_bytes} bytes)`).join('\n') || 'No files yet.'
   const selectedFile = input.selectedPath
     ? input.files.find(file => file.path === input.selectedPath)
     : null
   const mentionedFiles = input.files.filter(file => input.instruction.toLowerCase().includes(file.path.toLowerCase()))
-  const keyFiles = input.files.filter(file => /(^|\/)(package\.json|readme\.md|index\.html|src\/app|src\/main|src\/App|app\/page)/i.test(file.path))
-  const contextFiles = Array.from(new Map([
-    ...(selectedFile ? [[selectedFile.path, selectedFile]] as Array<[string, EasyCodeFile]> : []),
-    ...mentionedFiles.map(file => [file.path, file] as [string, EasyCodeFile]),
-    ...keyFiles.map(file => [file.path, file] as [string, EasyCodeFile]),
-  ]).values()).slice(0, 10)
+  const keyFiles = input.files.filter(file => /(^|\/)(package\.json|readme\.md|index\.html|styles\.css|script\.js|src\/app|src\/main|src\/App|app\/page)/i.test(file.path))
+  const contextFiles = staticProjectEdit && input.files.length <= 12
+    ? input.files
+    : Array.from(new Map([
+      ...(selectedFile ? [[selectedFile.path, selectedFile]] as Array<[string, EasyCodeFile]> : []),
+      ...mentionedFiles.map(file => [file.path, file] as [string, EasyCodeFile]),
+      ...keyFiles.map(file => [file.path, file] as [string, EasyCodeFile]),
+    ]).values()).slice(0, 10)
 
   const fileContext = contextFiles.map(file => [
     `--- FILE: ${file.path}`,
@@ -1176,6 +1305,7 @@ export async function generateEasyCodeFiles(input: {
   const system = `You are Easy Code, a Lovable + Codex-style coding workspace inside EasyPlus. Act as a precise coding agent.
 Return only strict JSON with this exact shape:
 {"summary":"...","title":"optional project title","framework":"html|react|next|vite|python|node|other","previewType":"static-html|unsupported","instructions":["..."],"files":[{"path":"relative/path","language":"html|css|javascript|typescript|tsx|python|json|markdown|text","content":"full file content","operation":"create|update|delete|rename","newPath":"optional/new/path"}]}
+You may also return "operations" instead of "files" with the same array shape.
 Rules:
 - Generate complete file contents, not patches.
 - Use only relative paths. No absolute paths, no ../ traversal.
@@ -1186,7 +1316,8 @@ Rules:
 - Keep the first version compact but fully usable. Every created or updated file must have non-empty content.
 - For React/Vite/Next/Python/Node projects, generate files and README/run instructions, but previewType should be unsupported unless there is a root index.html.
 - Do not include secrets or API keys.
-- For edits, update only the files needed.`
+- For edits, preserve the existing working structure and return only changed files as complete replacement content.
+- For static HTML edits, update index.html, styles.css, and script.js as needed. Do not return README only.`
 
   const user = staticLandingPage
     ? `Mode: create
@@ -1203,7 +1334,24 @@ Requirements:
 - include hero, services, benefits, pricing/packages or offers, testimonials, contact CTA, and responsive mobile layout
 - script.js should add small safe interactions only, such as smooth scrolling or CTA handling
 - keep each file concise and complete`
-    : `Mode: ${input.mode}
+    : input.mode === 'edit'
+      ? `Mode: edit
+Project: ${input.project.title}
+Original description: ${input.project.description || ''}
+User requested change: ${input.instruction}
+Selected/open file: ${input.selectedPath || 'none'}
+
+File tree:
+${fileTree}
+
+Recent Easy Code messages:
+${recentMessages || 'None'}
+
+Current relevant file contents:
+${fileContext || 'None'}
+
+Return JSON only. Apply the requested change with minimal targeted operations. If this is a static site, improve the existing HTML/CSS/JS rather than creating a new project.`
+      : `Mode: ${input.mode}
 Project: ${input.project.title}
 Description: ${input.project.description || ''}
 Instruction: ${input.instruction}
@@ -1221,6 +1369,8 @@ ${fileContext || 'None'}`
     projectId: input.projectId || null,
     mode: input.mode,
     staticLandingPage,
+    staticProjectEdit,
+    contextFileCount: contextFiles.length,
   })
   const raw = await callAzureDeepSeekJson([
     { role: 'system', content: system },
@@ -1236,28 +1386,47 @@ ${fileContext || 'None'}`
 export async function applyEasyCodeAiResult(userId: string, projectId: string, aiResult: EasyCodeAiResult) {
   const db = await getDb()
   const existing = await getEasyCodeFiles(userId, projectId)
+  const existingPaths = new Set(existing.map(file => file.path.toLowerCase()))
+  if (aiResult.files.length === 0) {
+    throw new Error('No valid file changes were returned. Try again.')
+  }
   if (existing.length + aiResult.files.filter(file => file.operation === 'create').length > EASY_CODE_MAX_PROJECT_FILES) {
     throw new Error('This Easy Code project has reached the file limit.')
   }
 
   let savedFiles = 0
+  let createdFiles = 0
+  let updatedFiles = 0
+  let deletedFiles = 0
+  let renamedFiles = 0
   console.info('[Easy Code] Applying generated files', {
     projectId,
     returnedFiles: aiResult.files.length,
+    existingFiles: existing.length,
   })
   for (const file of aiResult.files) {
     const path = validateEasyCodePath(file.path)
     if (file.operation === 'delete') {
-      await db.from('easy_code_files').delete().eq('project_id', projectId).eq('user_id', userId).eq('path', path)
+      const { error } = await db.from('easy_code_files').delete().eq('project_id', projectId).eq('user_id', userId).eq('path', path)
+      if (error) {
+        console.error('[Easy Code] File delete failed', { projectId, path, code: error.code })
+        throw new Error('Could not save updated files.')
+      }
+      deletedFiles += 1
       continue
     }
     if (file.operation === 'rename') {
       const newPath = validateEasyCodePath(file.newPath)
-      await db.from('easy_code_files')
+      const { error } = await db.from('easy_code_files')
         .update({ path: newPath, updated_at: new Date().toISOString() })
         .eq('project_id', projectId)
         .eq('user_id', userId)
         .eq('path', path)
+      if (error) {
+        console.error('[Easy Code] File rename failed', { projectId, path, newPath, code: error.code })
+        throw new Error('Could not save updated files.')
+      }
+      renamedFiles += 1
       continue
     }
     const content = file.content || ''
@@ -1272,11 +1441,40 @@ export async function applyEasyCodeAiResult(userId: string, projectId: string, a
       size_bytes: bytesOf(content),
       updated_at: new Date().toISOString(),
     }, { onConflict: 'project_id,path' })
-    if (error) throw error
+    if (error) {
+      console.error('[Easy Code] File upsert failed', { projectId, path, code: error.code })
+      throw new Error('Could not save updated files.')
+    }
+    if (existingPaths.has(path.toLowerCase())) {
+      updatedFiles += 1
+    } else {
+      createdFiles += 1
+    }
     savedFiles += 1
   }
-  await db.from('easy_code_projects').update({ updated_at: new Date().toISOString() }).eq('id', projectId).eq('user_id', userId)
-  console.info('[Easy Code] Applied generated files', { projectId, savedFiles })
+  const { error: projectUpdateError } = await db
+    .from('easy_code_projects')
+    .update({
+      generation_status: 'ready',
+      generation_phase: 'complete',
+      generation_error: null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', projectId)
+    .eq('user_id', userId)
+  if (projectUpdateError) {
+    console.error('[Easy Code] Project status update after edit failed', { projectId, code: projectUpdateError.code })
+    throw new Error('Could not save updated files.')
+  }
+  console.info('[Easy Code] Applied generated files', {
+    projectId,
+    savedFiles,
+    createdFiles,
+    updatedFiles,
+    deletedFiles,
+    renamedFiles,
+    finalStatus: 'ready',
+  })
 }
 
 export async function runEasyCodeEdit(userId: string, projectId: string, instruction: string, selectedPath?: string | null) {
@@ -1288,17 +1486,52 @@ export async function runEasyCodeEdit(userId: string, projectId: string, instruc
   if (!project) throw new Error('Project not found.')
   const cleanInstruction = sanitizeEasyCodePrompt(instruction)
   if (cleanInstruction.length < 3) throw new Error('Describe the change you want.')
+  const staticProjectEdit = project.framework === 'html' ||
+    files.some(file => file.path.toLowerCase() === 'index.html')
+  console.info('[Easy Code] Edit started', {
+    projectId,
+    existingFiles: files.length,
+    selectedPath: selectedPath || null,
+    promptType: staticProjectEdit ? 'static_site' : 'complex',
+  })
 
   const db = await getDb()
   await db.from('easy_code_messages').insert({ project_id: projectId, user_id: userId, role: 'user', content: cleanInstruction })
-  const aiResult = await generateEasyCodeFiles({
-    mode: 'edit',
-    project,
-    files,
-    messages,
-    instruction: cleanInstruction,
-    selectedPath,
+  let aiResult: EasyCodeAiResult
+  try {
+    aiResult = await generateEasyCodeFiles({
+      mode: 'edit',
+      project,
+      files,
+      messages,
+      instruction: cleanInstruction,
+      selectedPath,
+      projectId,
+    })
+  } catch (error: any) {
+    if (!staticProjectEdit) throw error
+    console.warn('[Easy Code] Static edit fallback starting', {
+      projectId,
+      timeoutHit: isTimeoutError(error),
+      message: error?.message,
+      fallbackUsed: true,
+    })
+    const reason = isTimeoutError(error)
+      ? 'The edit request timed out, so'
+      : 'The AI returned invalid file changes, so'
+    aiResult = buildFallbackStaticEdit(files, cleanInstruction, reason)
+  }
+  console.info('[Easy Code] Edit model output parsed', {
+    projectId,
+    operationsCount: aiResult.files.length,
   })
+  if (staticProjectEdit && aiResult.files.length === 0) {
+    console.warn('[Easy Code] Static edit returned no operations, using fallback', {
+      projectId,
+      fallbackUsed: true,
+    })
+    aiResult = buildFallbackStaticEdit(files, cleanInstruction, 'No valid file changes were returned, so')
+  }
   await applyEasyCodeAiResult(userId, projectId, aiResult)
   await db.from('easy_code_messages').insert({
     project_id: projectId,
@@ -1315,6 +1548,12 @@ export async function runEasyCodeEdit(userId: string, projectId: string, instruc
     getEasyCodeFiles(userId, projectId),
     getEasyCodeMessages(userId, projectId),
   ])
+  console.info('[Easy Code] Edit completed', {
+    projectId,
+    filesCount: freshFiles.length,
+    changedFiles: aiResult.files.map(file => file.newPath || file.path),
+    finalStatus: 'ready',
+  })
   return { files: freshFiles, messages: freshMessages, aiResult }
 }
 
