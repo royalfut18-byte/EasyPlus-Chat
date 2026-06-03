@@ -21,6 +21,8 @@ import { sortMessagesChronologically, dedupeMessages, processMessages, processLo
 import { useR2Upload } from '@/hooks/use-r2-upload'
 import { parsePageRangeRequest } from '@/lib/ai/document-requests'
 import { hideGeneratedZipManifestFromDisplay, parseGeneratedZipFromResponse, type GeneratedZipManifest } from '@/lib/generated-zip'
+import { createGeneratedFileAttachment } from '@/lib/generated-file-client'
+import { detectGeneratedFileIntent, getGeneratedFileLabel, getGeneratedFileMimeType, isGeneratedFileArtifactLanguage, type GeneratedFileIntent } from '@/lib/generated-files'
 import type { Conversation, Message, ChatAttachment, Artifact, ReasoningMode } from '@/types/models'
 
 const DEFAULT_PANEL_WIDTH = 560
@@ -143,6 +145,97 @@ Rules:
 - If no artifact is needed, answer normally.${artifactContext}
 
 ---`
+}
+
+function buildGeneratedFileInstructions(intent: GeneratedFileIntent, currentArtifact?: Artifact | null): string {
+  const refinementContext = currentArtifact?.code && isGeneratedFileArtifactLanguage(currentArtifact.language)
+    ? `
+
+CURRENT FILE PREVIEW CONTEXT:
+The user may be refining an existing ${getGeneratedFileLabel(currentArtifact.language)}.
+Preserve the current structure unless the user asked to replace it.
+
+Current title: ${currentArtifact.title}
+Current file type: ${currentArtifact.language}
+Current structured content:
+\`\`\`${currentArtifact.language}
+${currentArtifact.code.slice(0, 45000)}
+\`\`\`
+
+If the user asks to add slides, improve visuals, change tone, add sections, or make it more professional, update this structured content and return one full replacement artifact block.`
+    : ''
+
+  const specificRules = intent.extension === 'pptx'
+    ? `- Return exactly one \`artifact:${intent.kind}:Title\` block.
+- Inside the block, output structured JSON only. Do not output markdown prose inside the artifact block.
+- Use this schema:
+  {"title":"...","subtitle":"optional","theme":{"style":"modern|minimal|canva-style","accentColor":"#3B82F6"},"slides":[{"title":"...","bullets":["..."],"speakerNotes":"optional"}]}
+- Create a real presentation outline, not fake binary, base64, HTML, or markdown renamed as .pptx.
+- For presentation requests, produce about 6-8 substantive slides unless the user asked for a different count.
+- If the user asked for Canva-style slides, make the theme stylish and presentation-ready, but do not claim it is a native Canva file.`
+    : intent.extension === 'docx'
+      ? `- Return exactly one \`artifact:${intent.kind}:Title\` block.
+- Inside the block, output structured JSON or clean markdown only.
+- Preferred JSON schema:
+  {"title":"...","subtitle":"optional","sections":[{"heading":"...","paragraphs":["..."],"bullets":["..."],"table":{"headers":["..."],"rows":[["..."]]}}]}
+- Create a real document structure, not fake binary, base64, or markdown renamed as .docx.`
+      : `- Return exactly one \`artifact:pdf:Title\` block.
+- Inside the block, output structured JSON or clean markdown only.
+- Preferred JSON schema:
+  {"title":"...","subtitle":"optional","sections":[{"heading":"...","paragraphs":["..."],"bullets":["..."]}]}
+- Create a real document/report structure, not fake binary, base64, or HTML renamed as .pdf.
+- If the user asked for a downloadable report/export, structure it for a polished PDF.`
+
+  return `[REAL FILE GENERATION ENABLED]
+
+EasyPlus can create a real downloadable ${intent.label} server-side.
+Your job is to generate structured content only. Do not generate fake binary data, base64, JSON pretending to be a file, or a text file renamed as a real file.
+
+${specificRules}
+- The visible assistant text outside the artifact block should be short and clear.
+- The app will generate the actual ${intent.extension.toUpperCase()} file from the structured content.
+- Do not output raw HTML unless the user explicitly asked for an interactive web artifact.
+${refinementContext}
+
+---`
+}
+
+function hydrateArtifactWithAttachment(artifact: Artifact | null, attachments?: ChatAttachment[] | null): Artifact | null {
+  if (!artifact || !attachments?.length || !isGeneratedFileArtifactLanguage(artifact.language)) return artifact
+  const expectedMimeType = getGeneratedFileMimeType(artifact.language)
+  const candidate = attachments.find((attachment) => attachment.mimeType === expectedMimeType && attachment.generated)
+  return candidate ? { ...artifact, generatedAttachment: candidate } : artifact
+}
+
+function mergeAttachments(
+  existing: ChatAttachment[] | null | undefined,
+  ...incomingGroups: Array<Array<ChatAttachment | null | undefined> | null | undefined>
+): ChatAttachment[] | undefined {
+  const merged: ChatAttachment[] = [...(existing || [])]
+  const seen = new Set(
+    merged.map((attachment) => (
+      attachment.attachmentId ||
+      attachment.storageKey ||
+      attachment.storagePath ||
+      `${attachment.name}|${attachment.mimeType}|${attachment.size || 0}`
+    ))
+  )
+
+  for (const group of incomingGroups) {
+    for (const attachment of group || []) {
+      if (!attachment) continue
+      const key = attachment.attachmentId ||
+        attachment.storageKey ||
+        attachment.storagePath ||
+        `${attachment.name}|${attachment.mimeType}|${attachment.size || 0}`
+
+      if (seen.has(key)) continue
+      seen.add(key)
+      merged.push(attachment)
+    }
+  }
+
+  return merged.length > 0 ? merged : undefined
 }
 
 async function createGeneratedZip(
@@ -376,6 +469,41 @@ export default function ChatPage() {
   const projectId = searchParams.get('projectId')
   const queryConversationId = searchParams.get('conversationId')
   const supabase = useMemo(() => createClient(), [])
+
+  const resolveGeneratedFileArtifact = async (
+    artifact: Artifact,
+    conversationId: string,
+    requestId: string
+  ): Promise<{ artifact: Artifact | null; attachment: ChatAttachment | null; errorMessage: string | null }> => {
+    if (!isGeneratedFileArtifactLanguage(artifact.language)) {
+      return { artifact, attachment: null, errorMessage: null }
+    }
+
+    try {
+      const result = await createGeneratedFileAttachment({
+        artifact,
+        conversationId,
+        projectId,
+        requestId,
+      })
+
+      return {
+        artifact: {
+          ...artifact,
+          code: result.previewText || artifact.code,
+          generatedAttachment: result.attachment,
+        },
+        attachment: result.attachment,
+        errorMessage: null,
+      }
+    } catch (error: any) {
+      return {
+        artifact: null,
+        attachment: null,
+        errorMessage: error?.message || 'The file could not be generated correctly. Please try again.',
+      }
+    }
+  }
 
   const setPendingResponse = (conversationId: string, pending: PendingResponse) => {
     pendingResponsesRef.current = { ...pendingResponsesRef.current, [conversationId]: pending }
@@ -1029,6 +1157,7 @@ export default function ChatPage() {
     const clientAssistantMessageId = crypto.randomUUID()
     const requestId = crypto.randomUUID()
     const requestArtifactMode = artifactMode
+    const requestGeneratedFileIntent = detectGeneratedFileIntent(trimmedContent)
     const requestWebSearchEnabled = webSearchEnabled
     const requestReasoningMode = reasoningMode
 
@@ -1138,15 +1267,17 @@ export default function ChatPage() {
     // 6. Add assistant placeholder exactly once with correct timestamp
     const isLongTask = isLongTaskClient(trimmedContent, safeAttachments)
     const hasAttachments = safeAttachments && safeAttachments.length > 0
-    const loadingMarker = requestArtifactMode
+    const loadingMarker = (requestArtifactMode || requestGeneratedFileIntent)
       ? ARTIFACT_LOADING_MARKER
       : isLongTask
         ? LONG_TASK_LOADING_MARKER
         : ASSISTANT_LOADING_MARKER
 
     // Determine initial status label based on reasoning mode
-    const initialStatusLabel = requestArtifactMode
-      ? 'Creating artifact...'
+    const initialStatusLabel = requestGeneratedFileIntent
+      ? `Preparing ${requestGeneratedFileIntent.extension.toUpperCase()} file...`
+      : requestArtifactMode
+        ? 'Creating artifact...'
       : hasAttachments
         ? 'Reading attached files...'
         : requestWebSearchEnabled
@@ -1182,7 +1313,7 @@ export default function ChatPage() {
       requestId,
       startedAt: assistantCreatedAt,
       model: modelToUse,
-      mode: requestArtifactMode ? 'artifact' : 'normal',
+      mode: (requestArtifactMode || requestGeneratedFileIntent) ? 'artifact' : 'normal',
       status: 'thinking',
       loadingMarker,
     })
@@ -1215,7 +1346,13 @@ export default function ChatPage() {
             : undefined),
       }))
 
-      if (requestArtifactMode) {
+      if (requestGeneratedFileIntent) {
+        messagesToSend.unshift({
+          role: 'user',
+          content: buildGeneratedFileInstructions(requestGeneratedFileIntent, activeArtifact),
+          attachments: undefined,
+        })
+      } else if (requestArtifactMode) {
         messagesToSend.unshift({
           role: 'user',
           content: buildArtifactModeInstructions(activeArtifact),
@@ -1384,9 +1521,17 @@ export default function ChatPage() {
       const generatedZipAttachment = generatedZipManifest
         ? await createGeneratedZip(generatedZipManifest, sendConversationId, projectId, requestId)
         : null
-      const withGeneratedZip = (message: Message) => generatedZipAttachment
-        ? { attachments: [...(message.attachments || []), generatedZipAttachment] }
-        : {}
+      const withGeneratedOutputs = (
+        message: Message,
+        generatedFileAttachment?: ChatAttachment | null
+      ) => {
+        const attachments = mergeAttachments(
+          message.attachments,
+          generatedZipAttachment ? [generatedZipAttachment] : null,
+          generatedFileAttachment ? [generatedFileAttachment] : null
+        )
+        return attachments ? { attachments } : {}
+      }
 
       // 10. Parse artifact if enabled and update final message
       if (requestArtifactMode) {
@@ -1397,13 +1542,40 @@ export default function ChatPage() {
         )
 
         if (artifact) {
+          const generatedFileResult = await resolveGeneratedFileArtifact(artifact, sendConversationId, requestId)
+          if (generatedFileResult.errorMessage) {
+            if (selectedConversationIdRef.current === sendConversationId) {
+              setMessages((prev) =>
+                processMessages(
+                  prev.map((m) =>
+                    m.id === clientAssistantMessageId
+                      ? {
+                          ...m,
+                          ...withGeneratedOutputs(m),
+                          content: generatedFileResult.errorMessage || 'The file could not be generated correctly. Please try again.',
+                          status: 'completed' as const,
+                          statusLabel: null,
+                        }
+                      : m
+                  ),
+                  sendConversationId
+                )
+              )
+            }
+            return
+          }
+
+          const resolvedArtifact = generatedFileResult.artifact || artifact
+
           if (process.env.NODE_ENV !== 'production') {
-            console.log('[Chat] Artifact detected:', artifact.title)
+            console.log('[Chat] Artifact detected:', resolvedArtifact.title)
           }
 
           let finalContent = cleanContent.trim()
           if (!finalContent) {
-            finalContent = `I created an artifact for you: **${artifact.title}**.`
+            finalContent = isGeneratedFileArtifactLanguage(resolvedArtifact.language)
+              ? `I created a ${getGeneratedFileLabel(resolvedArtifact.language)} for you: **${resolvedArtifact.title}**.`
+              : `I created an artifact for you: **${resolvedArtifact.title}**.`
           }
 
           // Update with artifact - only if still on this conversation
@@ -1412,21 +1584,28 @@ export default function ChatPage() {
               processMessages(
                 prev.map((m) =>
                   m.id === clientAssistantMessageId
-                    ? { ...m, ...withGeneratedZip(m), content: finalContent, artifact, status: 'completed' as const, statusLabel: null }
+                    ? {
+                        ...m,
+                        ...withGeneratedOutputs(m, generatedFileResult.attachment),
+                        content: finalContent,
+                        artifact: resolvedArtifact,
+                        status: 'completed' as const,
+                        statusLabel: null,
+                      }
                     : m
                 ),
                 sendConversationId
               )
             )
 
-            setActiveArtifact(artifact)
+            setActiveArtifact(resolvedArtifact)
             setIsArtifactOpen(true)
             setArtifactMessageId(clientAssistantMessageId)
           }
 
           // Save artifact to localStorage
-          saveArtifact(artifact, sendConversationId, clientAssistantMessageId)
-          saveProjectArtifact(projectId, artifact, sendConversationId, clientAssistantMessageId)
+          saveArtifact(resolvedArtifact, sendConversationId, clientAssistantMessageId)
+          saveProjectArtifact(projectId, resolvedArtifact, sendConversationId, clientAssistantMessageId)
         } else {
           // No artifact found - update with normal response
           if (process.env.NODE_ENV !== 'production') {
@@ -1439,7 +1618,13 @@ export default function ChatPage() {
               processMessages(
                 prev.map((m) =>
                   m.id === clientAssistantMessageId
-                    ? { ...m, ...withGeneratedZip(m), content: zipCleanContent || 'I could not create an artifact from this response.', status: 'completed' as const, statusLabel: null }
+                    ? {
+                        ...m,
+                        ...withGeneratedOutputs(m),
+                        content: zipCleanContent || 'I could not create an artifact from this response.',
+                        status: 'completed' as const,
+                        statusLabel: null,
+                      }
                     : m
                 ),
                 sendConversationId
@@ -1459,13 +1644,40 @@ export default function ChatPage() {
           )
 
           if (artifact) {
+            const generatedFileResult = await resolveGeneratedFileArtifact(artifact, sendConversationId, requestId)
+            if (generatedFileResult.errorMessage) {
+              if (selectedConversationIdRef.current === sendConversationId) {
+                setMessages((prev) =>
+                  processMessages(
+                    prev.map((m) =>
+                      m.id === clientAssistantMessageId
+                        ? {
+                            ...m,
+                            ...withGeneratedOutputs(m),
+                            content: generatedFileResult.errorMessage || 'The file could not be generated correctly. Please try again.',
+                            status: 'completed' as const,
+                            statusLabel: null,
+                          }
+                        : m
+                    ),
+                    sendConversationId
+                  )
+                )
+              }
+              return
+            }
+
+            const resolvedArtifact = generatedFileResult.artifact || artifact
+
             if (process.env.NODE_ENV !== 'production') {
-              console.log('[Chat] Artifact auto-detected (fallback):', artifact.title)
+              console.log('[Chat] Artifact auto-detected (fallback):', resolvedArtifact.title)
             }
 
             let finalContent = cleanContent.trim()
             if (!finalContent) {
-              finalContent = `I created an artifact for you: **${artifact.title}**.`
+              finalContent = isGeneratedFileArtifactLanguage(resolvedArtifact.language)
+                ? `I created a ${getGeneratedFileLabel(resolvedArtifact.language)} for you: **${resolvedArtifact.title}**.`
+                : `I created an artifact for you: **${resolvedArtifact.title}**.`
             }
 
             if (selectedConversationIdRef.current === sendConversationId) {
@@ -1473,21 +1685,28 @@ export default function ChatPage() {
                 processMessages(
                   prev.map((m) =>
                     m.id === clientAssistantMessageId
-                      ? { ...m, ...withGeneratedZip(m), content: finalContent, artifact, status: 'completed' as const, statusLabel: null }
-                      : m
-                  ),
-                  sendConversationId
-                )
+                      ? {
+                          ...m,
+                          ...withGeneratedOutputs(m, generatedFileResult.attachment),
+                          content: finalContent,
+                          artifact: resolvedArtifact,
+                          status: 'completed' as const,
+                          statusLabel: null,
+                        }
+                    : m
+                ),
+                sendConversationId
+              )
               )
 
-              setActiveArtifact(artifact)
+              setActiveArtifact(resolvedArtifact)
               setIsArtifactOpen(true)
               setArtifactMessageId(clientAssistantMessageId)
             }
 
             // Save artifact to localStorage for persistence
-            saveArtifact(artifact, sendConversationId, clientAssistantMessageId)
-            saveProjectArtifact(projectId, artifact, sendConversationId, clientAssistantMessageId)
+            saveArtifact(resolvedArtifact, sendConversationId, clientAssistantMessageId)
+            saveProjectArtifact(projectId, resolvedArtifact, sendConversationId, clientAssistantMessageId)
           } else {
             // No artifact found - update with normal response
             if (selectedConversationIdRef.current === sendConversationId) {
@@ -1495,7 +1714,13 @@ export default function ChatPage() {
                 processMessages(
                   prev.map((m) =>
                     m.id === clientAssistantMessageId
-                      ? { ...m, ...withGeneratedZip(m), content: zipCleanContent || 'I received an empty response.', status: 'completed' as const, statusLabel: null }
+                      ? {
+                          ...m,
+                          ...withGeneratedOutputs(m),
+                          content: zipCleanContent || 'I received an empty response.',
+                          status: 'completed' as const,
+                          statusLabel: null,
+                        }
                       : m
                   ),
                   sendConversationId
@@ -1510,7 +1735,13 @@ export default function ChatPage() {
               processMessages(
                 prev.map((m) =>
                   m.id === clientAssistantMessageId
-                    ? { ...m, ...withGeneratedZip(m), content: zipCleanContent || 'I received an empty response.', status: 'completed' as const, statusLabel: null }
+                    ? {
+                        ...m,
+                        ...withGeneratedOutputs(m),
+                        content: zipCleanContent || 'I received an empty response.',
+                        status: 'completed' as const,
+                        statusLabel: null,
+                      }
                     : m
                 ),
                 sendConversationId
@@ -1786,19 +2017,22 @@ export default function ChatPage() {
     const requestId = crypto.randomUUID()
     const clientAssistantMessageId = crypto.randomUUID()
     const requestArtifactMode = artifactMode
+    const requestGeneratedFileIntent = detectGeneratedFileIntent(trimmedContent)
     const requestWebSearchEnabled = webSearchEnabled
     const requestReasoningMode = reasoningMode
     const modelToUse = currentConversation.model_used || selectedModel
     const isLongTask = isLongTaskClient(trimmedContent, userMessage.attachments)
     const hasAttachments = !!userMessage.attachments?.length
-    const loadingMarker = requestArtifactMode
+    const loadingMarker = (requestArtifactMode || requestGeneratedFileIntent)
       ? ARTIFACT_LOADING_MARKER
       : isLongTask
         ? LONG_TASK_LOADING_MARKER
         : ASSISTANT_LOADING_MARKER
 
-    const initialStatusLabel = requestArtifactMode
-      ? 'Creating artifact...'
+    const initialStatusLabel = requestGeneratedFileIntent
+      ? `Preparing ${requestGeneratedFileIntent.extension.toUpperCase()} file...`
+      : requestArtifactMode
+        ? 'Creating artifact...'
       : hasAttachments
         ? 'Reading attached files...'
         : requestWebSearchEnabled
@@ -1852,7 +2086,7 @@ export default function ChatPage() {
       requestId,
       startedAt: assistantPlaceholder.created_at,
       model: modelToUse,
-      mode: requestArtifactMode ? 'artifact' : 'normal',
+      mode: (requestArtifactMode || requestGeneratedFileIntent) ? 'artifact' : 'normal',
       status: 'thinking',
       loadingMarker,
     })
@@ -1877,7 +2111,13 @@ export default function ChatPage() {
             : undefined),
       }))
 
-      if (requestArtifactMode) {
+      if (requestGeneratedFileIntent) {
+        messagesToSend.unshift({
+          role: 'user',
+          content: buildGeneratedFileInstructions(requestGeneratedFileIntent, activeArtifact),
+          attachments: undefined,
+        })
+      } else if (requestArtifactMode) {
         messagesToSend.unshift({
           role: 'user',
           content: buildArtifactModeInstructions(activeArtifact),
@@ -1962,7 +2202,42 @@ export default function ChatPage() {
         true,
         trimmedContent
       )
-      const finalContent = artifact ? cleanContent : zipCleanContent
+      const generatedFileResult = artifact
+        ? await resolveGeneratedFileArtifact(artifact, conversationId, requestId)
+        : { artifact: null, attachment: null, errorMessage: null }
+      if (generatedFileResult.errorMessage) {
+        if (selectedConversationIdRef.current === conversationId) {
+          setMessages((prev) =>
+            processMessages(
+              prev.map((message) =>
+                message.id === clientAssistantMessageId
+                  ? {
+                      ...message,
+                      ...(mergeAttachments(
+                        message.attachments,
+                        generatedZipAttachment ? [generatedZipAttachment] : null
+                      ) ? {
+                        attachments: mergeAttachments(
+                          message.attachments,
+                          generatedZipAttachment ? [generatedZipAttachment] : null
+                        ),
+                      } : {}),
+                      content: generatedFileResult.errorMessage || 'The file could not be generated correctly. Please try again.',
+                      status: 'completed' as const,
+                      statusLabel: null,
+                    }
+                  : message
+              ),
+              conversationId
+            )
+          )
+        }
+        return
+      }
+      const resolvedArtifact = generatedFileResult.artifact || artifact
+      const finalContent = resolvedArtifact
+        ? cleanContent
+        : zipCleanContent
 
       if (selectedConversationIdRef.current === conversationId) {
         setMessages((prev) =>
@@ -1971,9 +2246,19 @@ export default function ChatPage() {
               message.id === clientAssistantMessageId
                 ? {
                     ...message,
-                    ...(generatedZipAttachment ? { attachments: [...(message.attachments || []), generatedZipAttachment] } : {}),
+                    ...(mergeAttachments(
+                      message.attachments,
+                      generatedZipAttachment ? [generatedZipAttachment] : null,
+                      generatedFileResult.attachment ? [generatedFileResult.attachment] : null
+                    ) ? {
+                      attachments: mergeAttachments(
+                        message.attachments,
+                        generatedZipAttachment ? [generatedZipAttachment] : null,
+                        generatedFileResult.attachment ? [generatedFileResult.attachment] : null
+                      ),
+                    } : {}),
                     content: finalContent,
-                    artifact,
+                    artifact: resolvedArtifact,
                     status: 'completed' as const,
                     statusLabel: null,
                   }
@@ -1983,12 +2268,12 @@ export default function ChatPage() {
           )
         )
 
-        if (artifact) {
-          setActiveArtifact(artifact)
+        if (resolvedArtifact) {
+          setActiveArtifact(resolvedArtifact)
           setArtifactMessageId(clientAssistantMessageId)
           setIsArtifactOpen(true)
-          saveArtifact(artifact, conversationId, clientAssistantMessageId)
-          saveProjectArtifact(projectId, artifact, conversationId, clientAssistantMessageId)
+          saveArtifact(resolvedArtifact, conversationId, clientAssistantMessageId)
+          saveProjectArtifact(projectId, resolvedArtifact, conversationId, clientAssistantMessageId)
         }
       }
     } catch (error: any) {
@@ -2746,7 +3031,11 @@ export default function ChatPage() {
                     const parsedArtifactResponse = message.role === 'assistant' && message.content && !message.artifact
                       ? parseArtifactFromResponse(message.content, true, '')
                       : null
-                    const artifactForMessage = message.artifact || parsedArtifactResponse?.artifact || (artifactMessageId === message.id ? activeArtifact : null)
+                    const rawArtifactForMessage =
+                      message.artifact ||
+                      parsedArtifactResponse?.artifact ||
+                      (artifactMessageId === message.id ? activeArtifact : null)
+                    const artifactForMessage = hydrateArtifactWithAttachment(rawArtifactForMessage, message.attachments)
                     const contentForMessage = parsedArtifactResponse?.artifact
                       ? parsedArtifactResponse.cleanContent
                       : message.content

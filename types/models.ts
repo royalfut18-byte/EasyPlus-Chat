@@ -198,8 +198,9 @@ export interface Message {
 export interface Artifact {
   id: string
   title: string
-  language: 'html' | 'tsx' | 'jsx' | 'javascript' | 'typescript' | 'css' | 'python' | 'markdown' | 'json' | 'svg' | 'text' | 'docx' | 'xlsx' | 'pptx' | 'gdoc' | 'gsheet' | 'gslides' | 'canva'
+  language: 'html' | 'tsx' | 'jsx' | 'javascript' | 'typescript' | 'css' | 'python' | 'markdown' | 'json' | 'svg' | 'text' | 'docx' | 'xlsx' | 'pptx' | 'gdoc' | 'gsheet' | 'gslides' | 'canva' | 'pdf'
   code: string
   explanation?: string
+  generatedAttachment?: ChatAttachment | null
   createdAt: string
 }

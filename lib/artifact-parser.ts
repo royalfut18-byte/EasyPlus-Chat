@@ -1,4 +1,5 @@
 import type { Artifact } from '@/types/models'
+import { getGeneratedFileLabel, isGeneratedFileArtifactLanguage } from '@/lib/generated-files'
 
 const BUILDABLE_KEYWORDS = [
   'make', 'build', 'create', 'design', 'code', 'website', 'landing page',
@@ -15,7 +16,7 @@ const BUILDABLE_KEYWORDS = [
 
 const SUPPORTED_LANGUAGES = new Set([
   'html', 'tsx', 'jsx', 'javascript', 'typescript', 'css', 'python', 'markdown', 'json', 'svg', 'text',
-  'docx', 'xlsx', 'pptx', 'gdoc', 'gsheet', 'gslides', 'canva'
+  'docx', 'xlsx', 'pptx', 'gdoc', 'gsheet', 'gslides', 'canva', 'pdf'
 ])
 
 function normalizeLanguage(language?: string): Artifact['language'] | null {
@@ -37,6 +38,7 @@ function normalizeLanguage(language?: string): Artifact['language'] | null {
     txt: 'text',
     doc: 'docx',
     word: 'docx',
+    pdf: 'pdf',
     docs: 'gdoc',
     google_doc: 'gdoc',
     google_docs: 'gdoc',
@@ -160,10 +162,14 @@ function buildCleanContent(content: string, fullMatch: string, artifact: Artifac
   if (beforeArtifact) {
     cleanContent += beforeArtifact + '\n\n'
   }
-  const previewLabel = ['html', 'canva', 'markdown', 'json', 'svg', 'css', 'javascript', 'text', 'docx', 'gdoc', 'xlsx', 'gsheet', 'pptx', 'gslides'].includes(artifact.language)
+  const previewLabel = ['html', 'canva', 'markdown', 'json', 'svg', 'css', 'javascript', 'text', 'docx', 'gdoc', 'xlsx', 'gsheet', 'pptx', 'gslides', 'pdf'].includes(artifact.language)
     ? 'preview, edit, and download'
     : 'view, copy, and download'
-  cleanContent += `**Artifact created: ${artifact.title}**\n\n_Open the artifact panel to ${previewLabel} it._`
+  if (isGeneratedFileArtifactLanguage(artifact.language)) {
+    cleanContent += `**${getGeneratedFileLabel(artifact.language)} created: ${artifact.title}**\n\n_Open the preview panel to review it. The real downloadable file will be attached separately._`
+  } else {
+    cleanContent += `**Artifact created: ${artifact.title}**\n\n_Open the artifact panel to ${previewLabel} it._`
+  }
   if (afterArtifact) {
     cleanContent += '\n\n' + afterArtifact
   }

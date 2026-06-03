@@ -16,6 +16,7 @@ import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { toast } from '@/components/ui/use-toast'
 import { cleanAssistantText } from '@/lib/ai/format-response'
+import { getGeneratedFileLabel, isGeneratedFileArtifactLanguage } from '@/lib/generated-files'
 import 'katex/dist/katex.min.css'
 
 import type { ChatAttachment, Artifact } from '@/types/models'
@@ -96,6 +97,11 @@ export function MessageBubble({ role, content, model, onRegenerate, attachments,
   const isShowingStatus = !!activeStatus && !isUser
 
   const hasArtifactCard = !isUser && (hasArtifact || (artifact && artifact.title && artifact.code))
+  const artifactSubtitle = artifact
+    ? isGeneratedFileArtifactLanguage(artifact.language)
+      ? `${getGeneratedFileLabel(artifact.language)} preview`
+      : `${artifact.language} artifact`
+    : null
 
   const copyToClipboard = () => {
     if (typeof navigator !== 'undefined' && navigator.clipboard) {
@@ -215,6 +221,10 @@ export function MessageBubble({ role, content, model, onRegenerate, attachments,
                       <ImageIcon className="h-5 w-5 text-purple-400 shrink-0" />
                     ) : attachment.mimeType === 'application/pdf' ? (
                       <FileText className="h-5 w-5 text-red-400 shrink-0" />
+                    ) : attachment.mimeType === 'application/vnd.openxmlformats-officedocument.presentationml.presentation' ? (
+                      <FileText className="h-5 w-5 text-orange-300 shrink-0" />
+                    ) : attachment.mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ? (
+                      <FileText className="h-5 w-5 text-blue-300 shrink-0" />
                     ) : attachment.mimeType === 'text/csv' ? (
                       <FileSpreadsheet className="h-5 w-5 text-green-400 shrink-0" />
                     ) : attachment.mimeType === 'application/json' ? (
@@ -230,6 +240,8 @@ export function MessageBubble({ role, content, model, onRegenerate, attachments,
                         {attachment.mimeType === 'application/zip' ? 'ZIP package' :
                          attachment.type === 'image' ? 'Image file' :
                          attachment.mimeType === 'application/pdf' ? 'PDF document' :
+                         attachment.mimeType === 'application/vnd.openxmlformats-officedocument.presentationml.presentation' ? 'PowerPoint file' :
+                         attachment.mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ? 'Word document' :
                          attachment.mimeType === 'text/csv' ? 'CSV file' :
                          attachment.mimeType === 'application/json' ? 'JSON file' :
                          attachment.mimeType === 'text/markdown' ? 'Markdown file' :
@@ -388,7 +400,7 @@ export function MessageBubble({ role, content, model, onRegenerate, attachments,
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="font-semibold text-white truncate">{artifact.title}</p>
-                        <p className="text-xs text-gray-400 capitalize">{artifact.language} artifact</p>
+                        <p className="text-xs text-gray-400 capitalize">{artifactSubtitle}</p>
                       </div>
                     </div>
                     <Button
@@ -397,7 +409,7 @@ export function MessageBubble({ role, content, model, onRegenerate, attachments,
                       className="bg-violet-600/80 hover:bg-violet-600 text-white shrink-0"
                     >
                       <PanelRightOpen className="h-4 w-4 mr-2" />
-                      Open Artifact
+                      {artifact && isGeneratedFileArtifactLanguage(artifact.language) ? 'Open Preview' : 'Open Artifact'}
                     </Button>
                   </div>
                 </div>

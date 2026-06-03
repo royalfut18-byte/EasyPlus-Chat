@@ -6,6 +6,7 @@ import { useState, useEffect, useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { Artifact } from '@/types/models'
 import { toast } from '@/components/ui/use-toast'
+import { getGeneratedFileExtension, getGeneratedFileLabel, isGeneratedFileArtifactLanguage } from '@/lib/generated-files'
 import { cn } from '@/lib/utils'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism'
@@ -38,6 +39,7 @@ const PREVIEWABLE_LANGUAGES = new Set([
   'gsheet',
   'pptx',
   'gslides',
+  'pdf',
 ])
 
 function escapeXml(value: string): string {
@@ -1116,6 +1118,11 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
 
   const canPreview = !!artifact && PREVIEWABLE_LANGUAGES.has(artifact.language)
   const isReact = artifact?.language === 'tsx' || artifact?.language === 'jsx'
+  const isGeneratedFilePreview = !!artifact && isGeneratedFileArtifactLanguage(artifact.language)
+  const generatedDownloadExtension =
+    artifact && isGeneratedFileArtifactLanguage(artifact.language)
+      ? getGeneratedFileExtension(artifact.language)
+      : null
   const currentTab = activeTab
 
   const getPreviewSrcDoc = (artifact: Artifact): string => {
@@ -1123,6 +1130,7 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
     if (artifact.language === 'html') return createPreviewHtml(artifact.title, artifact.code)
     if (artifact.language === 'docx' || artifact.language === 'gdoc') return createMarkdownPreviewHtml(artifact.title, artifact.code)
     if (artifact.language === 'pptx' || artifact.language === 'gslides') return createPresentationPreviewHtml(artifact.title, artifact.code)
+    if (artifact.language === 'pdf') return createMarkdownPreviewHtml(artifact.title, artifact.code)
     if (artifact.language === 'xlsx' || artifact.language === 'gsheet') return createTablePreviewHtml(artifact.title, artifact.code)
     if (artifact.language === 'markdown') return createMarkdownPreviewHtml(artifact.title, artifact.code)
     if (artifact.language === 'json') return createJsonPreviewHtml(artifact.title, artifact.code)
@@ -1138,6 +1146,10 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
 
     const lang = artifact.language
     const code = artifact.code || ''
+
+    if (isGeneratedFileArtifactLanguage(lang)) {
+      return getGeneratedFileLabel(lang)
+    }
 
     // HTML artifacts with inline CSS/JS
     if (lang === 'html') {
@@ -1162,15 +1174,34 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
     if (lang === 'markdown') return 'Markdown'
     if (lang === 'json') return 'JSON'
     if (lang === 'svg') return 'SVG'
-    if (lang === 'docx') return 'Microsoft Word'
-    if (lang === 'gdoc') return 'Google Docs'
     if (lang === 'xlsx') return 'Excel'
     if (lang === 'gsheet') return 'Google Sheets'
-    if (lang === 'pptx') return 'PowerPoint'
-    if (lang === 'gslides') return 'Google Slides'
     if (lang === 'canva') return 'Canva-style HTML'
 
     return lang.toUpperCase()
+  }
+
+  const getArtifactSubtitle = (artifact: Artifact | null): string => {
+    if (!artifact) return 'No artifact selected'
+    if (isGeneratedFileArtifactLanguage(artifact.language)) {
+      return `${getGeneratedFileLabel(artifact.language)} preview`
+    }
+    return `${getLanguageLabel(artifact)} artifact`
+  }
+
+  const getGeneratedFileDownloadUrl = (artifact: Artifact): string | null => {
+    if (!isGeneratedFileArtifactLanguage(artifact.language)) return null
+    const attachment = artifact.generatedAttachment
+    if (attachment?.attachmentId) {
+      return `/api/attachments/file?attachmentId=${encodeURIComponent(attachment.attachmentId)}&download=1`
+    }
+    const storageKey = attachment?.storageKey || attachment?.storagePath
+    if (storageKey) {
+      const name = attachment?.name || `${artifact.title}.${getGeneratedFileExtension(artifact.language)}`
+      const mimeType = attachment?.mimeType || 'application/octet-stream'
+      return `/api/attachments/file?key=${encodeURIComponent(storageKey)}&name=${encodeURIComponent(name)}&mimeType=${encodeURIComponent(mimeType)}&download=1`
+    }
+    return null
   }
 
   const renderPanelContent = () => (
@@ -1182,7 +1213,7 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
             {artifact?.title || 'No Artifact'}
           </h3>
           <p className="text-xs text-gray-400 mt-0.5">
-            {artifact ? `${getLanguageLabel(artifact)} • Artifact` : 'No artifact selected'}
+            {getArtifactSubtitle(artifact)}
           </p>
         </div>
         <div className="ml-3 flex shrink-0 items-center gap-1">
@@ -1320,7 +1351,9 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
               {/* Interactive hint for games/apps */}
               <div className="text-center mb-2">
                 <p className="text-xs text-gray-400">
-                  Click inside preview to interact • Press keys for controls
+                  {isGeneratedFilePreview
+                    ? `${getLanguageLabel(artifact)} preview is limited. Download the file to open it in the native app.`
+                    : 'Click inside preview to interact. Press keys for controls.'}
                 </p>
               </div>
               <div
@@ -1419,22 +1452,26 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
             variant="ghost"
           >
             <Copy className="h-4 w-4 mr-2" />
-            {['docx', 'gdoc', 'xlsx', 'gsheet', 'pptx', 'gslides'].includes(artifact.language) ? 'Copy Content' : 'Copy Code'}
+            {['docx', 'gdoc', 'xlsx', 'gsheet', 'pptx', 'gslides', 'pdf'].includes(artifact.language) ? 'Copy Preview' : 'Copy Code'}
           </Button>
           <Button
             onClick={handleDownload}
             className="min-w-[130px] flex-1 bg-violet-600/80 hover:bg-violet-600 text-white"
           >
             <Download className="h-4 w-4 mr-2" />
-            Download
+            {isGeneratedFilePreview
+              ? `Download ${generatedDownloadExtension?.toUpperCase() || 'FILE'}`
+              : 'Download'}
           </Button>
-          <Button
-            onClick={handleDownloadZip}
-            className="min-w-[130px] flex-1 bg-fuchsia-600/80 hover:bg-fuchsia-600 text-white"
-          >
-            <Download className="h-4 w-4 mr-2" />
-            Download ZIP
-          </Button>
+          {!isGeneratedFilePreview && (
+            <Button
+              onClick={handleDownloadZip}
+              className="min-w-[130px] flex-1 bg-fuchsia-600/80 hover:bg-fuchsia-600 text-white"
+            >
+              <Download className="h-4 w-4 mr-2" />
+              Download ZIP
+            </Button>
+          )}
         </div>
       )}
     </div>
@@ -1445,12 +1482,35 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
     navigator.clipboard.writeText(artifact.code)
     toast({
       title: 'Copied to clipboard',
-      description: 'Artifact code copied successfully',
+      description: isGeneratedFilePreview ? 'Preview content copied successfully' : 'Artifact code copied successfully',
     })
   }
 
   const handleDownload = () => {
     if (!artifact?.code) return
+
+    if (isGeneratedFileArtifactLanguage(artifact.language)) {
+      const downloadUrl = getGeneratedFileDownloadUrl(artifact)
+      if (!downloadUrl) {
+        toast({
+          title: 'Download failed',
+          description: artifact.language === 'pptx' || artifact.language === 'gslides'
+            ? 'PowerPoint file could not be generated correctly. Please try again.'
+            : artifact.language === 'docx' || artifact.language === 'gdoc'
+              ? 'Word document could not be generated correctly. Please try again.'
+              : 'PDF file could not be generated correctly. Please try again.',
+          variant: 'destructive',
+        })
+        return
+      }
+
+      window.open(downloadUrl, '_blank', 'noopener,noreferrer')
+      toast({
+        title: 'Download started',
+        description: `Downloading ${artifact.generatedAttachment?.name || `${artifact.title}.${getGeneratedFileExtension(artifact.language)}`}`,
+      })
+      return
+    }
 
     const extensions: Record<string, string> = {
       html: 'html',
@@ -1464,25 +1524,17 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
       json: 'json',
       svg: 'svg',
       text: 'txt',
-      docx: 'docx',
-      gdoc: 'docx',
       xlsx: 'xlsx',
       gsheet: 'xlsx',
-      pptx: 'pptx',
-      gslides: 'pptx',
       canva: 'html',
     }
 
     const extension = extensions[artifact.language] || 'txt'
     const filename = `${artifact.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.${extension}`
 
-    const blob = artifact.language === 'docx' || artifact.language === 'gdoc'
-      ? createDocxBlob(artifact.title, artifact.code)
-      : artifact.language === 'xlsx' || artifact.language === 'gsheet'
+    const blob = artifact.language === 'xlsx' || artifact.language === 'gsheet'
         ? createXlsxBlob(artifact.title, artifact.code)
-        : artifact.language === 'pptx' || artifact.language === 'gslides'
-          ? createPptxBlob(artifact.title, artifact.code)
-          : artifact.language === 'canva'
+        : artifact.language === 'canva'
             ? new Blob([createCanvaHtml(artifact.title, artifact.code)], { type: 'text/html' })
             : artifact.language === 'html'
               ? new Blob([createPreviewHtml(artifact.title, artifact.code)], { type: 'text/html' })

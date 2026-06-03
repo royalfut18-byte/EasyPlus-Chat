@@ -76,6 +76,14 @@ export async function GET(request: NextRequest) {
       disposition,
     })
 
+    console.info('[Attachment File] Redirecting download', {
+      attachmentId,
+      storageKey,
+      fileName,
+      contentType: mimeType,
+      disposition,
+    })
+
     return NextResponse.redirect(signedUrl)
   } catch (error: any) {
     console.error('[Attachment File] Open failed:', error.message)
