@@ -1,18 +1,18 @@
 import 'server-only'
 
 import JSZip from 'jszip'
+import { generateAzureGpt54Json } from '@/lib/ai/azure-gpt54.server'
 import { createServiceClient } from '@/lib/supabase/server'
 import { getAccountEntitlement, getEntitlementBlockResponse } from '@/lib/account-entitlements.server'
-import { readServerEnv } from '@/lib/server-env'
 
 export const EASY_CODE_MAX_PROMPT_LENGTH = 4000
 export const EASY_CODE_MAX_FILES_PER_AI_CALL = 28
 export const EASY_CODE_MAX_FILE_BYTES = 220_000
 export const EASY_CODE_MAX_PROJECT_FILES = 120
 export const EASY_CODE_MAX_ZIP_BYTES = 12 * 1024 * 1024
-const EASY_CODE_DEEPSEEK_TIMEOUT_MS = 55_000
-const EASY_CODE_REPAIR_TIMEOUT_MS = 30_000
-const EASY_CODE_STATIC_TIMEOUT_MS = 18_000
+const EASY_CODE_CREATE_TIMEOUT_MS = 55_000
+const EASY_CODE_EDIT_TIMEOUT_MS = 60_000
+const EASY_CODE_REPAIR_TIMEOUT_MS = 35_000
 const EASY_CODE_STATIC_FILES = ['index.html', 'styles.css', 'script.js', 'README.md'] as const
 
 export type EasyCodeOperation = 'create' | 'update' | 'delete' | 'rename'
@@ -135,6 +135,21 @@ function getSafeEasyCodeError(error: any): string {
     : 'Project was created but generation failed.'
 }
 
+function categorizeEasyCodeError(error: any): string {
+  const message = typeof error?.message === 'string' ? error.message : ''
+  if (isTimeoutError(error)) return 'timeout'
+  if (message === 'Model provider is not configured.') return 'provider_not_configured'
+  if (message === 'This EasyPlus mode is temporarily unavailable.') return 'provider_unavailable'
+  if (message === 'Model provider is busy. Please try again.') return 'provider_busy'
+  if (message === 'Model provider credentials are invalid or unauthorized.') return 'provider_auth'
+  if (message === 'The AI returned invalid file data. Try again.') return 'invalid_json'
+  if (message === 'The AI returned invalid file changes. Try again.') return 'invalid_changes'
+  if (message === 'No valid file changes were returned. Try again.') return 'no_valid_changes'
+  if (message === 'Could not save updated files.') return 'save_failed'
+  if (message === 'Generation incomplete. Retry.') return 'generation_incomplete'
+  return 'unknown'
+}
+
 function isStaticLandingPageRequest(input: string): boolean {
   const text = input.toLowerCase()
   const asksForOtherStack = /\b(react|next\.?js|vite|typescript|node|express|python|flask|fastapi|vue|svelte|angular)\b/.test(text)
@@ -177,7 +192,7 @@ function inferStaticSiteTitle(prompt: string): string {
 function buildFallbackStaticSite(prompt: string, reason: string): EasyCodeAiResult {
   const title = inferStaticSiteTitle(prompt)
   const safeTitle = escapeHtml(title)
-  const summary = `${reason} Easy Code created a starter static website you can edit.`
+  const summary = `${reason} Easy Code created a premium static website fallback you can keep refining.`
   const indexHtml = `<!doctype html>
 <html lang="en">
 <head>
@@ -187,217 +202,669 @@ function buildFallbackStaticSite(prompt: string, reason: string): EasyCodeAiResu
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <header class="site-header">
-    <nav class="nav">
-      <a class="brand" href="#home">${safeTitle}</a>
-      <button class="menu-button" aria-label="Toggle menu">Menu</button>
-      <div class="nav-links">
-        <a href="#services">Services</a>
-        <a href="#pricing">Pricing</a>
-        <a href="#testimonials">Reviews</a>
-        <a href="#contact">Contact</a>
-      </div>
-    </nav>
-  </header>
-
-  <main>
-    <section id="home" class="hero">
-      <div class="hero-content">
-        <p class="eyebrow">Fast local service</p>
-        <h1>${safeTitle} that makes every vehicle shine.</h1>
-        <p class="hero-copy">A polished, responsive starter landing page with services, pricing, reviews, and a strong contact call to action.</p>
-        <div class="hero-actions">
-          <a class="button primary" href="#contact">Book a wash</a>
-          <a class="button secondary" href="#services">View services</a>
+  <div class="page-shell">
+    <header class="site-header">
+      <nav class="nav">
+        <a class="brand" href="#home">${safeTitle}</a>
+        <button class="menu-button" aria-label="Toggle menu" aria-expanded="false">Menu</button>
+        <div class="nav-links">
+          <a href="#services">Services</a>
+          <a href="#pricing">Pricing</a>
+          <a href="#results">Results</a>
+          <a href="#reviews">Reviews</a>
+          <a href="#contact">Book now</a>
         </div>
-      </div>
-      <div class="hero-card">
-        <span class="shine"></span>
-        <h2>Same-day appointments</h2>
-        <p>Exterior wash, interior refresh, and premium detailing packages built for busy drivers.</p>
-      </div>
-    </section>
+      </nav>
+    </header>
 
-    <section id="services" class="section">
-      <p class="section-kicker">Services</p>
-      <h2>Everything needed for a clean, protected vehicle.</h2>
-      <div class="grid cards">
-        <article><h3>Exterior wash</h3><p>Foam pre-soak, hand wash, wheel clean, and streak-free dry.</p></article>
-        <article><h3>Interior refresh</h3><p>Vacuum, wipe-down, glass cleaning, and odor control.</p></article>
-        <article><h3>Detail package</h3><p>Paint-safe decontamination, trim care, tire shine, and protection.</p></article>
-      </div>
-    </section>
+    <main>
+      <section id="home" class="hero">
+        <div class="hero-copy reveal">
+          <span class="eyebrow">Premium mobile-first landing page</span>
+          <h1>${safeTitle} that looks premium before the first rinse starts.</h1>
+          <p class="lead">This fallback site is still high quality: strong copy, layered gradients, glass cards, pricing, testimonials, FAQ, and a booking section ready to customize.</p>
+          <div class="hero-actions">
+            <a class="button primary" href="#contact">Book a premium clean</a>
+            <a class="button secondary" href="#pricing">See packages</a>
+          </div>
+          <ul class="hero-highlights">
+            <li>Same-day appointment style layout</li>
+            <li>Responsive premium UI</li>
+            <li>Service, pricing, testimonial, FAQ, and booking sections</li>
+          </ul>
+        </div>
 
-    <section id="pricing" class="section split">
-      <div>
-        <p class="section-kicker">Packages</p>
-        <h2>Simple pricing for every vehicle.</h2>
-        <p>Use these starter packages as placeholders, then edit the text and prices in Easy Code.</p>
-      </div>
-      <div class="price-list">
-        <div><span>Express Wash</span><strong>$29</strong></div>
-        <div><span>Interior Plus</span><strong>$59</strong></div>
-        <div><span>Full Detail</span><strong>$149</strong></div>
-      </div>
-    </section>
+        <div class="hero-card reveal">
+          <div class="hero-card-top">
+            <span class="status-pill">Now booking this week</span>
+            <strong>4.9/5 local rating</strong>
+          </div>
+          <div class="hero-card-grid">
+            <article>
+              <span>Express wash</span>
+              <strong>45 min</strong>
+              <p>Foam cannon, wheel detail, towel finish.</p>
+            </article>
+            <article>
+              <span>Interior detail</span>
+              <strong>90 min</strong>
+              <p>Seats, trims, vents, and glass reset.</p>
+            </article>
+            <article>
+              <span>Paint glow</span>
+              <strong>Premium</strong>
+              <p>Deep gloss finish with protection.</p>
+            </article>
+            <article>
+              <span>Booking</span>
+              <strong>Fast</strong>
+              <p>CTA-ready design with polished form UI.</p>
+            </article>
+          </div>
+        </div>
+      </section>
 
-    <section class="section why">
-      <p class="section-kicker">Why choose us</p>
-      <h2>Professional results without the wait.</h2>
-      <ul>
-        <li>Eco-conscious products and paint-safe methods</li>
-        <li>Mobile-friendly booking call to action</li>
-        <li>Responsive layout for desktop, tablet, and phone</li>
-      </ul>
-    </section>
+      <section class="metrics reveal">
+        <article><strong>1,200+</strong><span>cars refreshed</span></article>
+        <article><strong>24h</strong><span>turnaround focus</span></article>
+        <article><strong>3</strong><span>signature packages</span></article>
+        <article><strong>100%</strong><span>mobile responsive</span></article>
+      </section>
 
-    <section id="testimonials" class="section testimonials">
-      <blockquote>"My car looked brand new after one visit. Fast, friendly, and worth every dollar."</blockquote>
-      <cite>- Happy local customer</cite>
-    </section>
+      <section id="services" class="section reveal">
+        <div class="section-heading">
+          <span class="eyebrow">Services</span>
+          <h2>Designed to feel like a premium local brand, not a starter template.</h2>
+        </div>
+        <div class="service-grid">
+          <article class="glass-card">
+            <h3>Exterior shine</h3>
+            <p>Snow foam pre-wash, contact-safe clean, wheel detail, and a gloss finish that photographs well.</p>
+          </article>
+          <article class="glass-card">
+            <h3>Interior reset</h3>
+            <p>Vacuuming, surface care, glass finishing, and a crisp cabin presentation for daily drivers.</p>
+          </article>
+          <article class="glass-card">
+            <h3>Detail finish</h3>
+            <p>Trim dressing, premium tire finishing, paint-safe finishing touches, and protection-focused care.</p>
+          </article>
+        </div>
+      </section>
 
-    <section id="contact" class="section contact">
-      <p class="section-kicker">Ready to shine?</p>
-      <h2>Book your next wash today.</h2>
-      <p>Call (555) 123-4567 or email hello@example.com to customize this starter site for your business.</p>
-      <a class="button primary" href="mailto:hello@example.com">Contact us</a>
-    </section>
-  </main>
+      <section id="pricing" class="section pricing reveal">
+        <div class="section-heading">
+          <span class="eyebrow">Pricing</span>
+          <h2>Three clean packages with clear value.</h2>
+        </div>
+        <div class="pricing-grid">
+          <article class="pricing-card">
+            <p class="plan-name">Express</p>
+            <strong>$39</strong>
+            <ul>
+              <li>Exterior wash</li>
+              <li>Wheel face clean</li>
+              <li>Quick dry finish</li>
+            </ul>
+            <a class="button secondary" href="#contact">Choose Express</a>
+          </article>
+          <article class="pricing-card featured">
+            <p class="plan-name">Signature</p>
+            <strong>$89</strong>
+            <ul>
+              <li>Exterior + interior refresh</li>
+              <li>Trim and glass finishing</li>
+              <li>Most popular package</li>
+            </ul>
+            <a class="button primary" href="#contact">Choose Signature</a>
+          </article>
+          <article class="pricing-card">
+            <p class="plan-name">Showroom</p>
+            <strong>$169</strong>
+            <ul>
+              <li>Deep detail package</li>
+              <li>Gloss-focused finish</li>
+              <li>Protection add-on ready</li>
+            </ul>
+            <a class="button secondary" href="#contact">Choose Showroom</a>
+          </article>
+        </div>
+      </section>
 
-  <footer>
-    <p>&copy; <span id="year"></span> ${safeTitle}. All rights reserved.</p>
-  </footer>
+      <section id="results" class="section reveal">
+        <div class="section-heading">
+          <span class="eyebrow">Before / after feel</span>
+          <h2>Use styled placeholders until you add real photos.</h2>
+        </div>
+        <div class="showcase-grid">
+          <article class="showcase-card before">
+            <span>Before</span>
+            <p>Muted finish, dusty panels, no visual punch.</p>
+          </article>
+          <article class="showcase-card after">
+            <span>After</span>
+            <p>Richer reflections, sharper contrast, premium clean energy.</p>
+          </article>
+        </div>
+      </section>
+
+      <section id="reviews" class="section reveal">
+        <div class="section-heading">
+          <span class="eyebrow">Testimonials</span>
+          <h2>Strong social proof blocks already built in.</h2>
+        </div>
+        <div class="testimonial-grid">
+          <article class="glass-card">
+            <p>“The car looked photo-ready. The layout here already feels like a real premium business.”</p>
+            <span>- Jordan, weekly customer</span>
+          </article>
+          <article class="glass-card">
+            <p>“Fast, polished, and easy to book. This fallback is still far from generic.”</p>
+            <span>- Priya, detailing client</span>
+          </article>
+          <article class="glass-card">
+            <p>“The pricing and booking flow are clear, and the responsive design feels professional.”</p>
+            <span>- Marcus, local driver</span>
+          </article>
+        </div>
+      </section>
+
+      <section class="section faq reveal">
+        <div class="section-heading">
+          <span class="eyebrow">FAQ</span>
+          <h2>Answer common objections before the booking form.</h2>
+        </div>
+        <div class="faq-list">
+          <details class="glass-card" open>
+            <summary>Do I need to book in advance?</summary>
+            <p>For busy weekends, yes. The booking section below is already styled so you can swap in your real process later.</p>
+          </details>
+          <details class="glass-card">
+            <summary>Can I customize packages?</summary>
+            <p>Yes. Update the pricing copy, add extras, and rename plans directly in Easy Code.</p>
+          </details>
+          <details class="glass-card">
+            <summary>Will this work on mobile?</summary>
+            <p>Yes. The layout, nav, cards, and booking area are responsive by default.</p>
+          </details>
+        </div>
+      </section>
+
+      <section id="contact" class="section booking reveal">
+        <div class="booking-copy">
+          <span class="eyebrow">Booking CTA</span>
+          <h2>Turn interest into a booking-ready next step.</h2>
+          <p>Replace the placeholders with your real suburb, pricing notes, phone number, and business hours.</p>
+          <div class="contact-points">
+            <span>(555) 123-4567</span>
+            <span>hello@example.com</span>
+            <span>Mon-Sat · 7:00am-6:00pm</span>
+          </div>
+        </div>
+        <form class="booking-form">
+          <label>
+            <span>Name</span>
+            <input type="text" placeholder="Your name">
+          </label>
+          <label>
+            <span>Phone</span>
+            <input type="tel" placeholder="Best contact number">
+          </label>
+          <label>
+            <span>Vehicle</span>
+            <input type="text" placeholder="SUV, sedan, ute...">
+          </label>
+          <label>
+            <span>Preferred package</span>
+            <select>
+              <option>Express</option>
+              <option>Signature</option>
+              <option>Showroom</option>
+            </select>
+          </label>
+          <label class="full-width">
+            <span>Anything else?</span>
+            <textarea rows="4" placeholder="Add timing, location, or requests"></textarea>
+          </label>
+          <button class="button primary full-width" type="submit">Request booking</button>
+        </form>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <p>&copy; <span id="year"></span> ${safeTitle}. Premium static fallback crafted inside Easy Code.</p>
+    </footer>
+  </div>
 
   <script src="script.js"></script>
 </body>
 </html>`
 
   const stylesCss = `:root {
-  color-scheme: dark;
-  --bg: #071014;
-  --panel: rgba(255, 255, 255, 0.08);
-  --text: #f7fbff;
-  --muted: #a7b6c2;
-  --accent: #39d5ff;
-  --accent-2: #7c3cff;
+  --bg: #07111a;
+  --bg-soft: #101d29;
+  --surface: rgba(255, 255, 255, 0.08);
+  --surface-strong: rgba(255, 255, 255, 0.14);
   --line: rgba(255, 255, 255, 0.12);
+  --text: #f5f7fb;
+  --muted: #acb8c7;
+  --cyan: #76e4ff;
+  --blue: #67a5ff;
+  --violet: #9b7bff;
+  --shadow: 0 30px 90px rgba(0, 0, 0, 0.28);
 }
 
 * { box-sizing: border-box; }
 html { scroll-behavior: smooth; }
 body {
   margin: 0;
-  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  background: radial-gradient(circle at top left, rgba(57, 213, 255, 0.18), transparent 34%), var(--bg);
+  min-width: 320px;
+  font-family: "Avenir Next", "Segoe UI", Inter, Arial, sans-serif;
   color: var(--text);
+  background:
+    radial-gradient(circle at top left, rgba(118, 228, 255, 0.15), transparent 30%),
+    radial-gradient(circle at top right, rgba(155, 123, 255, 0.14), transparent 28%),
+    linear-gradient(180deg, #08111a 0%, #0e1720 46%, #071018 100%);
 }
+
 a { color: inherit; text-decoration: none; }
+button, input, select, textarea { font: inherit; }
+
+.page-shell { min-height: 100vh; }
 .site-header {
   position: sticky;
   top: 0;
-  z-index: 10;
-  backdrop-filter: blur(18px);
-  background: rgba(7, 16, 20, 0.78);
+  z-index: 20;
+  backdrop-filter: blur(20px);
+  background: rgba(7, 17, 26, 0.72);
   border-bottom: 1px solid var(--line);
 }
-.nav {
-  width: min(1120px, calc(100% - 32px));
+
+.nav, .hero, .section, .metrics, .site-footer {
+  width: min(1180px, calc(100% - 32px));
   margin: 0 auto;
-  min-height: 72px;
+}
+
+.nav {
+  min-height: 78px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 20px;
+  gap: 18px;
 }
-.brand { font-weight: 800; letter-spacing: -0.03em; }
-.nav-links { display: flex; gap: 18px; color: var(--muted); font-size: 0.95rem; }
-.menu-button { display: none; }
-.hero, .section { width: min(1120px, calc(100% - 32px)); margin: 0 auto; }
-.hero {
-  min-height: 78vh;
-  display: grid;
-  grid-template-columns: minmax(0, 1.1fr) minmax(280px, 0.9fr);
-  align-items: center;
-  gap: 40px;
-  padding: 72px 0;
-}
-.eyebrow, .section-kicker {
-  color: var(--accent);
-  text-transform: uppercase;
-  letter-spacing: 0.16em;
-  font-size: 0.78rem;
+
+.brand {
+  font-size: 1.05rem;
   font-weight: 800;
+  letter-spacing: -0.04em;
 }
-h1, h2, h3, p { margin-top: 0; }
-h1 { font-size: clamp(3rem, 8vw, 6.5rem); line-height: 0.92; letter-spacing: -0.08em; margin-bottom: 24px; }
-h2 { font-size: clamp(2rem, 4vw, 3.2rem); line-height: 1; letter-spacing: -0.05em; margin-bottom: 18px; }
-h3 { font-size: 1.2rem; margin-bottom: 10px; }
-.hero-copy, .section p, li { color: var(--muted); line-height: 1.7; }
-.hero-actions { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 28px; }
+
+.nav-links {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
+.menu-button {
+  display: none;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--text);
+  border-radius: 999px;
+  padding: 8px 14px;
+}
+
+.hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(320px, 0.95fr);
+  gap: 28px;
+  align-items: center;
+  padding: 78px 0 42px;
+}
+
+.eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  font-size: 0.72rem;
+  font-weight: 800;
+  color: var(--cyan);
+}
+
+h1, h2, h3, p { margin: 0; }
+h1 {
+  margin-top: 16px;
+  font-size: clamp(3.2rem, 7vw, 6.4rem);
+  line-height: 0.95;
+  letter-spacing: -0.08em;
+}
+
+h2 {
+  font-size: clamp(2rem, 4vw, 3.4rem);
+  line-height: 0.98;
+  letter-spacing: -0.06em;
+}
+
+h3 {
+  font-size: 1.15rem;
+  letter-spacing: -0.03em;
+}
+
+.lead, .glass-card p, .pricing-card li, .booking-copy p, .contact-points span, .showcase-card p {
+  color: var(--muted);
+  line-height: 1.7;
+}
+
+.hero-actions, .hero-highlights, .contact-points {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+
+.hero-actions { margin-top: 28px; }
+
+.hero-highlights {
+  margin: 24px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.hero-highlights li,
+.metrics article,
+.status-pill,
+.contact-points span {
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 999px;
+  padding: 10px 14px;
+}
+
 .button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 48px;
+  min-height: 50px;
   border-radius: 999px;
   padding: 0 22px;
   font-weight: 800;
+  border: 0;
+  cursor: pointer;
+  transition: transform 180ms ease, box-shadow 180ms ease, background 180ms ease;
 }
-.primary { background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: #041014; }
-.secondary { border: 1px solid var(--line); color: var(--text); }
-.hero-card, .cards article, .price-list, .why, .testimonials, .contact {
+
+.button:hover { transform: translateY(-2px); }
+.primary {
+  background: linear-gradient(135deg, var(--cyan), var(--violet));
+  color: #051019;
+  box-shadow: 0 18px 45px rgba(118, 228, 255, 0.22);
+}
+.secondary {
   border: 1px solid var(--line);
-  background: linear-gradient(145deg, rgba(255,255,255,0.1), rgba(255,255,255,0.035));
-  border-radius: 28px;
-  box-shadow: 0 24px 80px rgba(0,0,0,0.24);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
 }
+
+.hero-card,
+.glass-card,
+.pricing-card,
+.showcase-card,
+.booking-form,
+.faq-list details {
+  border: 1px solid var(--line);
+  background: linear-gradient(180deg, rgba(255,255,255,0.1), rgba(255,255,255,0.04));
+  border-radius: 28px;
+  box-shadow: var(--shadow);
+}
+
 .hero-card {
-  position: relative;
+  padding: 28px;
   overflow: hidden;
-  min-height: 360px;
-  padding: 32px;
+}
+
+.hero-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.hero-card-grid,
+.service-grid,
+.pricing-grid,
+.showcase-grid,
+.testimonial-grid,
+.booking {
+  display: grid;
+  gap: 18px;
+}
+
+.hero-card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.service-grid,
+.pricing-grid,
+.testimonial-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.showcase-grid,
+.booking { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+.hero-card-grid article,
+.pricing-card,
+.showcase-card,
+.glass-card,
+.booking-form {
+  padding: 24px;
+}
+
+.hero-card-grid span,
+.plan-name { color: var(--muted); font-size: 0.86rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.12em; }
+.hero-card-grid strong,
+.pricing-card strong,
+.metrics strong {
+  display: block;
+  margin: 10px 0 8px;
+  font-size: clamp(1.8rem, 4vw, 2.8rem);
+  letter-spacing: -0.08em;
+}
+
+.metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  padding-bottom: 18px;
+}
+
+.metrics article { padding: 18px 20px; }
+.metrics span { display: block; color: var(--muted); }
+
+.section { padding: 54px 0; }
+.section-heading {
+  max-width: 760px;
+  margin-bottom: 24px;
+}
+
+.featured {
+  background: linear-gradient(160deg, rgba(118,228,255,0.22), rgba(155,123,255,0.18));
+  transform: translateY(-8px);
+  border-color: rgba(118, 228, 255, 0.32);
+}
+
+.pricing-card ul {
+  margin: 18px 0 24px;
+  padding-left: 18px;
+}
+
+.showcase-card {
+  min-height: 220px;
   display: flex;
   flex-direction: column;
   justify-content: end;
 }
-.shine {
-  position: absolute;
-  inset: 36px;
-  border-radius: 999px;
-  background: radial-gradient(circle, rgba(57,213,255,0.38), transparent 64%);
-  filter: blur(8px);
+
+.before {
+  background:
+    linear-gradient(180deg, rgba(10, 16, 24, 0.2), rgba(10, 16, 24, 0.75)),
+    linear-gradient(135deg, rgba(255,255,255,0.08), rgba(255,255,255,0.02));
 }
-.hero-card h2, .hero-card p { position: relative; }
-.section { padding: 74px 0; }
-.grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; margin-top: 28px; }
-.cards article { padding: 24px; }
-.split { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; align-items: start; }
-.price-list { padding: 18px; }
-.price-list div { display: flex; justify-content: space-between; padding: 18px; border-bottom: 1px solid var(--line); }
-.price-list div:last-child { border-bottom: 0; }
-.why, .testimonials, .contact { padding: 34px; }
-blockquote { margin: 0; font-size: clamp(1.4rem, 3vw, 2.4rem); line-height: 1.2; letter-spacing: -0.04em; }
-cite { display: block; margin-top: 18px; color: var(--muted); }
-footer { padding: 32px; text-align: center; color: var(--muted); border-top: 1px solid var(--line); }
+
+.after {
+  background:
+    radial-gradient(circle at top left, rgba(118,228,255,0.18), transparent 32%),
+    linear-gradient(135deg, rgba(255,255,255,0.12), rgba(255,255,255,0.04));
+}
+
+.testimonial-grid article span { display: block; margin-top: 16px; color: var(--muted); font-size: 0.9rem; }
+
+.faq-list {
+  display: grid;
+  gap: 14px;
+}
+
+.faq-list summary {
+  cursor: pointer;
+  font-weight: 700;
+  list-style: none;
+}
+
+.faq-list summary::-webkit-details-marker { display: none; }
+.faq-list details p { margin-top: 12px; }
+
+.booking-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.booking-form label {
+  display: grid;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
+.booking-form input,
+.booking-form select,
+.booking-form textarea {
+  width: 100%;
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 18px;
+  background: rgba(7, 17, 26, 0.64);
+  color: var(--text);
+  padding: 14px 16px;
+}
+
+.booking-form input::placeholder,
+.booking-form textarea::placeholder { color: #8a95a6; }
+
+.full-width { grid-column: 1 / -1; }
+
+.site-footer {
+  padding: 24px 0 42px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.reveal {
+  opacity: 0;
+  transform: translateY(20px);
+  transition: opacity 480ms ease, transform 480ms ease;
+}
+
+.reveal.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.glass-card:hover,
+.pricing-card:hover,
+.showcase-card:hover,
+.hero-card:hover {
+  transform: translateY(-4px);
+  border-color: rgba(118, 228, 255, 0.24);
+}
+
+@media (max-width: 980px) {
+  .hero,
+  .showcase-grid,
+  .booking,
+  .pricing-grid,
+  .service-grid,
+  .testimonial-grid,
+  .metrics {
+    grid-template-columns: 1fr;
+  }
+
+  .hero-card-grid,
+  .booking-form {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .featured { transform: none; }
+}
+
 @media (max-width: 760px) {
-  .nav-links { display: none; }
-  .menu-button { display: inline-flex; border: 1px solid var(--line); background: transparent; color: var(--text); border-radius: 999px; padding: 8px 12px; }
-  .nav.open .nav-links { position: absolute; left: 16px; right: 16px; top: 74px; display: grid; padding: 16px; border: 1px solid var(--line); border-radius: 18px; background: #081419; }
-  .hero, .split { grid-template-columns: 1fr; }
-  .hero { padding-top: 48px; }
-  .grid { grid-template-columns: 1fr; }
+  .nav { position: relative; }
+  .menu-button { display: inline-flex; }
+  .nav-links {
+    display: none;
+  }
+  .nav.open .nav-links {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 70px;
+    display: grid;
+    gap: 14px;
+    padding: 18px;
+    border: 1px solid var(--line);
+    border-radius: 20px;
+    background: rgba(10, 18, 27, 0.96);
+  }
+  .hero { padding-top: 44px; }
+  .hero-card-grid,
+  .booking-form {
+    grid-template-columns: 1fr;
+  }
 }`
 
   const scriptJs = `document.getElementById('year').textContent = new Date().getFullYear();
 
 const nav = document.querySelector('.nav');
 const menuButton = document.querySelector('.menu-button');
+const revealItems = document.querySelectorAll('.reveal');
+
 menuButton?.addEventListener('click', () => {
-  nav?.classList.toggle('open');
+  const open = nav?.classList.toggle('open');
+  menuButton.setAttribute('aria-expanded', open ? 'true' : 'false');
 });
 
 document.querySelectorAll('a[href^="#"]').forEach((link) => {
-  link.addEventListener('click', () => nav?.classList.remove('open'));
+  link.addEventListener('click', () => {
+    nav?.classList.remove('open');
+    menuButton?.setAttribute('aria-expanded', 'false');
+  });
+});
+
+const observer = new IntersectionObserver((entries) => {
+  entries.forEach((entry) => {
+    if (entry.isIntersecting) entry.target.classList.add('is-visible');
+  });
+}, { threshold: 0.14 });
+
+revealItems.forEach((item) => observer.observe(item));
+
+document.querySelector('.booking-form')?.addEventListener('submit', (event) => {
+  event.preventDefault();
+  const button = event.currentTarget.querySelector('button');
+  if (button) {
+    const original = button.textContent;
+    button.textContent = 'Request sent';
+    setTimeout(() => {
+      button.textContent = original;
+    }, 1800);
+  }
 });`
 
   const readme = `# ${title}
@@ -413,7 +880,7 @@ ${summary}
 
 ## Run locally
 
-Open index.html in a browser. Edit the copy, prices, phone number, and email directly in Easy Code.
+Open index.html in a browser. Replace the placeholder business details and package copy directly in Easy Code.
 `
 
   return {
@@ -421,7 +888,7 @@ Open index.html in a browser. Edit the copy, prices, phone number, and email dir
     title,
     framework: 'html',
     previewType: 'static-html',
-    instructions: ['Open index.html in a browser.', 'Edit the business details, prices, phone number, and email before publishing.'],
+    instructions: ['Open index.html in a browser or use the built-in preview.', 'Replace the placeholder business details before publishing.'],
     files: [
       { path: 'index.html', language: 'html', content: indexHtml, operation: 'create' },
       { path: 'styles.css', language: 'css', content: stylesCss, operation: 'create' },
@@ -651,6 +1118,30 @@ export function getEasyCodeReadiness(
   }
 }
 
+function getEasyCodeAiResultDiagnostics(
+  aiResult: EasyCodeAiResult,
+  project?: Pick<EasyCodeProject, 'description' | 'framework'> | null
+) {
+  const projectedFiles = aiResult.files
+    .filter((file) => file.operation !== 'delete')
+    .map((file) => ({
+      path: file.newPath || file.path,
+      content: file.content || '',
+    }))
+  const readiness = getEasyCodeReadiness(projectedFiles, project)
+  const meaningfulFiles = projectedFiles.filter((file) => file.path.toLowerCase() !== 'readme.md' && file.content.trim().length > 0)
+  const readmeOnly = meaningfulFiles.length === 0 && projectedFiles.some((file) => file.path.toLowerCase() === 'readme.md')
+  const missingStarterFiles = getMissingStaticStarterFiles(projectedFiles)
+
+  return {
+    readiness,
+    projectedFiles,
+    meaningfulFiles,
+    readmeOnly,
+    missingStarterFiles,
+  }
+}
+
 function extractJson(text: string): string {
   const trimmed = text.trim()
   if (trimmed.startsWith('{') && trimmed.endsWith('}')) return trimmed
@@ -662,109 +1153,48 @@ function extractJson(text: string): string {
   throw new Error('The AI returned invalid file data. Try again.')
 }
 
-async function callAzureDeepSeekJson(
+async function callAzureGpt54Json(
   messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>,
   maxTokens = 8192,
   options: { timeoutMs?: number; phase?: string; projectId?: string } = {}
 ): Promise<string> {
-  const apiKey = readServerEnv('AZURE_DEEPSEEK_API_KEY')
-  const baseUrl = readServerEnv('AZURE_DEEPSEEK_BASE_URL')?.replace(/\/+$/, '')
-  const model = readServerEnv('AZURE_DEEPSEEK_MODEL') || 'DeepSeek-V4-Pro'
-
-  if (!apiKey || !baseUrl) {
-    console.error('[Easy Code] Missing DeepSeek configuration', {
-      apiKeyConfigured: Boolean(apiKey),
-      baseUrlConfigured: Boolean(baseUrl),
-      modelConfigured: Boolean(model),
-    })
-    throw new Error('Could not generate files.')
-  }
-  const safeApiKey = apiKey
-
-  const requestBody = {
-    model,
-    messages,
-    temperature: 0.25,
-    max_tokens: maxTokens,
-    stream: false,
-    response_format: { type: 'json_object' },
-  }
-
-  const timeoutMs = options.timeoutMs || EASY_CODE_DEEPSEEK_TIMEOUT_MS
+  const timeoutMs = options.timeoutMs || EASY_CODE_CREATE_TIMEOUT_MS
   const startedAt = Date.now()
-  console.info('[Easy Code] DeepSeek request started', {
+  console.info('[Easy Code] GPT-5.4 request started', {
     projectId: options.projectId || null,
-    phase: options.phase || 'deepseek_generation',
+    phase: options.phase || 'gpt54_generation',
     maxTokens,
     timeoutMs,
+    providerUsed: 'azure-gpt54',
   })
-
-  async function request(authMode: 'api-key' | 'bearer') {
-    return fetch(`${baseUrl}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(authMode === 'api-key' ? { 'api-key': safeApiKey } : { Authorization: `Bearer ${safeApiKey}` }),
-      },
-      body: JSON.stringify(requestBody),
-      signal: AbortSignal.timeout(timeoutMs),
-    })
-  }
-
-  let response: Response
   try {
-    response = await request('api-key')
-  } catch (error: any) {
-    console.error('[Easy Code] DeepSeek request timed out or failed before response', {
+    const content = await generateAzureGpt54Json(messages, {
+      maxTokens,
+      temperature: 0.2,
+      timeoutMs,
+      phase: options.phase || 'gpt54_generation',
+      projectId: options.projectId,
+      responseFormat: 'json_object',
+    })
+    console.info('[Easy Code] GPT-5.4 request ended', {
       projectId: options.projectId || null,
-      phase: options.phase || 'deepseek_generation',
-      timeoutHit: isTimeoutError(error),
+      phase: options.phase || 'gpt54_generation',
       durationMs: Date.now() - startedAt,
+      responseChars: content.length,
+      providerUsed: 'azure-gpt54',
+    })
+    return content
+  } catch (error: any) {
+    console.error('[Easy Code] GPT-5.4 request failed', {
+      projectId: options.projectId || null,
+      phase: options.phase || 'gpt54_generation',
+      timeoutHit: isTimeoutError(error),
+      errorCategory: categorizeEasyCodeError(error),
+      durationMs: Date.now() - startedAt,
+      providerUsed: 'azure-gpt54',
     })
     throw error
   }
-  if (response.status === 401 || response.status === 403) {
-    await response.body?.cancel().catch(() => {})
-    try {
-      response = await request('bearer')
-    } catch (error: any) {
-      console.error('[Easy Code] DeepSeek fallback request timed out or failed before response', {
-        projectId: options.projectId || null,
-        phase: options.phase || 'deepseek_generation',
-        timeoutHit: isTimeoutError(error),
-        durationMs: Date.now() - startedAt,
-      })
-      throw error
-    }
-  }
-
-  if (!response.ok) {
-    console.error('[Easy Code] DeepSeek request failed', {
-      status: response.status,
-      projectId: options.projectId || null,
-      phase: options.phase || 'deepseek_generation',
-      durationMs: Date.now() - startedAt,
-    })
-    throw new Error(response.status === 429 ? 'Could not generate files. Please try again in a moment.' : 'Could not generate files.')
-  }
-
-  const data = await response.json().catch(() => null)
-  const content = data?.choices?.[0]?.message?.content
-  if (typeof content !== 'string' || !content.trim()) {
-    console.error('[Easy Code] DeepSeek returned empty content', {
-      projectId: options.projectId || null,
-      phase: options.phase || 'deepseek_generation',
-      durationMs: Date.now() - startedAt,
-    })
-    throw new Error('The AI returned invalid file data. Try again.')
-  }
-  console.info('[Easy Code] DeepSeek request ended', {
-    projectId: options.projectId || null,
-    phase: options.phase || 'deepseek_generation',
-    durationMs: Date.now() - startedAt,
-    responseChars: content.length,
-  })
-  return content
 }
 
 async function parseEasyCodeJson(text: string, projectId?: string): Promise<EasyCodeAiResult> {
@@ -777,7 +1207,7 @@ async function parseEasyCodeJson(text: string, projectId?: string): Promise<Easy
       projectId: projectId || null,
       message: parseError?.message,
     })
-    const repaired = await callAzureDeepSeekJson([
+    const repaired = await callAzureGpt54Json([
       {
         role: 'system',
         content: 'Return only valid JSON matching this schema: {"summary":string,"files":[{"path":string,"language":string,"content":string,"operation":"create|update|delete|rename","newPath":string}],"instructions":string[],"previewType":"static-html|unsupported","title":string,"framework":string}. Do not include markdown.',
@@ -786,12 +1216,14 @@ async function parseEasyCodeJson(text: string, projectId?: string): Promise<Easy
     ], 4096, { timeoutMs: EASY_CODE_REPAIR_TIMEOUT_MS, phase: 'json_repair', projectId })
     try {
       const result = normalizeAiResult(JSON.parse(extractJson(repaired)))
-      console.info('[Easy Code] JSON repair succeeded', { projectId: projectId || null, fileCount: result.files.length })
+      console.info('[Easy Code] JSON repair succeeded', { projectId: projectId || null, fileCount: result.files.length, repairPassSuccess: true })
       return result
     } catch (repairError: any) {
       console.error('[Easy Code] JSON repair failed', {
         projectId: projectId || null,
         message: repairError?.message,
+        repairPassSuccess: false,
+        errorCategory: categorizeEasyCodeError(repairError),
       })
       throw repairError
     }
@@ -1085,11 +1517,9 @@ export async function runEasyCodeInitialGeneration(userId: string, projectId: st
     })
 
     const filesCreated = aiResult.files.map(file => file.newPath || file.path)
-    const missingStarterFiles = staticLandingPage ? getMissingStaticStarterFiles(aiResult.files) : []
-    const proposedReadiness = getEasyCodeReadiness(aiResult.files.map(file => ({
-      path: file.newPath || file.path,
-      content: file.operation === 'delete' ? '' : file.content || '',
-    })), project)
+    const outputDiagnostics = getEasyCodeAiResultDiagnostics(aiResult, project)
+    const missingStarterFiles = staticLandingPage ? outputDiagnostics.missingStarterFiles : []
+    const proposedReadiness = outputDiagnostics.readiness
     console.info('[Easy Code] Generation output validated', {
       projectId,
       returnedFiles: aiResult.files.length,
@@ -1098,8 +1528,11 @@ export async function runEasyCodeInitialGeneration(userId: string, projectId: st
       meaningfulFiles: proposedReadiness.meaningfulFileCount,
       hasIndexHtml: proposedReadiness.hasIndexHtml,
       missingStarterFiles,
+      readmeOnly: outputDiagnostics.readmeOnly,
+      providerUsed: 'azure-gpt54',
     })
     if (missingStarterFiles.length > 0) throw new Error('Generation incomplete. Retry.')
+    if (outputDiagnostics.readmeOnly) throw new Error('Generation incomplete. Retry.')
     if (!proposedReadiness.ready) throw new Error('Generation incomplete. Retry.')
     await updateEasyCodeGenerationState(userId, projectId, {
       status: 'generating',
@@ -1164,12 +1597,23 @@ export async function runEasyCodeInitialGeneration(userId: string, projectId: st
     return { project: freshProject, files: freshFiles, messages: freshMessages, aiResult }
   } catch (error: any) {
     const message = getSafeEasyCodeError(error)
-    if (staticLandingPage) {
+    const errorCategory = categorizeEasyCodeError(error)
+    const allowStaticFallback = staticLandingPage && [
+      'timeout',
+      'provider_not_configured',
+      'provider_unavailable',
+      'provider_busy',
+      'provider_auth',
+      'invalid_json',
+      'invalid_changes',
+      'generation_incomplete',
+    ].includes(errorCategory)
+    if (allowStaticFallback) {
       try {
         const db = await getDb()
         const fallbackReason = isTimeoutError(error)
           ? 'AI generation took too long, so'
-          : 'AI generation returned incomplete file data, so'
+          : 'AI generation was unavailable, so'
         const fallbackResult = buildFallbackStaticSite(cleanPrompt, fallbackReason)
         const fallbackFiles = fallbackResult.files.map(file => file.path)
 
@@ -1179,6 +1623,7 @@ export async function runEasyCodeInitialGeneration(userId: string, projectId: st
           timeoutHit: isTimeoutError(error),
           reason: message,
           fallbackUsed: true,
+          errorCategory,
         })
 
         await db
@@ -1205,6 +1650,7 @@ export async function runEasyCodeInitialGeneration(userId: string, projectId: st
           missingStarterFiles,
           previewAvailable: readiness.hasIndexHtml,
           ready: readiness.ready,
+          providerUsed: 'fallback',
         })
 
         if (missingStarterFiles.length > 0 || !readiness.ready) {
@@ -1253,6 +1699,7 @@ export async function runEasyCodeInitialGeneration(userId: string, projectId: st
           projectId,
           message: fallbackError?.message,
           originalMessage: message,
+          errorCategory,
         })
       }
     }
@@ -1263,7 +1710,13 @@ export async function runEasyCodeInitialGeneration(userId: string, projectId: st
       error: message,
       metadata: buildEasyCodeProgress('failed', [], message),
     }).catch(() => {})
-    console.error('[Easy Code] Status updated to failed', { message, projectId, timeoutHit: isTimeoutError(error) })
+    console.error('[Easy Code] Status updated to failed', {
+      message,
+      projectId,
+      timeoutHit: isTimeoutError(error),
+      errorCategory,
+      fallbackUsed: false,
+    })
     throw new Error(message)
   }
 }
@@ -1288,7 +1741,8 @@ export async function generateEasyCodeFiles(input: {
     : null
   const mentionedFiles = input.files.filter(file => input.instruction.toLowerCase().includes(file.path.toLowerCase()))
   const keyFiles = input.files.filter(file => /(^|\/)(package\.json|readme\.md|index\.html|styles\.css|script\.js|src\/app|src\/main|src\/App|app\/page)/i.test(file.path))
-  const contextFiles = staticProjectEdit && input.files.length <= 12
+  const totalStaticFileBytes = input.files.reduce((sum, file) => sum + file.size_bytes, 0)
+  const contextFiles = staticProjectEdit && (input.files.length <= 12 || totalStaticFileBytes <= 120_000)
     ? input.files
     : Array.from(new Map([
       ...(selectedFile ? [[selectedFile.path, selectedFile]] as Array<[string, EasyCodeFile]> : []),
@@ -1302,22 +1756,28 @@ export async function generateEasyCodeFiles(input: {
   ].join('\n')).join('\n\n')
 
   const recentMessages = staticLandingPage ? '' : input.messages.slice(-10).map(message => `${message.role}: ${message.content}`).join('\n')
-  const system = `You are Easy Code, a Lovable + Codex-style coding workspace inside EasyPlus. Act as a precise coding agent.
+  const system = `You are Easy Code, a high-end coding workspace inside EasyPlus. Act as a precise senior product engineer and designer.
 Return only strict JSON with this exact shape:
 {"summary":"...","title":"optional project title","framework":"html|react|next|vite|python|node|other","previewType":"static-html|unsupported","instructions":["..."],"files":[{"path":"relative/path","language":"html|css|javascript|typescript|tsx|python|json|markdown|text","content":"full file content","operation":"create|update|delete|rename","newPath":"optional/new/path"}]}
 You may also return "operations" instead of "files" with the same array shape.
 Rules:
+- Return JSON only. No markdown fences. No prose outside JSON.
 - Generate complete file contents, not patches.
 - Use only relative paths. No absolute paths, no ../ traversal.
 - Keep each file under ${EASY_CODE_MAX_FILE_BYTES} bytes.
 - Return at most ${EASY_CODE_MAX_FILES_PER_AI_CALL} files.
-- For simple landing pages, websites, portfolios, product pages, and business sites, generate only a lightweight static HTML project unless the user explicitly asks for React, Next.js, Vite, Node, or Python.
-- Static first pass must contain exactly these four non-empty files: index.html, styles.css, script.js, README.md. Never return README only.
-- Keep the first version compact but fully usable. Every created or updated file must have non-empty content.
+- For simple landing pages, websites, portfolios, product pages, and business sites, generate only a static HTML project unless the user explicitly asks for React, Next.js, Vite, Node, or Python.
+- Static first pass must contain exactly these four non-empty files: index.html, styles.css, script.js, README.md.
+- Never return README only.
+- Never return zero files.
+- Never use lorem ipsum, TODO placeholders, fake broken assets, or generic copy that sounds unfinished.
+- No external paid dependencies. Keep simple landing pages fully static and previewable.
+- Make landing pages feel premium: intentional layout, polished typography, strong spacing, rich sections, tasteful gradients, glass or layered surfaces when appropriate, motion, mobile responsiveness, and professional copywriting.
 - For React/Vite/Next/Python/Node projects, generate files and README/run instructions, but previewType should be unsupported unless there is a root index.html.
 - Do not include secrets or API keys.
 - For edits, preserve the existing working structure and return only changed files as complete replacement content.
-- For static HTML edits, update index.html, styles.css, and script.js as needed. Do not return README only.`
+- For static HTML edits, read the current files carefully, improve the existing experience, and update index.html, styles.css, and script.js as needed.
+- Do not expose backend providers, model names, or routing details.`
 
   const user = staticLandingPage
     ? `Mode: create
@@ -1325,15 +1785,19 @@ Project: ${input.project.title}
 Description: ${input.project.description || ''}
 Instruction: ${input.instruction}
 
-Generate a polished but compact static landing page. Return JSON only.
+Generate a premium static landing page. Return JSON only.
 Requirements:
 - framework must be "html"
 - previewType must be "static-html"
 - files must be exactly: index.html, styles.css, script.js, README.md
 - index.html should link styles.css and script.js
-- include hero, services, benefits, pricing/packages or offers, testimonials, contact CTA, and responsive mobile layout
-- script.js should add small safe interactions only, such as smooth scrolling or CTA handling
-- keep each file concise and complete`
+- include a polished hero section, services, benefits, pricing, testimonials, FAQ, contact or booking CTA, and responsive mobile layout
+- write professional business copy, not generic filler
+- script.js should add safe polished interactions such as smooth scrolling, reveal-on-scroll, menu handling, and CTA feedback
+- keep it visually premium and cohesive
+- do not output markdown fences
+- do not output README-only
+- no broken links or external paid libraries`
     : input.mode === 'edit'
       ? `Mode: edit
 Project: ${input.project.title}
@@ -1350,7 +1814,16 @@ ${recentMessages || 'None'}
 Current relevant file contents:
 ${fileContext || 'None'}
 
-Return JSON only. Apply the requested change with minimal targeted operations. If this is a static site, improve the existing HTML/CSS/JS rather than creating a new project.`
+Return JSON only.
+Apply the requested change with minimal targeted operations.
+If this is a static site:
+- read all supplied files as the current source of truth
+- improve the existing HTML/CSS/JS instead of rebuilding from scratch
+- keep the site premium and coherent
+- update the specific files needed, usually index.html, styles.css, and script.js
+- preserve working sections unless the user asked to replace them
+- do not return README only
+- do not return zero operations`
       : `Mode: ${input.mode}
 Project: ${input.project.title}
 Description: ${input.project.description || ''}
@@ -1365,19 +1838,20 @@ ${recentMessages || 'None'}
 Relevant file contents:
 ${fileContext || 'None'}`
 
-  console.info('[Easy Code] DeepSeek generation prepared', {
+  console.info('[Easy Code] GPT-5.4 generation prepared', {
     projectId: input.projectId || null,
     mode: input.mode,
     staticLandingPage,
     staticProjectEdit,
     contextFileCount: contextFiles.length,
+    providerUsed: 'azure-gpt54',
   })
-  const raw = await callAzureDeepSeekJson([
+  const raw = await callAzureGpt54Json([
     { role: 'system', content: system },
     { role: 'user', content: user },
   ], staticLandingPage ? 2600 : input.mode === 'create' ? 8000 : 7000, {
-    timeoutMs: staticLandingPage ? EASY_CODE_STATIC_TIMEOUT_MS : EASY_CODE_DEEPSEEK_TIMEOUT_MS,
-    phase: staticLandingPage ? 'static_landing_generation' : 'deepseek_generation',
+    timeoutMs: staticLandingPage ? EASY_CODE_CREATE_TIMEOUT_MS : input.mode === 'edit' ? EASY_CODE_EDIT_TIMEOUT_MS : EASY_CODE_CREATE_TIMEOUT_MS,
+    phase: staticLandingPage ? 'static_landing_generation' : input.mode === 'edit' ? 'edit_generation' : 'project_generation',
     projectId: input.projectId,
   })
   return parseEasyCodeJson(raw, input.projectId)
@@ -1417,8 +1891,18 @@ export async function applyEasyCodeAiResult(userId: string, projectId: string, a
     }
     if (file.operation === 'rename') {
       const newPath = validateEasyCodePath(file.newPath)
+      const renameUpdate: Record<string, any> = {
+        path: newPath,
+        updated_at: new Date().toISOString(),
+      }
+      if (typeof file.content === 'string' && file.content.trim()) {
+        if (bytesOf(file.content) > EASY_CODE_MAX_FILE_BYTES) throw new Error(`File is too large: ${newPath}`)
+        renameUpdate.content = file.content
+        renameUpdate.size_bytes = bytesOf(file.content)
+        renameUpdate.language = file.language || inferLanguage(newPath)
+      }
       const { error } = await db.from('easy_code_files')
-        .update({ path: newPath, updated_at: new Date().toISOString() })
+        .update(renameUpdate)
         .eq('project_id', projectId)
         .eq('user_id', userId)
         .eq('path', path)
@@ -1452,20 +1936,6 @@ export async function applyEasyCodeAiResult(userId: string, projectId: string, a
     }
     savedFiles += 1
   }
-  const { error: projectUpdateError } = await db
-    .from('easy_code_projects')
-    .update({
-      generation_status: 'ready',
-      generation_phase: 'complete',
-      generation_error: null,
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', projectId)
-    .eq('user_id', userId)
-  if (projectUpdateError) {
-    console.error('[Easy Code] Project status update after edit failed', { projectId, code: projectUpdateError.code })
-    throw new Error('Could not save updated files.')
-  }
   console.info('[Easy Code] Applied generated files', {
     projectId,
     savedFiles,
@@ -1493,13 +1963,19 @@ export async function runEasyCodeEdit(userId: string, projectId: string, instruc
     existingFiles: files.length,
     selectedPath: selectedPath || null,
     promptType: staticProjectEdit ? 'static_site' : 'complex',
+    providerUsed: 'azure-gpt54',
   })
 
   const db = await getDb()
   await db.from('easy_code_messages').insert({ project_id: projectId, user_id: userId, role: 'user', content: cleanInstruction })
-  let aiResult: EasyCodeAiResult
   try {
-    aiResult = await generateEasyCodeFiles({
+    await updateEasyCodeGenerationState(userId, projectId, {
+      status: 'generating',
+      phase: 'planning',
+      error: null,
+      metadata: buildEasyCodeProgress('planning', [], null, staticProjectEdit ? 'static_site' : 'generic'),
+    })
+    const aiResult = await generateEasyCodeFiles({
       mode: 'edit',
       project,
       files,
@@ -1508,53 +1984,96 @@ export async function runEasyCodeEdit(userId: string, projectId: string, instruc
       selectedPath,
       projectId,
     })
+    const editDiagnostics = getEasyCodeAiResultDiagnostics(aiResult, project)
+    if (editDiagnostics.readmeOnly || aiResult.files.length === 0) {
+      console.warn('[Easy Code] Edit returned invalid operations', {
+        projectId,
+        operationsCount: aiResult.files.length,
+        readmeOnly: editDiagnostics.readmeOnly,
+        errorCategory: editDiagnostics.readmeOnly ? 'readme_only' : 'no_valid_changes',
+      })
+      throw new Error(editDiagnostics.readmeOnly
+        ? 'The AI returned invalid file changes. Try again.'
+        : 'No valid file changes were returned. Try again.')
+    }
+    console.info('[Easy Code] Edit model output parsed', {
+      projectId,
+      operationsCount: aiResult.files.length,
+      providerUsed: 'azure-gpt54',
+    })
+    await updateEasyCodeGenerationState(userId, projectId, {
+      status: 'generating',
+      phase: 'saving_files',
+      error: null,
+      metadata: buildEasyCodeProgress('saving_files', aiResult.files.map(file => file.newPath || file.path), null, staticProjectEdit ? 'static_site' : 'generic'),
+    })
+    await applyEasyCodeAiResult(userId, projectId, aiResult)
+    await updateEasyCodeGenerationState(userId, projectId, {
+      status: 'generating',
+      phase: 'building_preview',
+      error: null,
+      metadata: buildEasyCodeProgress('building_preview', aiResult.files.map(file => file.newPath || file.path), null, staticProjectEdit ? 'static_site' : 'generic'),
+    })
+    await db.from('easy_code_messages').insert({
+      project_id: projectId,
+      user_id: userId,
+      role: 'assistant',
+      content: aiResult.summary,
+      metadata: {
+        instructions: aiResult.instructions,
+        changedFiles: aiResult.files.map(file => ({ path: file.newPath || file.path, operation: file.operation })),
+        previewType: aiResult.previewType,
+      },
+    })
+    await updateEasyCodeGenerationState(userId, projectId, {
+      status: 'ready',
+      phase: 'complete',
+      error: null,
+      metadata: buildEasyCodeProgress('complete', aiResult.files.map(file => file.newPath || file.path), null, staticProjectEdit ? 'static_site' : 'generic'),
+      title: aiResult.title || project.title,
+      framework: aiResult.framework || project.framework,
+      lastGeneratedAt: new Date().toISOString(),
+    })
+    const [freshProject, freshFiles, freshMessages] = await Promise.all([
+      getEasyCodeProject(userId, projectId),
+      getEasyCodeFiles(userId, projectId),
+      getEasyCodeMessages(userId, projectId),
+    ])
+    console.info('[Easy Code] Edit completed', {
+      projectId,
+      filesCount: freshFiles.length,
+      changedFiles: aiResult.files.map(file => file.newPath || file.path),
+      finalStatus: 'ready',
+      fallbackUsed: false,
+    })
+    return { project: freshProject, files: freshFiles, messages: freshMessages, aiResult }
   } catch (error: any) {
-    if (!staticProjectEdit) throw error
-    console.warn('[Easy Code] Static edit fallback starting', {
+    const message = isTimeoutError(error)
+      ? 'The edit request timed out. Try a smaller change.'
+      : error?.message === 'No valid file changes were returned. Try again.'
+        ? error.message
+        : error?.message === 'The AI returned invalid file changes. Try again.'
+          ? error.message
+          : error?.message === 'Could not save updated files.'
+            ? error.message
+            : 'Could not apply changes right now.'
+    await updateEasyCodeGenerationState(userId, projectId, {
+      status: 'ready',
+      phase: 'complete',
+      error: message,
+      metadata: buildEasyCodeProgress('complete', files.map(file => file.path), message, staticProjectEdit ? 'static_site' : 'generic'),
+      lastGeneratedAt: project.last_generated_at || null,
+    }).catch(() => {})
+    console.error('[Easy Code] Edit failed', {
       projectId,
+      message,
       timeoutHit: isTimeoutError(error),
-      message: error?.message,
-      fallbackUsed: true,
+      errorCategory: categorizeEasyCodeError(error),
+      fallbackUsed: false,
+      existingFilesPreserved: true,
     })
-    const reason = isTimeoutError(error)
-      ? 'The edit request timed out, so'
-      : 'The AI returned invalid file changes, so'
-    aiResult = buildFallbackStaticEdit(files, cleanInstruction, reason)
+    throw new Error(message)
   }
-  console.info('[Easy Code] Edit model output parsed', {
-    projectId,
-    operationsCount: aiResult.files.length,
-  })
-  if (staticProjectEdit && aiResult.files.length === 0) {
-    console.warn('[Easy Code] Static edit returned no operations, using fallback', {
-      projectId,
-      fallbackUsed: true,
-    })
-    aiResult = buildFallbackStaticEdit(files, cleanInstruction, 'No valid file changes were returned, so')
-  }
-  await applyEasyCodeAiResult(userId, projectId, aiResult)
-  await db.from('easy_code_messages').insert({
-    project_id: projectId,
-    user_id: userId,
-    role: 'assistant',
-    content: aiResult.summary,
-    metadata: {
-      instructions: aiResult.instructions,
-      changedFiles: aiResult.files.map(file => ({ path: file.newPath || file.path, operation: file.operation })),
-      previewType: aiResult.previewType,
-    },
-  })
-  const [freshFiles, freshMessages] = await Promise.all([
-    getEasyCodeFiles(userId, projectId),
-    getEasyCodeMessages(userId, projectId),
-  ])
-  console.info('[Easy Code] Edit completed', {
-    projectId,
-    filesCount: freshFiles.length,
-    changedFiles: aiResult.files.map(file => file.newPath || file.path),
-    finalStatus: 'ready',
-  })
-  return { files: freshFiles, messages: freshMessages, aiResult }
 }
 
 export function buildStaticPreviewHtml(files: EasyCodeFile[]): string | null {

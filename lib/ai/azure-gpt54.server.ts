@@ -36,6 +36,20 @@ export interface AzureGpt54Diagnostics {
   safeReason: string
 }
 
+export interface AzureGpt54JsonMessage {
+  role: 'system' | 'user' | 'assistant'
+  content: string
+}
+
+export interface AzureGpt54JsonOptions {
+  maxTokens?: number
+  temperature?: number
+  timeoutMs?: number
+  phase?: string
+  projectId?: string
+  responseFormat?: 'json_object' | 'text'
+}
+
 let availabilityCache: { checkedAt: number; diagnostics: AzureGpt54Diagnostics } | null = null
 
 function normalizeBaseUrl(baseUrl: string): string {
@@ -305,6 +319,127 @@ export async function getAzureGpt54Diagnostics(force = false): Promise<AzureGpt5
 
 export async function isAzureGpt54Available(): Promise<boolean> {
   return (await getAzureGpt54Diagnostics()).probeOk
+}
+
+export async function generateAzureGpt54Json(
+  messages: AzureGpt54JsonMessage[],
+  options: AzureGpt54JsonOptions = {}
+): Promise<string> {
+  const {
+    apiKey,
+    baseUrl,
+    model,
+    apiKeyConfigured,
+    baseUrlConfigured,
+    modelConfigured,
+    envStatus,
+  } = getProviderConfig()
+  const endpoint = getEndpointMetadata(baseUrl)
+
+  if (!apiKey || !baseUrl || !modelConfigured) {
+    console.error('[Azure GPT-5.4] Missing provider configuration', {
+      apiKeyConfigured,
+      baseUrlConfigured,
+      modelConfigured,
+      model,
+      envStatus,
+      ...endpoint,
+      phase: options.phase || 'json_generation',
+      projectId: options.projectId || null,
+    })
+    throw getSafeConfigurationError()
+  }
+
+  const maxTokens = Math.min(options.maxTokens ?? 8192, 8192)
+  const temperature = options.temperature ?? 0.2
+  const timeoutMs = options.timeoutMs ?? 60_000
+  const startedAt = Date.now()
+
+  console.info('[Azure GPT-5.4] JSON request started', {
+    projectId: options.projectId || null,
+    phase: options.phase || 'json_generation',
+    maxTokens,
+    timeoutMs,
+    temperature,
+  })
+
+  let response: Response
+  let authMode: AuthMode = 'api-key'
+
+  try {
+    const result = await fetchWithAuthFallback(getChatCompletionsUrl(baseUrl), apiKey, {
+      method: 'POST',
+      body: JSON.stringify({
+        model,
+        messages,
+        temperature,
+        max_tokens: maxTokens,
+        stream: false,
+        ...(options.responseFormat === 'json_object'
+          ? { response_format: { type: 'json_object' } }
+          : {}),
+      }),
+      signal: AbortSignal.timeout(timeoutMs),
+    })
+    response = result.response
+    authMode = result.authMode
+  } catch (error: any) {
+    const timeoutHit = error?.name === 'TimeoutError' || error?.name === 'AbortError'
+    console.error('[Azure GPT-5.4] JSON request failed before response', {
+      message: error?.message,
+      timeoutHit,
+      projectId: options.projectId || null,
+      phase: options.phase || 'json_generation',
+      durationMs: Date.now() - startedAt,
+    })
+    if (
+      error?.message?.startsWith('This EasyPlus mode') ||
+      error?.message?.startsWith('Model provider') ||
+      error?.message?.startsWith('Model deployment') ||
+      error?.message?.startsWith('The AI returned')
+    ) {
+      throw error
+    }
+    throw timeoutHit ? getSafeTimeoutError() : getSafeProviderError()
+  }
+
+  if (!response.ok) {
+    console.error('[Azure GPT-5.4] JSON request failed', {
+      status: response.status,
+      authMode,
+      projectId: options.projectId || null,
+      phase: options.phase || 'json_generation',
+      durationMs: Date.now() - startedAt,
+    })
+    throw getSafeProviderError(response.status)
+  }
+
+  const data = await response.json().catch(() => null)
+  const content = data?.choices?.[0]?.message?.content
+  const normalized = typeof content === 'string'
+    ? content
+    : Array.isArray(content)
+      ? content.map((part: any) => part?.text || '').join('')
+      : ''
+
+  if (!normalized.trim()) {
+    console.error('[Azure GPT-5.4] JSON request returned empty content', {
+      projectId: options.projectId || null,
+      phase: options.phase || 'json_generation',
+      durationMs: Date.now() - startedAt,
+    })
+    throw new Error('The AI returned invalid file changes. Try again.')
+  }
+
+  console.info('[Azure GPT-5.4] JSON request ended', {
+    projectId: options.projectId || null,
+    phase: options.phase || 'json_generation',
+    durationMs: Date.now() - startedAt,
+    responseChars: normalized.length,
+    authMode,
+  })
+
+  return normalized
 }
 
 export async function streamAzureGpt54Response(
