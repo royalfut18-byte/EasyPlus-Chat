@@ -8,7 +8,9 @@ const BUILDABLE_KEYWORDS = [
   'hero', 'section', 'layout', 'word', 'docx', 'excel', 'xlsx',
   'spreadsheet', 'sheet', 'sheets', 'powerpoint', 'ppt', 'pptx', 'slides',
   'presentation', 'google doc', 'google docs', 'google sheet', 'google sheets',
-  'google slides', 'canva', 'deck'
+  'google slides', 'canva', 'deck', 'artifact', 'interactive', 'quiz',
+  'timetable', 'revision', 'budget', 'table', 'widget', 'planner', 'schedule',
+  'converter', 'tracker', 'simulator'
 ]
 
 const SUPPORTED_LANGUAGES = new Set([
@@ -52,6 +54,10 @@ function normalizeLanguage(language?: string): Artifact['language'] | null {
     google_slides: 'gslides',
     deck: 'pptx',
     design: 'canva',
+    interactive_web: 'html',
+    web_artifact: 'html',
+    document: 'markdown',
+    report: 'markdown',
   }
 
   const languageName = aliases[aliasKey] || aliases[normalized] || normalized
@@ -154,7 +160,10 @@ function buildCleanContent(content: string, fullMatch: string, artifact: Artifac
   if (beforeArtifact) {
     cleanContent += beforeArtifact + '\n\n'
   }
-  cleanContent += `**Artifact created: ${artifact.title}**\n\n_The ${artifact.language} code is now available in the artifact panel on the right._`
+  const previewLabel = ['html', 'canva', 'markdown', 'json', 'svg', 'css', 'javascript', 'text', 'docx', 'gdoc', 'xlsx', 'gsheet', 'pptx', 'gslides'].includes(artifact.language)
+    ? 'preview, edit, and download'
+    : 'view, copy, and download'
+  cleanContent += `**Artifact created: ${artifact.title}**\n\n_Open the artifact panel to ${previewLabel} it._`
   if (afterArtifact) {
     cleanContent += '\n\n' + afterArtifact
   }

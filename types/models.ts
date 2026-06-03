@@ -64,6 +64,7 @@ export const UI_MODELS: AIModel[] = UI_MODEL_ORDER
 export const PUBLIC_MODEL_CAPABILITIES = {
   'claude-opus-4.8': {
     artifacts: true,
+    interactiveArtifacts: true,
     documents: true,
     presentations: true,
     pptx: true,
@@ -76,6 +77,7 @@ export const PUBLIC_MODEL_CAPABILITIES = {
   },
   'chat-gpt-5.5': {
     artifacts: true,
+    interactiveArtifacts: true,
     documents: true,
     presentations: true,
     pptx: true,
@@ -88,6 +90,7 @@ export const PUBLIC_MODEL_CAPABILITIES = {
   },
   'deepseek-v4-pro': {
     artifacts: true,
+    interactiveArtifacts: true,
     documents: true,
     presentations: true,
     pptx: true,
@@ -100,6 +103,7 @@ export const PUBLIC_MODEL_CAPABILITIES = {
   },
   'gemini-3.1-pro': {
     artifacts: true,
+    interactiveArtifacts: true,
     documents: true,
     presentations: true,
     pptx: true,
@@ -112,6 +116,7 @@ export const PUBLIC_MODEL_CAPABILITIES = {
   },
   'image-generation': {
     artifacts: false,
+    interactiveArtifacts: false,
     documents: false,
     presentations: false,
     pptx: false,

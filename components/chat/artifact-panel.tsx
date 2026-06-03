@@ -1,7 +1,7 @@
 'use client'
 
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, Copy, Download, Code, Eye, GripVertical, Package, AlertTriangle, Blocks, EyeOff, Monitor, Tablet, Smartphone, RefreshCw } from 'lucide-react'
+import { X, Copy, Download, Code, Eye, GripVertical, Package, AlertTriangle, Blocks, EyeOff, Monitor, Tablet, Smartphone, RefreshCw, Maximize2, Minimize2 } from 'lucide-react'
 import { useState, useEffect, useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { Artifact } from '@/types/models'
@@ -23,6 +23,22 @@ const MAX_WIDTH_PERCENT = 0.75
 const DOCX_MIME_TYPE = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
 const XLSX_MIME_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
 const PPTX_MIME_TYPE = 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+const PREVIEWABLE_LANGUAGES = new Set([
+  'html',
+  'canva',
+  'markdown',
+  'json',
+  'svg',
+  'css',
+  'javascript',
+  'text',
+  'docx',
+  'gdoc',
+  'xlsx',
+  'gsheet',
+  'pptx',
+  'gslides',
+])
 
 function escapeXml(value: string): string {
   return value
@@ -818,6 +834,93 @@ function createMarkdownPreviewHtml(title: string, content: string): string {
   </style>`)
 }
 
+function createPresentationPreviewHtml(title: string, content: string): string {
+  const slideBlocks = content
+    .split(/\n\s*---+\s*\n/)
+    .map(block => block.trim())
+    .filter(Boolean)
+
+  const slides = (slideBlocks.length ? slideBlocks : [content]).map((block, index) => {
+    const lines = block.split(/\n/).map(line => line.trim()).filter(Boolean)
+    const heading = lines[0]?.replace(/^#+\s*/, '').replace(/^slide\s*\d+\s*[:.-]\s*/i, '') || `Slide ${index + 1}`
+    const bullets = lines.slice(1)
+      .map(line => line.replace(/^[-*•]\s*/, ''))
+      .filter(Boolean)
+      .map(line => `<li>${escapeXml(line)}</li>`)
+      .join('')
+
+    return `<article class="slide-card">
+      <span class="slide-kicker">Slide ${index + 1}</span>
+      <h2>${escapeXml(heading)}</h2>
+      ${bullets ? `<ul>${bullets}</ul>` : `<p>${escapeXml(block)}</p>`}
+    </article>`
+  }).join('')
+
+  return createPreviewHtml(title, `<main class="deck-preview">
+    <section class="deck-hero">
+      <span>Presentation Artifact</span>
+      <h1>${escapeXml(title)}</h1>
+      <p>${slideBlocks.length || 1} slide${(slideBlocks.length || 1) === 1 ? '' : 's'} ready for preview and PPTX download.</p>
+    </section>
+    <section class="slides">${slides}</section>
+  </main>
+  <style>
+    body { margin: 0; background: #09090f; color: #f8fafc; font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
+    .deck-preview { min-height: 100vh; padding: 32px; background: radial-gradient(circle at top left, rgba(168,85,247,.28), transparent 36%), #09090f; }
+    .deck-hero { max-width: 980px; margin: 0 auto 24px; padding: 28px; border: 1px solid rgba(255,255,255,.12); border-radius: 28px; background: rgba(255,255,255,.06); box-shadow: 0 24px 90px rgba(0,0,0,.35); }
+    .deck-hero span { color: #c4b5fd; text-transform: uppercase; letter-spacing: .16em; font-size: 12px; font-weight: 800; }
+    .deck-hero h1 { margin: 10px 0; font-size: clamp(32px, 5vw, 60px); letter-spacing: -.04em; }
+    .deck-hero p { margin: 0; color: #cbd5e1; }
+    .slides { max-width: 980px; margin: 0 auto; display: grid; gap: 18px; }
+    .slide-card { min-height: 280px; padding: 30px; border-radius: 26px; border: 1px solid rgba(255,255,255,.12); background: linear-gradient(135deg, rgba(124,58,237,.28), rgba(236,72,153,.14)); box-shadow: 0 18px 70px rgba(0,0,0,.28); }
+    .slide-kicker { color: #f0abfc; font-size: 12px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; }
+    .slide-card h2 { margin: 12px 0 18px; font-size: clamp(26px, 4vw, 42px); line-height: 1.05; }
+    .slide-card li, .slide-card p { color: #e2e8f0; font-size: 18px; line-height: 1.55; }
+    .slide-card ul { display: grid; gap: 10px; padding-left: 1.25rem; }
+  </style>`)
+}
+
+function createTablePreviewHtml(title: string, content: string): string {
+  const rows = content
+    .split(/\n/)
+    .map(line => line.trim())
+    .filter(line => line && !/^\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)+\|?$/.test(line))
+    .map(line => {
+      if (line.includes('|')) {
+        return line.replace(/^\||\|$/g, '').split('|').map(cell => cell.trim())
+      }
+      return line.split(',').map(cell => cell.trim())
+    })
+    .filter(row => row.length > 0)
+
+  const tableRows = rows.map((row, rowIndex) => {
+    const tag = rowIndex === 0 ? 'th' : 'td'
+    return `<tr>${row.map(cell => `<${tag}>${escapeXml(cell)}</${tag}>`).join('')}</tr>`
+  }).join('')
+
+  return createPreviewHtml(title, `<main class="table-preview">
+    <section class="table-card">
+      <span>Data Artifact</span>
+      <h1>${escapeXml(title)}</h1>
+      <div class="table-wrap">
+        <table>${tableRows || `<tr><td>${escapeXml(content)}</td></tr>`}</table>
+      </div>
+    </section>
+  </main>
+  <style>
+    body { margin: 0; min-height: 100vh; background: #0f172a; color: #e5e7eb; font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
+    .table-preview { min-height: 100vh; padding: 32px; background: radial-gradient(circle at top right, rgba(14,165,233,.22), transparent 36%), #0f172a; }
+    .table-card { max-width: 980px; margin: 0 auto; padding: 28px; border-radius: 26px; border: 1px solid rgba(255,255,255,.12); background: rgba(255,255,255,.055); box-shadow: 0 24px 90px rgba(0,0,0,.28); }
+    span { color: #67e8f9; text-transform: uppercase; letter-spacing: .14em; font-size: 12px; font-weight: 800; }
+    h1 { margin: 10px 0 24px; font-size: clamp(28px, 4vw, 46px); }
+    .table-wrap { overflow: auto; border-radius: 18px; border: 1px solid rgba(255,255,255,.12); }
+    table { width: 100%; border-collapse: collapse; background: rgba(15,23,42,.7); }
+    th, td { padding: 14px 16px; border-bottom: 1px solid rgba(255,255,255,.08); text-align: left; }
+    th { background: rgba(255,255,255,.08); color: #fff; }
+    td { color: #dbeafe; }
+  </style>`)
+}
+
 function createJsonPreviewHtml(title: string, content: string): string {
   let formatted = content
   try {
@@ -923,11 +1026,16 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
   const [isMobile, setIsMobile] = useState(false)
   const [previewDevice, setPreviewDevice] = useState<'desktop' | 'tablet' | 'mobile'>('desktop')
   const [refreshKey, setRefreshKey] = useState(0)
+  const [isFullscreen, setIsFullscreen] = useState(false)
+  const [viewportWidth, setViewportWidth] = useState(0)
   const panelRef = useRef<HTMLDivElement>(null)
   const iframeRef = useRef<HTMLIFrameElement>(null)
 
   useEffect(() => {
-    const checkMobile = () => setIsMobile(window.innerWidth < 768)
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 768)
+      setViewportWidth(window.innerWidth)
+    }
     checkMobile()
     window.addEventListener('resize', checkMobile)
     return () => window.removeEventListener('resize', checkMobile)
@@ -939,7 +1047,7 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
 
   useEffect(() => {
     if (!artifact) return
-    const previewable = ['html', 'canva', 'markdown', 'json', 'svg', 'css', 'javascript', 'text'].includes(artifact.language)
+    const previewable = PREVIEWABLE_LANGUAGES.has(artifact.language)
     setActiveTab(previewable ? 'preview' : 'code')
     setRefreshKey(k => k + 1)
   }, [artifact?.id, artifact?.language])
@@ -1006,13 +1114,16 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
     })
   }
 
-  const canPreview = !!artifact && ['html', 'canva', 'markdown', 'json', 'svg', 'css', 'javascript', 'text'].includes(artifact.language)
+  const canPreview = !!artifact && PREVIEWABLE_LANGUAGES.has(artifact.language)
   const isReact = artifact?.language === 'tsx' || artifact?.language === 'jsx'
   const currentTab = activeTab
 
   const getPreviewSrcDoc = (artifact: Artifact): string => {
     if (artifact.language === 'canva') return createCanvaHtml(artifact.title, artifact.code)
     if (artifact.language === 'html') return createPreviewHtml(artifact.title, artifact.code)
+    if (artifact.language === 'docx' || artifact.language === 'gdoc') return createMarkdownPreviewHtml(artifact.title, artifact.code)
+    if (artifact.language === 'pptx' || artifact.language === 'gslides') return createPresentationPreviewHtml(artifact.title, artifact.code)
+    if (artifact.language === 'xlsx' || artifact.language === 'gsheet') return createTablePreviewHtml(artifact.title, artifact.code)
     if (artifact.language === 'markdown') return createMarkdownPreviewHtml(artifact.title, artifact.code)
     if (artifact.language === 'json') return createJsonPreviewHtml(artifact.title, artifact.code)
     if (artifact.language === 'svg') return createSvgPreviewHtml(artifact.title, artifact.code)
@@ -1064,43 +1175,50 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
 
   const renderPanelContent = () => (
     <div className="flex flex-col h-full" style={{ paddingLeft: isMobile ? 0 : '12px' }}>
-      {/* Dev Debug Info */}
-      {process.env.NODE_ENV !== 'production' && (
-        <div className="bg-yellow-500/20 border-b border-yellow-500/50 p-2 text-xs text-yellow-300">
-          Debug: Artifact loaded: {artifact ? 'YES' : 'NO'} | Language: {artifact?.language || 'N/A'} | Code length: {artifact?.code?.length || 0}
-        </div>
-      )}
-
       {/* Header */}
-      <div className="bg-white/[0.02] border-b border-white/[0.06] p-4 flex items-center justify-between">
+      <div className="border-b border-white/[0.06] bg-gradient-to-r from-white/[0.055] via-white/[0.025] to-fuchsia-500/[0.045] p-4 flex items-center justify-between">
         <div className="flex-1 min-w-0">
-          <h3 className="text-lg font-semibold text-white truncate">
+          <h3 className="text-lg font-semibold text-white truncate sm:text-xl">
             {artifact?.title || 'No Artifact'}
           </h3>
           <p className="text-xs text-gray-400 mt-0.5">
             {artifact ? `${getLanguageLabel(artifact)} • Artifact` : 'No artifact selected'}
           </p>
         </div>
-        <Button
-          size="icon"
-          variant="ghost"
-          onClick={onClose}
-          className="ml-3 shrink-0 hover:bg-white/10"
-        >
-          <X className="h-5 w-5" />
-        </Button>
+        <div className="ml-3 flex shrink-0 items-center gap-1">
+          {!isMobile && (
+            <Button
+              size="icon"
+              variant="ghost"
+              onClick={() => setIsFullscreen(value => !value)}
+              className="hover:bg-white/10"
+              title={isFullscreen ? 'Exit full screen' : 'Open full screen'}
+            >
+              {isFullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+            </Button>
+          )}
+          <Button
+            size="icon"
+            variant="ghost"
+            onClick={onClose}
+            className="hover:bg-white/10"
+            title="Close artifact"
+          >
+            <X className="h-5 w-5" />
+          </Button>
+        </div>
       </div>
 
       {/* Tabs and Controls */}
-      <div className="bg-white/[0.02] border-b border-white/[0.06] px-4 flex items-center gap-2 justify-between">
-        <div className="flex items-center gap-2">
+      <div className="border-b border-white/[0.06] bg-black/20 px-3 py-2 sm:px-4 flex flex-wrap items-center gap-2 justify-between">
+        <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.035] p-1">
           <button
             onClick={() => setActiveTab('preview')}
             className={cn(
-              'px-4 py-3 text-sm font-medium transition-colors border-b-2 flex items-center gap-2',
+              'rounded-lg px-3 py-2 text-sm font-medium transition-colors flex items-center gap-2',
               currentTab === 'preview'
-                ? 'text-white border-violet-500'
-                : 'text-gray-400 border-transparent hover:text-white'
+                ? 'bg-violet-500/20 text-white shadow-sm'
+                : 'text-gray-400 hover:bg-white/5 hover:text-white'
             )}
           >
             <Eye className="h-4 w-4" />
@@ -1109,20 +1227,19 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
           <button
             onClick={() => setActiveTab('code')}
             className={cn(
-              'px-4 py-3 text-sm font-medium transition-colors border-b-2 flex items-center gap-2',
+              'rounded-lg px-3 py-2 text-sm font-medium transition-colors flex items-center gap-2',
               currentTab === 'code'
-                ? 'text-white border-violet-500'
-                : 'text-gray-400 border-transparent hover:text-white'
+                ? 'bg-violet-500/20 text-white shadow-sm'
+                : 'text-gray-400 hover:bg-white/5 hover:text-white'
             )}
           >
             <Code className="h-4 w-4" />
-            Code
+            View Code
           </button>
         </div>
 
-        {/* Device Preview Controls - Only show in preview tab for HTML */}
-        {canPreview && currentTab === 'preview' && artifact?.code && ['html', 'canva'].includes(artifact.language) && (
-          <div className="flex items-center gap-1">
+        {canPreview && currentTab === 'preview' && artifact?.code && (
+          <div className="flex items-center gap-1 rounded-xl border border-white/10 bg-white/[0.025] p-1">
             <button
               onClick={() => setPreviewDevice('desktop')}
               title="Desktop view"
@@ -1199,7 +1316,7 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
           </div>
         ) : currentTab === 'preview' ? (
           canPreview ? (
-            <div className="flex-1 min-h-0 h-full overflow-hidden flex flex-col items-center justify-center p-4">
+            <div className="flex-1 min-h-0 h-full overflow-hidden flex flex-col items-center justify-center bg-[radial-gradient(circle_at_top,rgba(139,92,246,0.14),transparent_36%),#0b0b0f] p-4">
               {/* Interactive hint for games/apps */}
               <div className="text-center mb-2">
                 <p className="text-xs text-gray-400">
@@ -1207,7 +1324,7 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
                 </p>
               </div>
               <div
-                className="bg-white rounded-xl shadow-2xl overflow-hidden border border-gray-200 transition-all duration-300 cursor-pointer"
+                className="bg-white rounded-2xl shadow-[0_30px_120px_rgba(0,0,0,0.45)] overflow-hidden border border-white/15 transition-all duration-300 cursor-pointer"
                 style={{
                   width: previewDevice === 'mobile' ? '375px' : previewDevice === 'tablet' ? '768px' : '100%',
                   maxWidth: '100%',
@@ -1221,7 +1338,7 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
                   key={refreshKey}
                   srcDoc={getPreviewSrcDoc(artifact)}
                   title={artifact.title}
-                  sandbox="allow-scripts allow-forms allow-modals allow-popups allow-pointer-lock"
+                  sandbox="allow-scripts allow-forms"
                   className="w-full h-full border-0 bg-white pointer-events-auto"
                   style={{
                     minHeight: previewDevice !== 'desktop' ? '600px' : undefined,
@@ -1252,11 +1369,11 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
                 <div className="flex h-16 w-16 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-gray-400 mx-auto">
                   <EyeOff className="h-8 w-8" />
                 </div>
-                <h4 className="text-lg font-semibold text-white">Preview Not Available</h4>
+                <h4 className="text-lg font-semibold text-white">Code preview unavailable</h4>
                 <p className="text-sm text-gray-400">
                   {artifact.language === 'python'
-                    ? 'Live preview is not available for Python or Pygame artifacts in the browser. Download the file and run it locally with Python.'
-                    : 'Live preview is not available for this artifact type yet. Use the Code tab to view, copy, or download the source.'}
+                    ? 'Python and Pygame artifacts cannot run inside the browser preview yet. Download the file and run it locally with Python.'
+                    : 'This artifact type cannot be rendered safely in the browser preview yet. Use View Code to inspect, copy, or download the source.'}
                 </p>
               </div>
             </div>
@@ -1295,10 +1412,10 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
 
       {/* Actions */}
       {artifact && artifact.code && (
-        <div className="bg-white/[0.02] border-t border-white/[0.06] p-4 flex gap-3">
+        <div className="border-t border-white/[0.06] bg-black/25 p-3 sm:p-4 flex flex-wrap gap-2 sm:gap-3">
           <Button
             onClick={handleCopy}
-            className="flex-1 bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.1]"
+            className="min-w-[130px] flex-1 bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.1]"
             variant="ghost"
           >
             <Copy className="h-4 w-4 mr-2" />
@@ -1306,14 +1423,14 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
           </Button>
           <Button
             onClick={handleDownload}
-            className="flex-1 bg-violet-600/80 hover:bg-violet-600 text-white"
+            className="min-w-[130px] flex-1 bg-violet-600/80 hover:bg-violet-600 text-white"
           >
             <Download className="h-4 w-4 mr-2" />
             Download
           </Button>
           <Button
             onClick={handleDownloadZip}
-            className="flex-1 bg-violet-600/80 hover:bg-violet-600 text-white"
+            className="min-w-[130px] flex-1 bg-fuchsia-600/80 hover:bg-fuchsia-600 text-white"
           >
             <Download className="h-4 w-4 mr-2" />
             Download ZIP
@@ -1455,7 +1572,7 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
         <aside
           ref={panelRef}
           className="hidden md:flex relative h-full min-h-0 flex-shrink-0 flex-col border-l border-white/[0.06] bg-[#111111] shadow-2xl"
-          style={{ width: `${currentWidth}px` }}
+          style={{ width: `${isFullscreen ? Math.max(MIN_WIDTH, viewportWidth - 32) : currentWidth}px` }}
         >
           {/* Resize Handle - Desktop Only - Full Height */}
           <div
