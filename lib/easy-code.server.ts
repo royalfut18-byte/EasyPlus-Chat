@@ -12,6 +12,8 @@ export const EASY_CODE_MAX_PROJECT_FILES = 120
 export const EASY_CODE_MAX_ZIP_BYTES = 12 * 1024 * 1024
 const EASY_CODE_DEEPSEEK_TIMEOUT_MS = 55_000
 const EASY_CODE_REPAIR_TIMEOUT_MS = 30_000
+const EASY_CODE_STATIC_TIMEOUT_MS = 18_000
+const EASY_CODE_STATIC_FILES = ['index.html', 'styles.css', 'script.js', 'README.md'] as const
 
 export type EasyCodeOperation = 'create' | 'update' | 'delete' | 'rename'
 
@@ -136,12 +138,296 @@ function getSafeEasyCodeError(error: any): string {
 function isStaticLandingPageRequest(input: string): boolean {
   const text = input.toLowerCase()
   const asksForOtherStack = /\b(react|next\.?js|vite|typescript|node|express|python|flask|fastapi|vue|svelte|angular)\b/.test(text)
-  return !asksForOtherStack && /\b(landing page|website|web site|webpage|homepage|portfolio|business|carwash|car wash|detailing)\b/.test(text)
+  return !asksForOtherStack && /\b(landing page|website|web site|webpage|homepage|portfolio|business|carwash|car wash|car washing|detailing|simple site|html site)\b/.test(text)
 }
 
 function getMissingStaticStarterFiles(files: Array<Pick<EasyCodeFile, 'path'> | Pick<EasyCodeAiFile, 'path' | 'newPath'>>): string[] {
   const paths = new Set(files.map((file: any) => (file.newPath || file.path || '').toLowerCase()))
-  return ['index.html', 'styles.css', 'script.js', 'README.md'].filter(path => !paths.has(path.toLowerCase()))
+  return EASY_CODE_STATIC_FILES.filter(path => !paths.has(path.toLowerCase()))
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+function inferStaticSiteTitle(prompt: string): string {
+  const text = prompt.toLowerCase()
+  if (/\b(car\s*wash|car\s*washing|carwash)\b/.test(text)) return 'Premium Car Wash'
+  if (/\b(car\s*detailing|detailing)\b/.test(text)) return 'Elite Auto Detailing'
+  if (/\bbakery\b/.test(text)) return 'Artisan Bakery'
+  if (/\bportfolio\b/.test(text)) return 'Creative Portfolio'
+  const cleaned = prompt
+    .replace(/^(make|build|create|design)\s+(me\s+)?(a|an)?\s*/i, '')
+    .replace(/\b(landing page|website|web site|webpage|homepage|fully functional|simple site|html site)\b/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+  if (!cleaned) return 'Modern Business Website'
+  return cleaned
+    .split(' ')
+    .slice(0, 5)
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(' ')
+}
+
+function buildFallbackStaticSite(prompt: string, reason: string): EasyCodeAiResult {
+  const title = inferStaticSiteTitle(prompt)
+  const safeTitle = escapeHtml(title)
+  const summary = `${reason} Easy Code created a starter static website you can edit.`
+  const indexHtml = `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>${safeTitle}</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <nav class="nav">
+      <a class="brand" href="#home">${safeTitle}</a>
+      <button class="menu-button" aria-label="Toggle menu">Menu</button>
+      <div class="nav-links">
+        <a href="#services">Services</a>
+        <a href="#pricing">Pricing</a>
+        <a href="#testimonials">Reviews</a>
+        <a href="#contact">Contact</a>
+      </div>
+    </nav>
+  </header>
+
+  <main>
+    <section id="home" class="hero">
+      <div class="hero-content">
+        <p class="eyebrow">Fast local service</p>
+        <h1>${safeTitle} that makes every vehicle shine.</h1>
+        <p class="hero-copy">A polished, responsive starter landing page with services, pricing, reviews, and a strong contact call to action.</p>
+        <div class="hero-actions">
+          <a class="button primary" href="#contact">Book a wash</a>
+          <a class="button secondary" href="#services">View services</a>
+        </div>
+      </div>
+      <div class="hero-card">
+        <span class="shine"></span>
+        <h2>Same-day appointments</h2>
+        <p>Exterior wash, interior refresh, and premium detailing packages built for busy drivers.</p>
+      </div>
+    </section>
+
+    <section id="services" class="section">
+      <p class="section-kicker">Services</p>
+      <h2>Everything needed for a clean, protected vehicle.</h2>
+      <div class="grid cards">
+        <article><h3>Exterior wash</h3><p>Foam pre-soak, hand wash, wheel clean, and streak-free dry.</p></article>
+        <article><h3>Interior refresh</h3><p>Vacuum, wipe-down, glass cleaning, and odor control.</p></article>
+        <article><h3>Detail package</h3><p>Paint-safe decontamination, trim care, tire shine, and protection.</p></article>
+      </div>
+    </section>
+
+    <section id="pricing" class="section split">
+      <div>
+        <p class="section-kicker">Packages</p>
+        <h2>Simple pricing for every vehicle.</h2>
+        <p>Use these starter packages as placeholders, then edit the text and prices in Easy Code.</p>
+      </div>
+      <div class="price-list">
+        <div><span>Express Wash</span><strong>$29</strong></div>
+        <div><span>Interior Plus</span><strong>$59</strong></div>
+        <div><span>Full Detail</span><strong>$149</strong></div>
+      </div>
+    </section>
+
+    <section class="section why">
+      <p class="section-kicker">Why choose us</p>
+      <h2>Professional results without the wait.</h2>
+      <ul>
+        <li>Eco-conscious products and paint-safe methods</li>
+        <li>Mobile-friendly booking call to action</li>
+        <li>Responsive layout for desktop, tablet, and phone</li>
+      </ul>
+    </section>
+
+    <section id="testimonials" class="section testimonials">
+      <blockquote>"My car looked brand new after one visit. Fast, friendly, and worth every dollar."</blockquote>
+      <cite>- Happy local customer</cite>
+    </section>
+
+    <section id="contact" class="section contact">
+      <p class="section-kicker">Ready to shine?</p>
+      <h2>Book your next wash today.</h2>
+      <p>Call (555) 123-4567 or email hello@example.com to customize this starter site for your business.</p>
+      <a class="button primary" href="mailto:hello@example.com">Contact us</a>
+    </section>
+  </main>
+
+  <footer>
+    <p>&copy; <span id="year"></span> ${safeTitle}. All rights reserved.</p>
+  </footer>
+
+  <script src="script.js"></script>
+</body>
+</html>`
+
+  const stylesCss = `:root {
+  color-scheme: dark;
+  --bg: #071014;
+  --panel: rgba(255, 255, 255, 0.08);
+  --text: #f7fbff;
+  --muted: #a7b6c2;
+  --accent: #39d5ff;
+  --accent-2: #7c3cff;
+  --line: rgba(255, 255, 255, 0.12);
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: radial-gradient(circle at top left, rgba(57, 213, 255, 0.18), transparent 34%), var(--bg);
+  color: var(--text);
+}
+a { color: inherit; text-decoration: none; }
+.site-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  backdrop-filter: blur(18px);
+  background: rgba(7, 16, 20, 0.78);
+  border-bottom: 1px solid var(--line);
+}
+.nav {
+  width: min(1120px, calc(100% - 32px));
+  margin: 0 auto;
+  min-height: 72px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+}
+.brand { font-weight: 800; letter-spacing: -0.03em; }
+.nav-links { display: flex; gap: 18px; color: var(--muted); font-size: 0.95rem; }
+.menu-button { display: none; }
+.hero, .section { width: min(1120px, calc(100% - 32px)); margin: 0 auto; }
+.hero {
+  min-height: 78vh;
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(280px, 0.9fr);
+  align-items: center;
+  gap: 40px;
+  padding: 72px 0;
+}
+.eyebrow, .section-kicker {
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+h1, h2, h3, p { margin-top: 0; }
+h1 { font-size: clamp(3rem, 8vw, 6.5rem); line-height: 0.92; letter-spacing: -0.08em; margin-bottom: 24px; }
+h2 { font-size: clamp(2rem, 4vw, 3.2rem); line-height: 1; letter-spacing: -0.05em; margin-bottom: 18px; }
+h3 { font-size: 1.2rem; margin-bottom: 10px; }
+.hero-copy, .section p, li { color: var(--muted); line-height: 1.7; }
+.hero-actions { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 28px; }
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 48px;
+  border-radius: 999px;
+  padding: 0 22px;
+  font-weight: 800;
+}
+.primary { background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: #041014; }
+.secondary { border: 1px solid var(--line); color: var(--text); }
+.hero-card, .cards article, .price-list, .why, .testimonials, .contact {
+  border: 1px solid var(--line);
+  background: linear-gradient(145deg, rgba(255,255,255,0.1), rgba(255,255,255,0.035));
+  border-radius: 28px;
+  box-shadow: 0 24px 80px rgba(0,0,0,0.24);
+}
+.hero-card {
+  position: relative;
+  overflow: hidden;
+  min-height: 360px;
+  padding: 32px;
+  display: flex;
+  flex-direction: column;
+  justify-content: end;
+}
+.shine {
+  position: absolute;
+  inset: 36px;
+  border-radius: 999px;
+  background: radial-gradient(circle, rgba(57,213,255,0.38), transparent 64%);
+  filter: blur(8px);
+}
+.hero-card h2, .hero-card p { position: relative; }
+.section { padding: 74px 0; }
+.grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; margin-top: 28px; }
+.cards article { padding: 24px; }
+.split { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; align-items: start; }
+.price-list { padding: 18px; }
+.price-list div { display: flex; justify-content: space-between; padding: 18px; border-bottom: 1px solid var(--line); }
+.price-list div:last-child { border-bottom: 0; }
+.why, .testimonials, .contact { padding: 34px; }
+blockquote { margin: 0; font-size: clamp(1.4rem, 3vw, 2.4rem); line-height: 1.2; letter-spacing: -0.04em; }
+cite { display: block; margin-top: 18px; color: var(--muted); }
+footer { padding: 32px; text-align: center; color: var(--muted); border-top: 1px solid var(--line); }
+@media (max-width: 760px) {
+  .nav-links { display: none; }
+  .menu-button { display: inline-flex; border: 1px solid var(--line); background: transparent; color: var(--text); border-radius: 999px; padding: 8px 12px; }
+  .nav.open .nav-links { position: absolute; left: 16px; right: 16px; top: 74px; display: grid; padding: 16px; border: 1px solid var(--line); border-radius: 18px; background: #081419; }
+  .hero, .split { grid-template-columns: 1fr; }
+  .hero { padding-top: 48px; }
+  .grid { grid-template-columns: 1fr; }
+}`
+
+  const scriptJs = `document.getElementById('year').textContent = new Date().getFullYear();
+
+const nav = document.querySelector('.nav');
+const menuButton = document.querySelector('.menu-button');
+menuButton?.addEventListener('click', () => {
+  nav?.classList.toggle('open');
+});
+
+document.querySelectorAll('a[href^="#"]').forEach((link) => {
+  link.addEventListener('click', () => nav?.classList.remove('open'));
+});`
+
+  const readme = `# ${title}
+
+${summary}
+
+## Files
+
+- index.html - page structure and content
+- styles.css - responsive visual styling
+- script.js - menu and navigation behavior
+- README.md - project notes
+
+## Run locally
+
+Open index.html in a browser. Edit the copy, prices, phone number, and email directly in Easy Code.
+`
+
+  return {
+    summary,
+    title,
+    framework: 'html',
+    previewType: 'static-html',
+    instructions: ['Open index.html in a browser.', 'Edit the business details, prices, phone number, and email before publishing.'],
+    files: [
+      { path: 'index.html', language: 'html', content: indexHtml, operation: 'create' },
+      { path: 'styles.css', language: 'css', content: stylesCss, operation: 'create' },
+      { path: 'script.js', language: 'javascript', content: scriptJs, operation: 'create' },
+      { path: 'README.md', language: 'markdown', content: readme, operation: 'create' },
+    ],
+  }
 }
 
 export function sanitizeEasyCodePrompt(input: unknown): string {
@@ -468,7 +754,8 @@ export async function getEasyCodeMessages(userId: string, projectId: string): Pr
   return data || []
 }
 
-export function buildEasyCodeProgress(phase: string, filesCreated: string[] = [], error?: string | null) {
+export function buildEasyCodeProgress(phase: string, filesCreated: string[] = [], error?: string | null, kind?: 'static_site' | 'generic') {
+  const staticMode = kind === 'static_site' || EASY_CODE_STATIC_FILES.some(path => filesCreated.includes(path))
   const order = ['creating_project', 'planning', 'generating_files', 'saving_files', 'building_preview', 'complete']
   const currentIndex = order.indexOf(phase)
   const stateFor = (step: string) => {
@@ -478,15 +765,26 @@ export function buildEasyCodeProgress(phase: string, filesCreated: string[] = []
     if (currentIndex === stepIndex) return 'active'
     return 'pending'
   }
-  return {
-    progress: [
+  const progress = staticMode ? [
+      { label: 'Project created', state: phase === 'creating_project' ? 'active' : 'done' },
+      { label: 'Planning static site', state: stateFor('planning') },
+      { label: 'Creating index.html', state: stateFor('generating_files') },
+      { label: 'Creating styles.css', state: stateFor('generating_files') },
+      { label: 'Creating script.js', state: stateFor('generating_files') },
+      { label: 'Creating README.md', state: stateFor('generating_files') },
+      { label: 'Saving files', state: stateFor('saving_files') },
+      { label: 'Preparing preview', state: stateFor('building_preview') },
+      { label: 'Ready to download', state: phase === 'complete' ? 'done' : 'pending' },
+    ] : [
       { label: 'Project created', state: phase === 'creating_project' ? 'active' : 'done' },
       { label: 'Planning file structure', state: stateFor('planning') },
       { label: 'Writing files', state: stateFor('generating_files') },
       { label: 'Saving files', state: stateFor('saving_files') },
       { label: 'Preparing preview', state: stateFor('building_preview') },
       { label: 'Ready to download', state: phase === 'complete' ? 'done' : 'pending' },
-    ],
+    ]
+  return {
+    progress,
     filesCreated,
     lastError: error || null,
   }
@@ -522,6 +820,7 @@ export async function createEasyCodeProjectShell(userId: string, prompt: string,
   const db = await getDb()
   const cleanPrompt = sanitizeEasyCodePrompt(prompt)
   if (cleanPrompt.length < 5) throw new Error('Describe what you want to build.')
+  const staticLandingPage = isStaticLandingPageRequest(cleanPrompt)
   const cleanClientRequestId = typeof clientRequestId === 'string'
     ? clientRequestId.trim().slice(0, 100)
     : ''
@@ -553,11 +852,11 @@ export async function createEasyCodeProjectShell(userId: string, prompt: string,
       user_id: userId,
       title,
       description: cleanPrompt,
-      framework: 'detecting',
+      framework: staticLandingPage ? 'html' : 'detecting',
       generation_status: 'generating',
       generation_phase: 'creating_project',
       generation_error: null,
-      generation_metadata: buildEasyCodeProgress('creating_project'),
+      generation_metadata: buildEasyCodeProgress('creating_project', staticLandingPage ? [...EASY_CODE_STATIC_FILES] : [], null, staticLandingPage ? 'static_site' : 'generic'),
       client_request_id: cleanClientRequestId || null,
     })
     .select('*')
@@ -603,6 +902,7 @@ export async function runEasyCodeInitialGeneration(userId: string, projectId: st
   const project = await getEasyCodeProject(userId, projectId)
   if (!project) throw new Error('Project not found.')
   const cleanPrompt = sanitizeEasyCodePrompt(project.description || project.title)
+  const staticLandingPage = isStaticLandingPageRequest(cleanPrompt)
 
   try {
     if (project.generation_status === 'generating' && project.generation_phase !== 'creating_project') {
@@ -638,14 +938,18 @@ export async function runEasyCodeInitialGeneration(userId: string, projectId: st
       status: 'generating',
       phase: 'planning',
       error: null,
-      metadata: buildEasyCodeProgress('planning'),
+      metadata: buildEasyCodeProgress('planning', [], null, staticLandingPage ? 'static_site' : 'generic'),
     })
-    console.info('[Easy Code] Generation started', { projectId, mode: 'create' })
+    console.info('[Easy Code] Generation started', {
+      projectId,
+      mode: 'create',
+      promptType: staticLandingPage ? 'static_site' : 'complex',
+    })
     await updateEasyCodeGenerationState(userId, projectId, {
       status: 'generating',
       phase: 'generating_files',
       error: null,
-      metadata: buildEasyCodeProgress('generating_files'),
+      metadata: buildEasyCodeProgress('generating_files', staticLandingPage ? [...EASY_CODE_STATIC_FILES] : [], null, staticLandingPage ? 'static_site' : 'generic'),
     })
 
     const aiResult = await generateEasyCodeFiles({
@@ -658,7 +962,6 @@ export async function runEasyCodeInitialGeneration(userId: string, projectId: st
     })
 
     const filesCreated = aiResult.files.map(file => file.newPath || file.path)
-    const staticLandingPage = isStaticLandingPageRequest(cleanPrompt)
     const missingStarterFiles = staticLandingPage ? getMissingStaticStarterFiles(aiResult.files) : []
     const proposedReadiness = getEasyCodeReadiness(aiResult.files.map(file => ({
       path: file.newPath || file.path,
@@ -678,7 +981,7 @@ export async function runEasyCodeInitialGeneration(userId: string, projectId: st
     await updateEasyCodeGenerationState(userId, projectId, {
       status: 'generating',
       phase: 'saving_files',
-      metadata: buildEasyCodeProgress('saving_files', filesCreated),
+      metadata: buildEasyCodeProgress('saving_files', filesCreated, null, staticLandingPage ? 'static_site' : 'generic'),
     })
 
     await applyEasyCodeAiResult(userId, projectId, aiResult)
@@ -703,7 +1006,7 @@ export async function runEasyCodeInitialGeneration(userId: string, projectId: st
         framework: aiResult.framework || project.framework,
         generation_status: 'generating',
         generation_phase: 'building_preview',
-        generation_metadata: buildEasyCodeProgress('building_preview', filesCreated),
+        generation_metadata: buildEasyCodeProgress('building_preview', filesCreated, null, staticLandingPage ? 'static_site' : 'generic'),
         updated_at: new Date().toISOString(),
       })
       .eq('id', projectId)
@@ -724,7 +1027,7 @@ export async function runEasyCodeInitialGeneration(userId: string, projectId: st
       status: 'ready',
       phase: 'complete',
       error: null,
-      metadata: buildEasyCodeProgress('complete', filesCreated),
+      metadata: buildEasyCodeProgress('complete', filesCreated, null, staticLandingPage ? 'static_site' : 'generic'),
       title: aiResult.title || project.title,
       framework: aiResult.framework || project.framework,
       lastGeneratedAt: new Date().toISOString(),
@@ -738,6 +1041,98 @@ export async function runEasyCodeInitialGeneration(userId: string, projectId: st
     return { project: freshProject, files: freshFiles, messages: freshMessages, aiResult }
   } catch (error: any) {
     const message = getSafeEasyCodeError(error)
+    if (staticLandingPage) {
+      try {
+        const db = await getDb()
+        const fallbackReason = isTimeoutError(error)
+          ? 'AI generation took too long, so'
+          : 'AI generation returned incomplete file data, so'
+        const fallbackResult = buildFallbackStaticSite(cleanPrompt, fallbackReason)
+        const fallbackFiles = fallbackResult.files.map(file => file.path)
+
+        console.warn('[Easy Code] Static fallback starting', {
+          projectId,
+          promptType: 'static_site',
+          timeoutHit: isTimeoutError(error),
+          reason: message,
+          fallbackUsed: true,
+        })
+
+        await db
+          .from('easy_code_files')
+          .delete()
+          .eq('project_id', projectId)
+          .eq('user_id', userId)
+
+        await updateEasyCodeGenerationState(userId, projectId, {
+          status: 'generating',
+          phase: 'saving_files',
+          error: null,
+          metadata: buildEasyCodeProgress('saving_files', fallbackFiles, null, 'static_site'),
+        })
+        await applyEasyCodeAiResult(userId, projectId, fallbackResult)
+        const savedFiles = await getEasyCodeFiles(userId, projectId)
+        const readiness = getEasyCodeReadiness(savedFiles, { ...project, framework: 'html' })
+        const missingStarterFiles = getMissingStaticStarterFiles(savedFiles)
+
+        console.info('[Easy Code] Static fallback saved files', {
+          projectId,
+          fallbackUsed: true,
+          savedFiles: savedFiles.length,
+          missingStarterFiles,
+          previewAvailable: readiness.hasIndexHtml,
+          ready: readiness.ready,
+        })
+
+        if (missingStarterFiles.length > 0 || !readiness.ready) {
+          throw new Error('Fallback project could not be saved completely.')
+        }
+
+        await db.from('easy_code_messages').insert({
+          project_id: projectId,
+          user_id: userId,
+          role: 'assistant',
+          content: fallbackResult.summary,
+          metadata: {
+            instructions: fallbackResult.instructions,
+            changedFiles: fallbackResult.files.map(file => ({ path: file.path, operation: file.operation })),
+            previewType: fallbackResult.previewType,
+            fallbackUsed: true,
+            fallbackReason: message,
+          },
+        })
+
+        await updateEasyCodeGenerationState(userId, projectId, {
+          status: 'ready',
+          phase: 'complete',
+          error: fallbackResult.summary,
+          metadata: buildEasyCodeProgress('complete', fallbackFiles, fallbackResult.summary, 'static_site'),
+          title: fallbackResult.title || project.title,
+          framework: 'html',
+          lastGeneratedAt: new Date().toISOString(),
+        })
+
+        const [freshProject, freshFiles, freshMessages] = await Promise.all([
+          getEasyCodeProject(userId, projectId),
+          getEasyCodeFiles(userId, projectId),
+          getEasyCodeMessages(userId, projectId),
+        ])
+        console.info('[Easy Code] Status set ready after static fallback', {
+          projectId,
+          fallbackUsed: true,
+          savedFiles: freshFiles.length,
+          zipFileCount: freshFiles.length,
+          previewAvailable: freshFiles.some(file => file.path.toLowerCase() === 'index.html'),
+        })
+        return { project: freshProject, files: freshFiles, messages: freshMessages, aiResult: fallbackResult, fallbackUsed: true }
+      } catch (fallbackError: any) {
+        console.error('[Easy Code] Static fallback failed', {
+          projectId,
+          message: fallbackError?.message,
+          originalMessage: message,
+        })
+      }
+    }
     const status = message === 'Generation incomplete. Retry.' ? 'incomplete' : 'failed'
     await updateEasyCodeGenerationState(userId, projectId, {
       status,
@@ -778,7 +1173,7 @@ export async function generateEasyCodeFiles(input: {
   ].join('\n')).join('\n\n')
 
   const recentMessages = staticLandingPage ? '' : input.messages.slice(-10).map(message => `${message.role}: ${message.content}`).join('\n')
-  const system = `You are Easy Code, a Lovable + Codex-style coding workspace inside EasyPlus. Use DeepSeek V4 Pro as a precise coding agent.
+  const system = `You are Easy Code, a Lovable + Codex-style coding workspace inside EasyPlus. Act as a precise coding agent.
 Return only strict JSON with this exact shape:
 {"summary":"...","title":"optional project title","framework":"html|react|next|vite|python|node|other","previewType":"static-html|unsupported","instructions":["..."],"files":[{"path":"relative/path","language":"html|css|javascript|typescript|tsx|python|json|markdown|text","content":"full file content","operation":"create|update|delete|rename","newPath":"optional/new/path"}]}
 Rules:
@@ -830,8 +1225,8 @@ ${fileContext || 'None'}`
   const raw = await callAzureDeepSeekJson([
     { role: 'system', content: system },
     { role: 'user', content: user },
-  ], staticLandingPage ? 4500 : input.mode === 'create' ? 8000 : 7000, {
-    timeoutMs: staticLandingPage ? 45_000 : EASY_CODE_DEEPSEEK_TIMEOUT_MS,
+  ], staticLandingPage ? 2600 : input.mode === 'create' ? 8000 : 7000, {
+    timeoutMs: staticLandingPage ? EASY_CODE_STATIC_TIMEOUT_MS : EASY_CODE_DEEPSEEK_TIMEOUT_MS,
     phase: staticLandingPage ? 'static_landing_generation' : 'deepseek_generation',
     projectId: input.projectId,
   })

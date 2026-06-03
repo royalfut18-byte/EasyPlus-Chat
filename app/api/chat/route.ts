@@ -409,7 +409,8 @@ RULES FOR USING THESE RESULTS:
 5. If the document does not contain enough information, say so. Do not invent details.
 6. If values seem unclear or corrupted, re-check the source before calculating.
 7. If any attached document says extraction failed, OCR is needed, or content was truncated, do NOT claim you extracted every item from that file. State the limitation.
-8. For "extract all/every" requests, only include items actually present in the supplied document text. Never fill gaps from memory or likely past exam patterns.`,
+8. For "extract all/every" requests, only include items actually present in the supplied document text. Never fill gaps from memory or likely past exam patterns.
+9. If the context contains an uploaded ZIP file tree/source files, treat it as safely extracted project context. Do not execute code. If the user asks for an updated ZIP, return a generated_zip manifest with the modified source files so EasyPlus can create a real downloadable .zip.`,
       }
       messagesToSend = [...messagesToSend.slice(0, -1), docInstruction, latestUserMessage] as ChatMessage[]
     } else if (historicalAttachmentContext) {

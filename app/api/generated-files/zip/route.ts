@@ -83,6 +83,14 @@ export async function POST(request: NextRequest) {
       compressionOptions: { level: 6 },
     })
 
+    console.info('[Generated ZIP] Archive created', {
+      userId: user.id,
+      conversationId,
+      projectId,
+      fileCount: manifest.files.length,
+      sizeBytes: archive.byteLength,
+    })
+
     const storageKey = `uploads/${user.id}/generated/${randomUUID()}/${manifest.filename}`
     const { bucket } = await uploadObjectToR2({
       key: storageKey,
@@ -119,7 +127,6 @@ export async function POST(request: NextRequest) {
           file_type: 'generated_zip',
           mime_type: 'application/zip',
           storage_path: storageKey,
-          processing_status: 'ready',
           purpose_note: `Generated downloadable ZIP package with ${manifest.files.length} files`,
           important_details: {
             storageProvider: 'r2',
@@ -136,6 +143,13 @@ export async function POST(request: NextRequest) {
 
       if (error) throw error
       attachmentId = inserted?.id || null
+
+      console.info('[Generated ZIP] Attachment saved', {
+        userId: user.id,
+        conversationId,
+        attachmentId,
+        fileCount: manifest.files.length,
+      })
 
       if (assistantMessageId) {
         const { data: assistantMessage } = await db
@@ -176,10 +190,14 @@ export async function POST(request: NextRequest) {
       attachment: { ...attachment, attachmentId },
     })
   } catch (error: any) {
-    console.error('[Generated ZIP] Failed:', error.message)
+    console.error('[Generated ZIP] Failed:', {
+      message: error.message,
+      code: error.code,
+      phase: 'create_zip_or_save_attachment',
+    })
     const isValidationError = /zip|package|unsafe|duplicate|required|entry/i.test(error.message || '')
     return NextResponse.json(
-      { error: isValidationError ? error.message : 'Failed to generate ZIP. Please try again.' },
+      { error: isValidationError ? error.message : 'Could not create ZIP. Please try again.' },
       { status: isValidationError ? 400 : 500 }
     )
   }

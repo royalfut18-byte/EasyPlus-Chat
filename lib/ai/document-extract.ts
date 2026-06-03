@@ -1,6 +1,7 @@
 import type { ChatAttachment } from '@/types/models'
 import { isR2Configured, createPresignedDownloadUrl } from '@/lib/storage/r2'
 import { inflateRawSync } from 'node:zlib'
+import { formatZipContext, readSafeZipAttachment } from '@/lib/zip/safe-zip.server'
 
 const DEFAULT_MAX_DOCUMENT_CHARS = 60000
 const COMPREHENSIVE_MAX_DOCUMENT_CHARS = 220000
@@ -13,7 +14,7 @@ interface DocumentContextOptions {
 export function isComprehensiveDocumentRequest(message: string): boolean {
   const lower = message.toLowerCase()
   return /\b(all|every|entire|complete|full|each|don't miss|dont miss|extract|list|go through|scan)\b/.test(lower) &&
-    /\b(pdf|document|file|paper|papers|question|questions|multiple choice|section|extract|syllabus|marketing)\b/.test(lower)
+    /\b(pdf|document|file|files|zip|project|codebase|paper|papers|question|questions|multiple choice|section|extract|syllabus|marketing)\b/.test(lower)
 }
 
 function decodeBase64DataUrl(dataUrl: string): string {
@@ -237,6 +238,12 @@ export async function extractTextFromAttachment(attachment: ChatAttachment): Pro
   if (attachment.textContent) return attachment.textContent
 
   const mime = attachment.mimeType.toLowerCase()
+  const name = attachment.name.toLowerCase()
+
+  if (mime === 'application/zip' || name.endsWith('.zip')) {
+    const zipResult = await readSafeZipAttachment(attachment)
+    return formatZipContext(attachment.name, zipResult)
+  }
 
   if (attachment.storageProvider === 'r2' && attachment.storageKey) {
     const buffer = await fetchR2FileAsBuffer(attachment.storageKey)

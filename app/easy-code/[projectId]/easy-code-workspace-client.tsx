@@ -484,7 +484,7 @@ export function EasyCodeWorkspaceClient({
                         ? 'Saving files...'
                         : project.generation_phase === 'building_preview'
                           ? 'Preparing preview...'
-                          : 'DeepSeek is editing project files...'}
+                          : 'Easy Code is editing project files...'}
                 </div>
               )}
               {latestAssistant?.metadata?.instructions?.length ? (
@@ -517,7 +517,7 @@ export function EasyCodeWorkspaceClient({
                 className="mt-2 inline-flex h-10 w-full items-center justify-center gap-2 rounded-2xl bg-violet-600 text-sm font-semibold text-white transition-colors hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {isGenerating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                Apply with DeepSeek
+                Apply changes
               </button>
             </div>
           </div>

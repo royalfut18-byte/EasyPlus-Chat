@@ -70,6 +70,9 @@ export const PUBLIC_MODEL_CAPABILITIES = {
     docx: true,
     imageInput: true,
     fileInput: true,
+    zipGeneration: true,
+    zipReading: true,
+    downloads: true,
   },
   'chat-gpt-5.5': {
     artifacts: true,
@@ -79,6 +82,9 @@ export const PUBLIC_MODEL_CAPABILITIES = {
     docx: true,
     imageInput: true,
     fileInput: true,
+    zipGeneration: true,
+    zipReading: true,
+    downloads: true,
   },
   'deepseek-v4-pro': {
     artifacts: true,
@@ -88,6 +94,9 @@ export const PUBLIC_MODEL_CAPABILITIES = {
     docx: true,
     imageInput: true,
     fileInput: true,
+    zipGeneration: true,
+    zipReading: true,
+    downloads: true,
   },
   'gemini-3.1-pro': {
     artifacts: true,
@@ -97,6 +106,9 @@ export const PUBLIC_MODEL_CAPABILITIES = {
     docx: true,
     imageInput: true,
     fileInput: true,
+    zipGeneration: true,
+    zipReading: true,
+    downloads: true,
   },
   'image-generation': {
     artifacts: false,
@@ -106,6 +118,9 @@ export const PUBLIC_MODEL_CAPABILITIES = {
     docx: false,
     imageInput: false,
     fileInput: false,
+    zipGeneration: false,
+    zipReading: false,
+    downloads: false,
   },
 } as const
 

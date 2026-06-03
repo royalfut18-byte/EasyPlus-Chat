@@ -118,7 +118,7 @@ export function EasyCodeHomeClient({ initialProjects }: { initialProjects: EasyC
             className="min-h-28 w-full resize-none rounded-3xl border border-white/[0.06] bg-[#101010] p-4 text-base text-white outline-none placeholder:text-gray-500 focus:border-violet-300/25 disabled:opacity-60"
           />
           <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-left text-xs text-gray-500">DeepSeek V4 Pro will create a file-based starter project you can edit and export.</p>
+            <p className="text-left text-xs text-gray-500">Easy Code will create a file-based starter project you can edit and export.</p>
             <button
               type="button"
               onClick={() => createProject()}
