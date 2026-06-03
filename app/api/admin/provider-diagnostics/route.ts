@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getAdminAccess } from '@/lib/admin-access.server'
 import { getAzureDeepSeekDiagnostics } from '@/lib/ai/azure-deepseek.server'
+import { getAzureGpt54Diagnostics } from '@/lib/ai/azure-gpt54.server'
 import { getAzureImageDiagnostics } from '@/lib/ai/azure-image.server'
 import { getR2ConfigStatus } from '@/lib/storage/r2'
 
@@ -15,13 +16,15 @@ export async function GET() {
     return NextResponse.json({ error: 'Not found' }, { status: 404 })
   }
 
-  const [deepseek, imageGeneration] = await Promise.all([
+  const [gpt54, deepseek, imageGeneration] = await Promise.all([
+    getAzureGpt54Diagnostics(true),
     getAzureDeepSeekDiagnostics(true),
     getAzureImageDiagnostics(true),
   ])
   const r2 = getR2ConfigStatus()
 
   return NextResponse.json({
+    azureGpt54: gpt54,
     azureDeepseek: deepseek,
     azureImageGeneration: {
       ...imageGeneration,

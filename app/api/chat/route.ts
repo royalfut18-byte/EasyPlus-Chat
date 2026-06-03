@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { streamBedrockResponse, getModelCost } from '@/lib/ai/bedrock'
 import { streamGeminiResponse } from '@/lib/ai/gemini'
-import { streamAzureDeepSeekResponse } from '@/lib/ai/azure-deepseek.server'
+import { streamAzureGpt54Response } from '@/lib/ai/azure-gpt54.server'
 import { searchWeb, buildWebSearchQuery } from '@/lib/ai/web-search'
 import { buildSystemPrompt, isTimeSensitiveQuery, detectQueryType } from '@/lib/ai/system-prompt'
 import { buildDocumentContext, isComprehensiveDocumentRequest } from '@/lib/ai/document-extract'
@@ -237,7 +237,7 @@ export async function POST(request: NextRequest) {
 
       if (hasImageAttachments) {
         const selectedModelCheck = getInternalModel(validatedModel)
-        const modelSupportsImages = selectedModelCheck?.provider === 'anthropic' || selectedModelCheck?.provider === 'google'
+        const modelSupportsImages = selectedModelCheck?.provider === 'azure-gpt54' || selectedModelCheck?.provider === 'google'
 
         if (!modelSupportsImages) {
           return NextResponse.json(
@@ -469,7 +469,7 @@ RULES FOR USING THESE RESULTS:
           userId: user.id,
           conversationId,
           latestUserMessage: latestUserMessage.content,
-          modelProvider: modelData?.provider || 'anthropic',
+          modelProvider: modelData?.provider || 'azure-gpt54',
           maxTokenBudget: reasoningProfile.contextBudget,
           currentMessages: cleanedMessages,
           includeUserMemories: reasoningMode === 'extended',
@@ -821,8 +821,8 @@ RULES FOR USING THESE RESULTS:
             providerStream = await streamGeminiResponse(validatedModel, messagesForModel, systemPrompt, temperature, maxTokens)
           } else if (selectedModel.provider === 'anthropic') {
             providerStream = await streamBedrockResponse(validatedModel, messagesForModel, systemPrompt, temperature, maxTokens)
-          } else if (selectedModel.provider === 'azure') {
-            providerStream = await streamAzureDeepSeekResponse(messagesForModel, systemPrompt, temperature, maxTokens)
+          } else if (selectedModel.provider === 'azure-gpt54') {
+            providerStream = await streamAzureGpt54Response(messagesForModel, systemPrompt, temperature, maxTokens)
           } else {
             controller.enqueue(encoder.encode('Error: This EasyPlus tier is unavailable'))
             controller.close()

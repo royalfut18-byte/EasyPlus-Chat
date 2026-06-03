@@ -61,6 +61,54 @@ export const UI_MODELS: AIModel[] = UI_MODEL_ORDER
   .map((modelId) => AI_MODELS.find((model) => model.id === modelId))
   .filter((model): model is AIModel => Boolean(model))
 
+export const PUBLIC_MODEL_CAPABILITIES = {
+  'claude-opus-4.8': {
+    artifacts: true,
+    documents: true,
+    presentations: true,
+    pptx: true,
+    docx: true,
+    imageInput: true,
+    fileInput: true,
+  },
+  'chat-gpt-5.5': {
+    artifacts: true,
+    documents: true,
+    presentations: true,
+    pptx: true,
+    docx: true,
+    imageInput: true,
+    fileInput: true,
+  },
+  'deepseek-v4-pro': {
+    artifacts: true,
+    documents: true,
+    presentations: true,
+    pptx: true,
+    docx: true,
+    imageInput: true,
+    fileInput: true,
+  },
+  'gemini-3.1-pro': {
+    artifacts: true,
+    documents: true,
+    presentations: true,
+    pptx: true,
+    docx: true,
+    imageInput: true,
+    fileInput: true,
+  },
+  'image-generation': {
+    artifacts: false,
+    documents: false,
+    presentations: false,
+    pptx: false,
+    docx: false,
+    imageInput: false,
+    fileInput: false,
+  },
+} as const
+
 export interface ChatAttachment {
   type: 'image' | 'document'
   name: string

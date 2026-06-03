@@ -1,12 +1,12 @@
 import 'server-only'
 
-import { AI_MODELS, type AIModel } from '@/types/models'
-import { isAzureDeepSeekAvailable } from '@/lib/ai/azure-deepseek.server'
+import { AI_MODELS, PUBLIC_MODEL_CAPABILITIES, type AIModel } from '@/types/models'
+import { isAzureGpt54Available } from '@/lib/ai/azure-gpt54.server'
 import { isAzureImageAvailable } from '@/lib/ai/azure-image.server'
 import { readServerEnv } from '@/lib/server-env'
 import { isR2Configured } from '@/lib/storage/r2'
 
-export type AIProvider = 'anthropic' | 'google' | 'azure' | 'image'
+export type AIProvider = 'anthropic' | 'google' | 'azure-gpt54' | 'image'
 
 export interface InternalAIModel extends AIModel {
   provider: AIProvider
@@ -17,11 +17,11 @@ export interface InternalAIModel extends AIModel {
 const INTERNAL_AI_MODELS: InternalAIModel[] = [
   {
     ...AI_MODELS[0],
-    provider: 'azure',
+    provider: 'azure-gpt54',
   },
   {
     ...AI_MODELS[1],
-    provider: 'azure',
+    provider: 'azure-gpt54',
   },
   {
     ...AI_MODELS[2],
@@ -30,7 +30,7 @@ const INTERNAL_AI_MODELS: InternalAIModel[] = [
   },
   {
     ...AI_MODELS[3],
-    provider: 'azure',
+    provider: 'azure-gpt54',
   },
   {
     ...AI_MODELS[4],
@@ -69,8 +69,8 @@ export function getPublicModelName(modelId: string): string {
 export function isModelAvailable(modelId: string): boolean {
   const model = getInternalModel(modelId)
   if (!model) return false
-  if (model.provider === 'azure') {
-    return Boolean(readServerEnv('AZURE_DEEPSEEK_API_KEY') && readServerEnv('AZURE_DEEPSEEK_BASE_URL'))
+  if (model.provider === 'azure-gpt54') {
+    return Boolean(readServerEnv('AZURE_GPT54_API_KEY') && readServerEnv('AZURE_GPT54_BASE_URL'))
   }
   if (model.provider === 'image') {
     return Boolean(
@@ -90,12 +90,16 @@ export function isChatModelAvailable(modelId: string): boolean {
 export async function getAvailablePublicModelIds(): Promise<string[]> {
   const availableModels = await Promise.all(INTERNAL_AI_MODELS.map(async (model) => {
     if (!isModelAvailable(model.id)) return false
-    if (model.provider === 'azure') return isAzureDeepSeekAvailable()
+    if (model.provider === 'azure-gpt54') return isAzureGpt54Available()
     if (model.provider === 'image') return isAzureImageAvailable()
     return true
   }))
 
   return INTERNAL_AI_MODELS.filter((_, index) => availableModels[index]).map((model) => model.id)
+}
+
+export function getPublicModelCapabilities() {
+  return PUBLIC_MODEL_CAPABILITIES
 }
 
 export function sanitizeConversation<T extends Record<string, any>>(conversation: T): T {
