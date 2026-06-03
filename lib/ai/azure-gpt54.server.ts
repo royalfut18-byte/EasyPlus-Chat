@@ -26,6 +26,7 @@ export interface AzureGpt54Diagnostics {
   status: number | null
   endpointHost: string | null
   endpointPath: string
+  model: string
   lastProbeAt: string
   envStatus: {
     apiKey: { exists: boolean; configured: boolean }
@@ -38,7 +39,10 @@ export interface AzureGpt54Diagnostics {
 let availabilityCache: { checkedAt: number; diagnostics: AzureGpt54Diagnostics } | null = null
 
 function normalizeBaseUrl(baseUrl: string): string {
-  return baseUrl.replace(/\/+$/, '')
+  return baseUrl
+    .trim()
+    .replace(/\/+$/, '')
+    .replace(/\/chat\/completions$/i, '')
 }
 
 function getProviderConfig() {
@@ -88,14 +92,27 @@ function getEndpointMetadata(baseUrl?: string): { endpointHost: string | null; e
 }
 
 function getSafeProviderError(status?: number): Error {
-  if (status === 429 || (status != null && status >= 500)) {
-    return new Error('This EasyPlus mode is temporarily busy. Please try again in a moment.')
+  if (status === 401 || status === 403) {
+    return new Error('Model provider credentials are invalid or unauthorized.')
+  }
+  if (status === 404) {
+    return new Error('Model deployment was not found.')
+  }
+  if (status === 429) {
+    return new Error('Model provider is busy. Please try again.')
+  }
+  if (status != null && status >= 500) {
+    return new Error('This EasyPlus mode is temporarily unavailable.')
   }
   return new Error('This EasyPlus mode is temporarily unavailable.')
 }
 
 function getSafeTimeoutError(): Error {
-  return new Error('This EasyPlus mode is taking too long to respond. Please try again.')
+  return new Error('Model took too long to respond. Please try again.')
+}
+
+function getSafeConfigurationError(): Error {
+  return new Error('Model provider is not configured.')
 }
 
 async function fetchWithAuthFallback(
@@ -166,14 +183,16 @@ export async function getAzureGpt54Diagnostics(force = false): Promise<AzureGpt5
       probeOk: false,
       status: null,
       ...endpoint,
+      model,
       lastProbeAt,
       envStatus,
-      safeReason: !apiKey ? 'Missing Azure GPT-5.4 API key configuration' : 'Missing Azure GPT-5.4 base URL configuration',
+      safeReason: !apiKey ? 'Model provider is not configured.' : 'Model provider is not configured.',
     }
     console.error('[Azure GPT-5.4] Missing provider configuration', {
       apiKeyConfigured,
       baseUrlConfigured,
       modelConfigured,
+      model,
       envStatus,
       ...endpoint,
     })
@@ -203,21 +222,23 @@ export async function getAzureGpt54Diagnostics(force = false): Promise<AzureGpt5
         probeOk: false,
         status: response.status,
         ...endpoint,
+        model,
         lastProbeAt,
         envStatus,
         safeReason: response.status === 401 || response.status === 403
-          ? 'Invalid Azure key or unauthorized deployment'
+          ? 'Model provider credentials are invalid or unauthorized.'
           : response.status === 404
-            ? 'Azure deployment/model endpoint not found'
+            ? 'Model deployment was not found.'
             : response.status === 429
-              ? 'Azure provider is busy'
-              : 'Azure provider request failed',
+              ? 'Model provider is busy. Please try again.'
+              : 'This EasyPlus mode is temporarily unavailable.',
       }
       console.error('[Azure GPT-5.4] Availability probe failed', {
         status: response.status,
         authMode,
         baseUrlConfigured,
         modelConfigured,
+        model,
         ...endpoint,
         envStatus,
       })
@@ -236,6 +257,7 @@ export async function getAzureGpt54Diagnostics(force = false): Promise<AzureGpt5
       probeOk: available,
       status: response.status,
       ...endpoint,
+      model,
       lastProbeAt,
       envStatus,
       safeReason: available ? 'Available' : 'Azure provider returned no content',
@@ -246,6 +268,7 @@ export async function getAzureGpt54Diagnostics(force = false): Promise<AzureGpt5
       authMode,
       baseUrlConfigured,
       modelConfigured,
+      model,
       ...endpoint,
       envStatus,
     })
@@ -259,15 +282,17 @@ export async function getAzureGpt54Diagnostics(force = false): Promise<AzureGpt5
       probeOk: false,
       status: null,
       ...endpoint,
+      model,
       lastProbeAt,
       envStatus,
-      safeReason: error?.name === 'TimeoutError' ? 'Azure provider probe timed out' : 'Azure provider is unreachable',
+      safeReason: error?.name === 'TimeoutError' ? 'Model took too long to respond. Please try again.' : 'This EasyPlus mode is temporarily unavailable.',
     }
     console.error('[Azure GPT-5.4] Availability probe exception', {
       message: error.message,
       timeoutHit: error?.name === 'TimeoutError',
       baseUrlConfigured,
       modelConfigured,
+      model,
       ...endpoint,
       envStatus,
     })
@@ -295,10 +320,11 @@ export async function streamAzureGpt54Response(
       apiKeyConfigured,
       baseUrlConfigured,
       modelConfigured,
+      model,
       envStatus,
       ...endpoint,
     })
-    throw getSafeProviderError()
+    throw getSafeConfigurationError()
   }
 
   const controller = new AbortController()
@@ -323,6 +349,7 @@ export async function streamAzureGpt54Response(
         authMode,
         baseUrlConfigured,
         modelConfigured,
+        model,
         ...endpoint,
       })
       throw getSafeProviderError(response.status)
@@ -346,6 +373,7 @@ export async function streamAzureGpt54Response(
           streamStarted: true,
           baseUrlConfigured,
           modelConfigured,
+          model,
         })
 
         try {
@@ -417,7 +445,14 @@ export async function streamAzureGpt54Response(
     })
   } catch (error: any) {
     clearTimeout(totalTimeout)
-    if (error?.message?.startsWith('This EasyPlus mode')) throw error
+    if (
+      error?.message?.startsWith('This EasyPlus mode') ||
+      error?.message?.startsWith('Model provider') ||
+      error?.message?.startsWith('Model deployment') ||
+      error?.message?.startsWith('Model took')
+    ) {
+      throw error
+    }
     const timeoutHit = error?.name === 'AbortError' || error?.name === 'TimeoutError'
     console.error('[Azure GPT-5.4] Request exception', {
       message: error.message,

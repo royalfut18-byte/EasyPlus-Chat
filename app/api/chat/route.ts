@@ -162,7 +162,20 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    if (!getInternalModel(validatedModel) || !isChatModelAvailable(validatedModel)) {
+    const validationModel = getInternalModel(validatedModel)
+    if (!validationModel) {
+      return NextResponse.json({ error: 'Model is not available' }, { status: 400 })
+    }
+
+    if (!isChatModelAvailable(validatedModel)) {
+      if (validationModel.provider === 'azure-gpt54') {
+        console.error('[Chat API] Azure GPT-5.4 public model unavailable before provider call', {
+          publicModelId: validatedModel,
+          providerConfigured: false,
+        })
+        return NextResponse.json({ error: 'Model provider is not configured.' }, { status: 503 })
+      }
+
       return NextResponse.json({ error: 'Model is not available' }, { status: 400 })
     }
 
