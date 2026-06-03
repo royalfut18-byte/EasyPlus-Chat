@@ -29,6 +29,17 @@ const EXAMPLES = [
   'Make a React app with dark mode',
 ]
 
+function formatProjectDate(value: string): string {
+  const time = new Date(value).getTime()
+  if (!Number.isFinite(time)) return 'Recently updated'
+  const diff = Date.now() - time
+  const minutes = Math.max(1, Math.round(diff / 60000))
+  if (minutes < 60) return `Updated ${minutes}m ago`
+  const hours = Math.round(minutes / 60)
+  if (hours < 24) return `Updated ${hours}h ago`
+  return `Updated ${Math.round(hours / 24)}d ago`
+}
+
 export function EasyCodeHomeClient({ initialProjects }: { initialProjects: EasyCodeProject[] }) {
   const [projects, setProjects] = useState(initialProjects)
   const [prompt, setPrompt] = useState('')
@@ -243,7 +254,10 @@ export function EasyCodeHomeClient({ initialProjects }: { initialProjects: EasyC
                             : 'Incomplete'}
                   </span>
                 </div>
-                <p className="mt-2 text-xs text-gray-600">{project.file_count || 0} saved file{project.file_count === 1 ? '' : 's'}</p>
+                <div className="mt-2 flex items-center justify-between gap-3 text-xs text-gray-600">
+                  <span>{project.file_count || 0} saved file{project.file_count === 1 ? '' : 's'}</span>
+                  <span>{formatProjectDate(project.updated_at)}</span>
+                </div>
               </div>
             ))}
           </div>
