@@ -3,6 +3,7 @@ import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { streamBedrockResponse, getModelCost } from '@/lib/ai/bedrock'
 import { streamGeminiResponse } from '@/lib/ai/gemini'
 import { streamAzureGpt54Response } from '@/lib/ai/azure-gpt54.server'
+import { streamAzureDeepSeekResponse } from '@/lib/ai/azure-deepseek.server'
 import { searchWeb, buildWebSearchQuery } from '@/lib/ai/web-search'
 import { buildSystemPrompt, isTimeSensitiveQuery, detectQueryType } from '@/lib/ai/system-prompt'
 import { buildDocumentContext, isComprehensiveDocumentRequest } from '@/lib/ai/document-extract'
@@ -25,7 +26,7 @@ import { buildContext, formatContextForPrompt, searchCrossConversationContext } 
 import { shouldUpdateSummary, updateConversationSummary, chunkLongMessage, saveAttachmentMemory } from '@/lib/ai/conversation-summary'
 import { isLongTaskRequest, LONG_TASK_SYSTEM_ADDENDUM } from '@/lib/ai/long-task'
 import type { ChatMessage, ReasoningMode } from '@/types/models'
-import { getInternalModel, getPublicModelName, isChatModelAvailable, toPublicModelId } from '@/lib/ai/model-routing.server'
+import { getPublicModelName, getResolvedInternalModel, toPublicModelId } from '@/lib/ai/model-routing.server'
 import { getReasoningProfile, getReasoningSystemAddendum, type ReasoningProfile } from '@/lib/ai/reasoning-profiles'
 import { getAccountEntitlement, getEntitlementBlockResponse } from '@/lib/account-entitlements.server'
 import { createProjectMemory, getRelevantProjectContext } from '@/lib/projects.server'
@@ -162,21 +163,23 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const validationModel = getInternalModel(validatedModel)
+    const validationModel = await getResolvedInternalModel(validatedModel)
     if (!validationModel) {
       return NextResponse.json({ error: 'Model is not available' }, { status: 400 })
     }
 
-    if (!isChatModelAvailable(validatedModel)) {
-      if (validationModel.provider === 'azure-gpt54') {
-        console.error('[Chat API] Azure GPT-5.4 public model unavailable before provider call', {
+    if (validationModel.publicError) {
+      if (validationModel.originalProvider === 'azure-gpt54') {
+        console.error('[Chat API] Public chat model unavailable before provider call', {
           publicModelId: validatedModel,
-          providerConfigured: false,
+          effectiveProvider: validationModel.provider,
+          fallbackActive: validationModel.fallbackActive,
+          adminDiagnostic: validationModel.adminDiagnostic,
         })
-        return NextResponse.json({ error: 'Model provider is not configured.' }, { status: 503 })
+        return NextResponse.json({ error: validationModel.publicError }, { status: 503 })
       }
 
-      return NextResponse.json({ error: 'Model is not available' }, { status: 400 })
+      return NextResponse.json({ error: validationModel.publicError }, { status: 400 })
     }
 
     // Stage: Profile
@@ -249,8 +252,7 @@ export async function POST(request: NextRequest) {
       const hasImageAttachments = userMessage.attachments.some((a: any) => a.type === 'image')
 
       if (hasImageAttachments) {
-        const selectedModelCheck = getInternalModel(validatedModel)
-        const modelSupportsImages = selectedModelCheck?.provider === 'azure-gpt54' || selectedModelCheck?.provider === 'google'
+        const modelSupportsImages = validationModel.provider === 'azure-gpt54' || validationModel.provider === 'google'
 
         if (!modelSupportsImages) {
           return NextResponse.json(
@@ -478,12 +480,11 @@ RULES FOR USING THESE RESULTS:
         // INSTANT: Skip all memory/context DB queries for minimum latency
         console.log('[Chat API] Instant mode — skipping memory/context loading')
       } else if (conversationId) {
-        const modelData = getInternalModel(validatedModel)
         const builtContext = await buildContext(db, {
           userId: user.id,
           conversationId,
           latestUserMessage: latestUserMessage.content,
-          modelProvider: modelData?.provider || 'azure-gpt54',
+          modelProvider: validationModel.provider,
           maxTokenBudget: reasoningProfile.contextBudget,
           currentMessages: cleanedMessages,
           includeUserMemories: reasoningMode === 'extended',
@@ -607,7 +608,7 @@ RULES FOR USING THESE RESULTS:
 
     // Stage: Route to provider
     stage = 'provider-routing'
-    const selectedModel = getInternalModel(validatedModel)
+    const selectedModel = validationModel
 
     if (!selectedModel) {
       console.error('[Chat API] Unknown model after validation:', validatedModel)
@@ -837,6 +838,8 @@ RULES FOR USING THESE RESULTS:
             providerStream = await streamBedrockResponse(validatedModel, messagesForModel, systemPrompt, temperature, maxTokens)
           } else if (selectedModel.provider === 'azure-gpt54') {
             providerStream = await streamAzureGpt54Response(messagesForModel, systemPrompt, temperature, maxTokens)
+          } else if (selectedModel.provider === 'azure-deepseek') {
+            providerStream = await streamAzureDeepSeekResponse(messagesForModel, systemPrompt, temperature, maxTokens)
           } else {
             controller.enqueue(encoder.encode('Error: This EasyPlus tier is unavailable'))
             controller.close()

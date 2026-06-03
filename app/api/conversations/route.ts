@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { getInternalModel, isChatModelAvailable, sanitizeConversation, toPublicModelId } from '@/lib/ai/model-routing.server'
+import { getResolvedInternalModel, sanitizeConversation, toPublicModelId } from '@/lib/ai/model-routing.server'
 import { getAccountEntitlement, getEntitlementBlockResponse } from '@/lib/account-entitlements.server'
 
 export async function GET(request: NextRequest) {
@@ -53,8 +53,9 @@ export async function POST(request: NextRequest) {
 
     const { title, model, reasoningMode, projectId } = await request.json()
     const publicModelId = toPublicModelId(model)
+    const resolvedModel = await getResolvedInternalModel(publicModelId)
 
-    if (!getInternalModel(publicModelId) || !isChatModelAvailable(publicModelId)) {
+    if (!resolvedModel || resolvedModel.provider === 'image' || resolvedModel.publicError) {
       return NextResponse.json({ error: 'Model is not available' }, { status: 400 })
     }
 

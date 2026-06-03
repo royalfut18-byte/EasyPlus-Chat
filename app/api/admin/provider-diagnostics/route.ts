@@ -4,6 +4,7 @@ import { getAdminAccess } from '@/lib/admin-access.server'
 import { getAzureDeepSeekDiagnostics } from '@/lib/ai/azure-deepseek.server'
 import { getAzureGpt54Diagnostics } from '@/lib/ai/azure-gpt54.server'
 import { getAzureImageDiagnostics } from '@/lib/ai/azure-image.server'
+import { getPublicChatRoutingDiagnostics } from '@/lib/ai/model-routing.server'
 import { getR2ConfigStatus } from '@/lib/storage/r2'
 
 export const runtime = 'nodejs'
@@ -16,14 +17,16 @@ export async function GET() {
     return NextResponse.json({ error: 'Not found' }, { status: 404 })
   }
 
-  const [gpt54, deepseek, imageGeneration] = await Promise.all([
+  const [gpt54, deepseek, imageGeneration, chatTextRouting] = await Promise.all([
     getAzureGpt54Diagnostics(true),
     getAzureDeepSeekDiagnostics(true),
     getAzureImageDiagnostics(true),
+    getPublicChatRoutingDiagnostics(),
   ])
   const r2 = getR2ConfigStatus()
 
   return NextResponse.json({
+    chatTextRouting,
     azureGpt54: gpt54,
     azureDeepseek: deepseek,
     azureImageGeneration: {

@@ -48,7 +48,8 @@ function normalizeBaseUrl(baseUrl: string): string {
 function getProviderConfig() {
   const apiKey = readServerEnv('AZURE_GPT54_API_KEY')
   const baseUrl = readServerEnv('AZURE_GPT54_BASE_URL')
-  const model = readServerEnv('AZURE_GPT54_MODEL') || DEFAULT_AZURE_GPT54_MODEL
+  const configuredModel = readServerEnv('AZURE_GPT54_MODEL')
+  const model = configuredModel || DEFAULT_AZURE_GPT54_MODEL
   const apiKeyEnv = getServerEnvStatus('AZURE_GPT54_API_KEY')
   const baseUrlEnv = getServerEnvStatus('AZURE_GPT54_BASE_URL')
   const modelEnv = getServerEnvStatus('AZURE_GPT54_MODEL')
@@ -59,7 +60,7 @@ function getProviderConfig() {
     model,
     apiKeyConfigured: Boolean(apiKey),
     baseUrlConfigured: Boolean(baseUrl),
-    modelConfigured: Boolean(model),
+    modelConfigured: Boolean(configuredModel),
     envStatus: {
       apiKey: apiKeyEnv,
       baseUrl: baseUrlEnv,
@@ -174,9 +175,9 @@ export async function getAzureGpt54Diagnostics(force = false): Promise<AzureGpt5
 
   const { apiKey, baseUrl, model, apiKeyConfigured, baseUrlConfigured, modelConfigured, envStatus } = getProviderConfig()
   const endpoint = getEndpointMetadata(baseUrl)
-  if (!apiKey || !baseUrl) {
+  if (!apiKey || !baseUrl || !modelConfigured) {
     const diagnostics = {
-      configured: Boolean(apiKey && baseUrl),
+      configured: Boolean(apiKey && baseUrl && modelConfigured),
       apiKeyConfigured,
       baseUrlConfigured,
       modelConfigured,
@@ -186,7 +187,7 @@ export async function getAzureGpt54Diagnostics(force = false): Promise<AzureGpt5
       model,
       lastProbeAt,
       envStatus,
-      safeReason: !apiKey ? 'Model provider is not configured.' : 'Model provider is not configured.',
+      safeReason: 'Model provider is not configured.',
     }
     console.error('[Azure GPT-5.4] Missing provider configuration', {
       apiKeyConfigured,
@@ -315,7 +316,7 @@ export async function streamAzureGpt54Response(
   const { apiKey, baseUrl, model, apiKeyConfigured, baseUrlConfigured, modelConfigured, envStatus } = getProviderConfig()
   const endpoint = getEndpointMetadata(baseUrl)
 
-  if (!apiKey || !baseUrl) {
+  if (!apiKey || !baseUrl || !modelConfigured) {
     console.error('[Azure GPT-5.4] Missing provider configuration', {
       apiKeyConfigured,
       baseUrlConfigured,

@@ -1,17 +1,25 @@
 import 'server-only'
 
 import { AI_MODELS, PUBLIC_MODEL_CAPABILITIES, type AIModel } from '@/types/models'
-import { isAzureGpt54Available } from '@/lib/ai/azure-gpt54.server'
+import { getAzureDeepSeekDiagnostics } from '@/lib/ai/azure-deepseek.server'
+import { getAzureGpt54Diagnostics } from '@/lib/ai/azure-gpt54.server'
 import { isAzureImageAvailable } from '@/lib/ai/azure-image.server'
 import { readServerEnv } from '@/lib/server-env'
 import { isR2Configured } from '@/lib/storage/r2'
 
-export type AIProvider = 'anthropic' | 'google' | 'azure-gpt54' | 'image'
+export type AIProvider = 'anthropic' | 'google' | 'azure-gpt54' | 'azure-deepseek' | 'image'
 
 export interface InternalAIModel extends AIModel {
   provider: AIProvider
   bedrockModelId?: string
   geminiModelId?: string
+}
+
+export interface ResolvedInternalAIModel extends InternalAIModel {
+  originalProvider: AIProvider
+  fallbackActive: boolean
+  adminDiagnostic?: string
+  publicError?: string
 }
 
 const INTERNAL_AI_MODELS: InternalAIModel[] = [
@@ -52,6 +60,74 @@ const LEGACY_MODEL_IDS: Record<string, string> = {
   'epm-c6a275': 'gemini-3.1-pro',
 }
 
+function hasConfiguredEnv(names: string[]): boolean {
+  return names.every((name) => Boolean(readServerEnv(name)))
+}
+
+function isAzureGpt54Configured(): boolean {
+  return hasConfiguredEnv([
+    'AZURE_GPT54_API_KEY',
+    'AZURE_GPT54_BASE_URL',
+    'AZURE_GPT54_MODEL',
+  ])
+}
+
+function isAzureDeepSeekConfigured(): boolean {
+  return hasConfiguredEnv([
+    'AZURE_DEEPSEEK_API_KEY',
+    'AZURE_DEEPSEEK_BASE_URL',
+    'AZURE_DEEPSEEK_MODEL',
+  ])
+}
+
+function resolveModel(
+  model: InternalAIModel,
+  provider: AIProvider,
+  overrides: Partial<Omit<ResolvedInternalAIModel, keyof InternalAIModel | 'originalProvider'>> = {}
+): ResolvedInternalAIModel {
+  return {
+    ...model,
+    provider,
+    originalProvider: model.provider,
+    fallbackActive: false,
+    ...overrides,
+  }
+}
+
+async function resolveAzureTextModel(model: InternalAIModel): Promise<ResolvedInternalAIModel> {
+  const gpt54Configured = isAzureGpt54Configured()
+  if (gpt54Configured) {
+    const gpt54Diagnostics = await getAzureGpt54Diagnostics()
+    if (gpt54Diagnostics.probeOk) {
+      return resolveModel(model, 'azure-gpt54')
+    }
+  }
+
+  const deepSeekConfigured = isAzureDeepSeekConfigured()
+  if (deepSeekConfigured) {
+    const deepSeekDiagnostics = await getAzureDeepSeekDiagnostics()
+    if (deepSeekDiagnostics.probeOk) {
+      return resolveModel(model, 'azure-deepseek', {
+        fallbackActive: true,
+        adminDiagnostic: gpt54Configured
+          ? 'GPT-5.4 unavailable, using DeepSeek fallback'
+          : 'GPT-5.4 missing, using DeepSeek fallback',
+      })
+    }
+  }
+
+  return resolveModel(model, model.provider, {
+    adminDiagnostic: gpt54Configured
+      ? deepSeekConfigured
+        ? 'GPT-5.4 unavailable and DeepSeek fallback unavailable'
+        : 'GPT-5.4 unavailable and DeepSeek fallback is not configured'
+      : deepSeekConfigured
+        ? 'GPT-5.4 missing and DeepSeek fallback unavailable'
+        : 'GPT-5.4 missing and DeepSeek fallback is not configured',
+    publicError: 'Model provider is not configured.',
+  })
+}
+
 export function toPublicModelId(modelId: unknown): string {
   if (typeof modelId !== 'string') return ''
   return LEGACY_MODEL_IDS[modelId] || modelId
@@ -62,40 +138,78 @@ export function getInternalModel(modelId: string): InternalAIModel | undefined {
   return INTERNAL_AI_MODELS.find((model) => model.id === publicId)
 }
 
+export async function getResolvedInternalModel(modelId: string): Promise<ResolvedInternalAIModel | undefined> {
+  const model = getInternalModel(modelId)
+  if (!model) return undefined
+  if (model.provider === 'azure-gpt54') return resolveAzureTextModel(model)
+  return resolveModel(model, model.provider)
+}
+
 export function getPublicModelName(modelId: string): string {
   return getInternalModel(modelId)?.name || 'EasyPlus'
 }
 
-export function isModelAvailable(modelId: string): boolean {
-  const model = getInternalModel(modelId)
-  if (!model) return false
-  if (model.provider === 'azure-gpt54') {
-    return Boolean(readServerEnv('AZURE_GPT54_API_KEY') && readServerEnv('AZURE_GPT54_BASE_URL'))
-  }
-  if (model.provider === 'image') {
-    return Boolean(
-      readServerEnv('AZURE_IMAGE_API_KEY') &&
-      readServerEnv('AZURE_IMAGE_BASE_URL') &&
-      isR2Configured()
-    )
-  }
-  return true
-}
-
-export function isChatModelAvailable(modelId: string): boolean {
-  const model = getInternalModel(modelId)
-  return Boolean(model && model.provider !== 'image' && isModelAvailable(modelId))
+export async function isChatModelAvailable(modelId: string): Promise<boolean> {
+  const model = await getResolvedInternalModel(modelId)
+  return Boolean(model && model.provider !== 'image' && !model.publicError)
 }
 
 export async function getAvailablePublicModelIds(): Promise<string[]> {
   const availableModels = await Promise.all(INTERNAL_AI_MODELS.map(async (model) => {
-    if (!isModelAvailable(model.id)) return false
-    if (model.provider === 'azure-gpt54') return isAzureGpt54Available()
-    if (model.provider === 'image') return isAzureImageAvailable()
+    if (model.provider === 'image') {
+      const configured = Boolean(
+        readServerEnv('AZURE_IMAGE_API_KEY') &&
+        readServerEnv('AZURE_IMAGE_BASE_URL') &&
+        isR2Configured()
+      )
+      return configured && await isAzureImageAvailable()
+    }
+
+    if (model.provider === 'azure-gpt54') {
+      const resolved = await getResolvedInternalModel(model.id)
+      return Boolean(resolved && !resolved.publicError)
+    }
+
     return true
   }))
 
-  return INTERNAL_AI_MODELS.filter((_, index) => availableModels[index]).map((model) => model.id)
+  return INTERNAL_AI_MODELS
+    .filter((_, index) => availableModels[index])
+    .map((model) => model.id)
+}
+
+export async function getPublicChatRoutingDiagnostics() {
+  const gpt54Configured = isAzureGpt54Configured()
+  if (gpt54Configured) {
+    const gpt54Diagnostics = await getAzureGpt54Diagnostics()
+    if (gpt54Diagnostics.probeOk) {
+      return {
+        effectiveProvider: 'azure-gpt54' as const,
+        fallbackActive: false,
+        safeReason: 'GPT-5.4 active',
+      }
+    }
+  }
+
+  const deepSeekConfigured = isAzureDeepSeekConfigured()
+  if (deepSeekConfigured) {
+    const deepSeekDiagnostics = await getAzureDeepSeekDiagnostics()
+    if (deepSeekDiagnostics.probeOk) {
+      return {
+        effectiveProvider: 'azure-deepseek' as const,
+        fallbackActive: true,
+        safeReason: gpt54Configured
+          ? 'GPT-5.4 unavailable, using DeepSeek fallback'
+          : 'GPT-5.4 missing, using DeepSeek fallback',
+      }
+    }
+  }
+
+  return {
+    effectiveProvider: null,
+    fallbackActive: false,
+    safeReason: 'Model provider is not configured.',
+  }
 }
 
 export function getPublicModelCapabilities() {

@@ -35,7 +35,8 @@ function normalizeBaseUrl(baseUrl: string): string {
 function getProviderConfig() {
   const apiKey = readServerEnv('AZURE_DEEPSEEK_API_KEY')
   const baseUrl = readServerEnv('AZURE_DEEPSEEK_BASE_URL')
-  const model = readServerEnv('AZURE_DEEPSEEK_MODEL') || DEFAULT_AZURE_DEEPSEEK_MODEL
+  const configuredModel = readServerEnv('AZURE_DEEPSEEK_MODEL')
+  const model = configuredModel || DEFAULT_AZURE_DEEPSEEK_MODEL
   const apiKeyEnv = getServerEnvStatus('AZURE_DEEPSEEK_API_KEY')
   const baseUrlEnv = getServerEnvStatus('AZURE_DEEPSEEK_BASE_URL')
   const modelEnv = getServerEnvStatus('AZURE_DEEPSEEK_MODEL')
@@ -46,7 +47,7 @@ function getProviderConfig() {
     apiKeyConfigured: Boolean(apiKey),
     baseUrlConfigured: Boolean(baseUrl),
     model,
-    modelConfigured: Boolean(model),
+    modelConfigured: Boolean(configuredModel),
     envStatus: {
       apiKey: apiKeyEnv,
       baseUrl: baseUrlEnv,
@@ -119,9 +120,9 @@ export async function getAzureDeepSeekDiagnostics(force = false): Promise<AzureD
 
   const { apiKey, baseUrl, model, apiKeyConfigured, baseUrlConfigured, modelConfigured, envStatus } = getProviderConfig()
   const endpoint = getEndpointMetadata(baseUrl)
-  if (!apiKey || !baseUrl) {
+  if (!apiKey || !baseUrl || !modelConfigured) {
     const diagnostics = {
-      configured: Boolean(apiKey && baseUrl),
+      configured: Boolean(apiKey && baseUrl && modelConfigured),
       apiKeyConfigured,
       baseUrlConfigured,
       modelConfigured,
@@ -130,7 +131,11 @@ export async function getAzureDeepSeekDiagnostics(force = false): Promise<AzureD
       ...endpoint,
       lastProbeAt,
       envStatus,
-      safeReason: !apiKey ? 'Missing Azure API key configuration' : 'Missing Azure base URL configuration',
+      safeReason: !apiKey
+        ? 'Missing Azure API key configuration'
+        : !baseUrl
+          ? 'Missing Azure base URL configuration'
+          : 'Missing Azure model configuration',
     }
     console.error('[Azure DeepSeek] Missing provider configuration', {
       apiKeyConfigured,
@@ -256,7 +261,7 @@ export async function streamAzureDeepSeekResponse(
   const { apiKey, baseUrl, model, apiKeyConfigured, baseUrlConfigured, modelConfigured, envStatus } = getProviderConfig()
   const endpoint = getEndpointMetadata(baseUrl)
 
-  if (!apiKey || !baseUrl) {
+  if (!apiKey || !baseUrl || !modelConfigured) {
     console.error('[Azure DeepSeek] Missing provider configuration', {
       apiKeyConfigured,
       baseUrlConfigured,
