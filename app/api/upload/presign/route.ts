@@ -2,34 +2,13 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { isR2Configured, createPresignedUploadUrl } from '@/lib/storage/r2'
 import { getAccountEntitlement, getEntitlementBlockResponse } from '@/lib/account-entitlements.server'
+import { CHAT_ATTACHMENT_UNSUPPORTED_ERROR, SUPPORTED_CHAT_ATTACHMENT_MIME_TYPES } from '@/lib/chat-attachments'
 
 export const runtime = 'nodejs'
 
 const MAX_UPLOAD_BYTES = (parseInt(process.env.NEXT_PUBLIC_MAX_UPLOAD_MB || '512', 10)) * 1024 * 1024
 
-const ALLOWED_MIME_TYPES = new Set([
-  'image/png',
-  'image/jpeg',
-  'image/webp',
-  'image/gif',
-  'image/svg+xml',
-  'application/pdf',
-  'text/plain',
-  'text/markdown',
-  'text/csv',
-  'application/json',
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-  'application/zip',
-  'application/x-tar',
-  'application/gzip',
-  'video/mp4',
-  'video/webm',
-  'audio/mpeg',
-  'audio/wav',
-  'audio/webm',
-])
+const ALLOWED_MIME_TYPES: Set<string> = new Set(SUPPORTED_CHAT_ATTACHMENT_MIME_TYPES)
 
 function sanitizeFileName(name: string): string {
   return name
@@ -90,7 +69,7 @@ export async function POST(request: NextRequest) {
 
     if (!ALLOWED_MIME_TYPES.has(mimeType)) {
       return NextResponse.json(
-        { error: `File type not allowed: ${mimeType}` },
+        { error: CHAT_ATTACHMENT_UNSUPPORTED_ERROR },
         { status: 400 }
       )
     }

@@ -8,6 +8,12 @@ import { ChatAttachment, ReasoningMode } from '@/types/models'
 import { toast } from '@/components/ui/use-toast'
 import { useR2Upload } from '@/hooks/use-r2-upload'
 import { ReasoningSelector } from '@/components/chat/reasoning-selector'
+import {
+  CHAT_ATTACHMENT_TOO_MANY_ERROR,
+  CHAT_ATTACHMENT_UNSUPPORTED_ERROR,
+  MAX_CHAT_ATTACHMENTS,
+  SUPPORTED_CHAT_ATTACHMENT_EXTENSIONS,
+} from '@/lib/chat-attachments'
 
 interface ChatInputProps {
   onSend: (message: string, attachments?: ChatAttachment[]) => void
@@ -19,8 +25,8 @@ interface ChatInputProps {
 }
 
 const IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp']
-const ALLOWED_EXTENSIONS = ['.pdf', '.txt', '.md', '.csv', '.json', '.docx', '.png', '.jpg', '.jpeg', '.webp', '.mp4', '.webm', '.mp3', '.wav', '.zip', '.tar', '.gz', '.xlsx', '.pptx']
-const MAX_FILES = 30
+const ALLOWED_EXTENSIONS: string[] = [...SUPPORTED_CHAT_ATTACHMENT_EXTENSIONS]
+const MAX_FILES = MAX_CHAT_ATTACHMENTS
 
 function getFileKey(file: File): string {
   return `${file.name}|${file.size}|${file.lastModified}`
@@ -37,6 +43,8 @@ function getMimeFromExtension(filename: string): string | null {
     pdf: 'application/pdf',
     txt: 'text/plain',
     md: 'text/markdown',
+    markdown: 'text/markdown',
+    rtf: 'application/rtf',
     csv: 'text/csv',
     json: 'application/json',
     docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
@@ -46,14 +54,7 @@ function getMimeFromExtension(filename: string): string | null {
     jpg: 'image/jpeg',
     jpeg: 'image/jpeg',
     webp: 'image/webp',
-    gif: 'image/gif',
-    mp4: 'video/mp4',
-    webm: 'video/webm',
-    mp3: 'audio/mpeg',
-    wav: 'audio/wav',
     zip: 'application/zip',
-    tar: 'application/x-tar',
-    gz: 'application/gzip',
   }
   return map[ext || ''] || null
 }
@@ -150,7 +151,7 @@ export function ChatInput({ onSend, disabled, isLoading, conversationId, reasoni
     if (attachments.length >= MAX_FILES) {
       toast({
         title: 'Too many files',
-        description: `Maximum ${MAX_FILES} files per message`,
+        description: CHAT_ATTACHMENT_TOO_MANY_ERROR,
         variant: 'destructive',
       })
       return
@@ -162,7 +163,7 @@ export function ChatInput({ onSend, disabled, isLoading, conversationId, reasoni
     if (!ALLOWED_EXTENSIONS.includes(ext)) {
       toast({
         title: 'Unsupported file type',
-        description: `Only these file types are supported: ${ALLOWED_EXTENSIONS.join(', ')}`,
+        description: CHAT_ATTACHMENT_UNSUPPORTED_ERROR,
         variant: 'destructive',
       })
       return
@@ -255,7 +256,7 @@ export function ChatInput({ onSend, disabled, isLoading, conversationId, reasoni
     if (filesToProcess.length < uniqueFiles.length) {
       toast({
         title: 'Attachment limit reached',
-        description: `Maximum ${MAX_FILES} files per message`,
+        description: CHAT_ATTACHMENT_TOO_MANY_ERROR,
         variant: 'destructive',
       })
     }

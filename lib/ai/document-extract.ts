@@ -46,6 +46,23 @@ function extractTextFromMarkdown(dataUrl: string): string {
   return decodeBase64DataUrl(dataUrl)
 }
 
+function extractTextFromRtfString(raw: string): string {
+  return raw
+    .replace(/\\par[d]?/gi, '\n')
+    .replace(/\\tab/gi, '\t')
+    .replace(/\\'[0-9a-f]{2}/gi, ' ')
+    .replace(/\\[a-z]+-?\d* ?/gi, ' ')
+    .replace(/[{}]/g, ' ')
+    .replace(/\s+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .replace(/[ \t]{2,}/g, ' ')
+    .trim()
+}
+
+function extractTextFromRtf(dataUrl: string): string {
+  return extractTextFromRtfString(decodeBase64DataUrl(dataUrl))
+}
+
 async function extractTextFromPdfBuffer(buffer: Buffer): Promise<string> {
   try {
     const pdfParse = (await import('pdf-parse/lib/pdf-parse.js')).default
@@ -252,6 +269,9 @@ export async function extractTextFromAttachment(attachment: ChatAttachment): Pro
     if (mime === 'application/pdf') {
       return extractTextFromPdfBuffer(buffer)
     }
+    if (mime === 'application/rtf' || mime === 'text/rtf') {
+      return extractTextFromRtfString(buffer.toString('utf-8'))
+    }
 
     if (mime === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
       return extractDocxText(buffer)
@@ -291,6 +311,9 @@ export async function extractTextFromAttachment(attachment: ChatAttachment): Pro
   }
   if (mime === 'text/markdown') {
     return extractTextFromMarkdown(dataUrl)
+  }
+  if (mime === 'application/rtf' || mime === 'text/rtf') {
+    return extractTextFromRtf(dataUrl)
   }
 
   const base64Match = dataUrl.match(/^data:[^;]+;base64,(.+)$/)

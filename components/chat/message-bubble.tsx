@@ -157,10 +157,10 @@ export function MessageBubble({ role, content, model, onRegenerate, attachments,
               const openUrl = getAttachmentOpenUrl(attachment)
               return (
               <div key={index} className="relative group">
-                {attachment.type === 'image' && attachment.dataUrl ? (
+                {attachment.type === 'image' && openUrl ? (
                   <>
                     <img
-                      src={attachment.dataUrl}
+                      src={openUrl}
                       alt={attachment.name || 'Uploaded image'}
                       className={cn(
                         'rounded-lg border object-contain',
@@ -177,7 +177,7 @@ export function MessageBubble({ role, content, model, onRegenerate, attachments,
                           className="h-8 w-8 p-0 bg-black/50 hover:bg-black/70 backdrop-blur-sm"
                           onClick={() => {
                             const link = document.createElement('a')
-                            link.href = attachment.dataUrl || ''
+                            link.href = openUrl || ''
                             link.download = attachment.name || 'image.png'
                             document.body.appendChild(link)
                             link.click()

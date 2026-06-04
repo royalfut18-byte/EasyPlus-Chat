@@ -43,6 +43,8 @@ function inferMimeType(file: File): string {
     pdf: 'application/pdf',
     txt: 'text/plain',
     md: 'text/markdown',
+    markdown: 'text/markdown',
+    rtf: 'application/rtf',
     csv: 'text/csv',
     json: 'application/json',
     docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',

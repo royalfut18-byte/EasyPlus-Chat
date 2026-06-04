@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { streamBedrockResponse, getModelCost } from '@/lib/ai/bedrock'
 import { streamGeminiResponse } from '@/lib/ai/gemini'
-import { streamAzureGpt54Response } from '@/lib/ai/azure-gpt54.server'
+import { getAzureGpt54Diagnostics, streamAzureGpt54Response } from '@/lib/ai/azure-gpt54.server'
 import { streamAzureDeepSeekResponse } from '@/lib/ai/azure-deepseek.server'
 import { searchWeb, buildWebSearchQuery } from '@/lib/ai/web-search'
 import { buildSystemPrompt, isTimeSensitiveQuery, detectQueryType } from '@/lib/ai/system-prompt'
@@ -12,7 +12,6 @@ import { compactPreview, extractQuestionNumberExcerpt } from '@/lib/ai/document-
 import { ocrAttachmentPages, findLatestPdfAttachmentForOcr } from '@/lib/ai/pdf-ocr'
 import { sanitizeAttachmentsForStorage } from '@/lib/ai/sanitize-attachments'
 import { sanitizeDatabaseText } from '@/lib/supabase/sanitize-db-text'
-import { hydrateImageAttachmentsForModel } from '@/lib/ai/image-attachments'
 import {
   getUserMemories,
   formatMemoriesForPrompt,
@@ -30,6 +29,13 @@ import { getPublicModelName, getResolvedInternalModel, toPublicModelId } from '@
 import { getReasoningProfile, getReasoningSystemAddendum, type ReasoningProfile } from '@/lib/ai/reasoning-profiles'
 import { getAccountEntitlement, getEntitlementBlockResponse } from '@/lib/account-entitlements.server'
 import { createProjectMemory, getRelevantProjectContext } from '@/lib/projects.server'
+import {
+  type AttachmentUnderstandingDiagnostics,
+  prepareCurrentMessageAttachmentsForModel,
+  prepareMessagesForAttachmentModel,
+  validateCurrentMessageAttachments,
+} from '@/lib/ai/attachment-understanding.server'
+import { CHAT_IMAGE_UNDERSTANDING_NOT_CONFIGURED_ERROR } from '@/lib/chat-attachments'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
@@ -231,11 +237,19 @@ export async function POST(request: NextRequest) {
       content: sanitizeDatabaseText(message.content),
     }))
     const userMessage = normalizedMessages[normalizedMessages.length - 1]
-    const currentMessageAttachmentsCount = userMessage.attachments?.length || 0
+    const currentAttachments = userMessage.attachments || []
+    const currentMessageAttachmentsCount = currentAttachments.length
+    const hasCurrentAttachments = currentMessageAttachmentsCount > 0
+    const hasCurrentImageAttachments = currentAttachments.some((attachment: any) => attachment.type === 'image')
+    let providerForRequest = validationModel.provider
+    let visionFallbackUsed = false
+    let azureVisionStatusCode: number | null = null
+    let azureVisionSafeReason: string | null = null
+    let azureGpt54Configured = false
 
     // Validate inline attachment sizes (R2 metadata attachments bypass this check)
-    if (userMessage.attachments && userMessage.attachments.length > 0) {
-      for (const att of userMessage.attachments) {
+    if (hasCurrentAttachments) {
+      for (const att of currentAttachments) {
         const legacyAtt = att as any
         const isR2 = att.storageProvider === 'r2' || legacyAtt.storage_provider === 'r2' || att.storageKey || legacyAtt.storage_key || att.storagePath
         if (!isR2 && att.dataUrl && att.dataUrl.length > 7 * 1024 * 1024) {
@@ -247,30 +261,54 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Check image support
-    if (userMessage.attachments && userMessage.attachments.length > 0) {
-      const hasImageAttachments = userMessage.attachments.some((a: any) => a.type === 'image')
-
-      if (hasImageAttachments) {
-        const modelSupportsImages = validationModel.provider === 'azure-gpt54' || validationModel.provider === 'google'
-
-        if (!modelSupportsImages) {
-          return NextResponse.json(
-            { error: 'Image input is not supported for this tier. Try another EasyPlus tier.' },
-            { status: 400 }
-          )
-        }
+    if (hasCurrentAttachments) {
+      try {
+        validateCurrentMessageAttachments(currentAttachments)
+      } catch (attachmentErr: any) {
+        return NextResponse.json(
+          { error: attachmentErr.message || 'Unsupported file type.' },
+          { status: 400 }
+        )
       }
 
-      console.log('[Chat API] Attachments:', userMessage.attachments.map((a: any) => ({
+      console.log('[Chat API] Attachments:', currentAttachments.map((a: any) => ({
         type: a.type,
         name: a.name,
         mimeType: a.mimeType,
         size: a.size,
         hasDataUrl: !!a.dataUrl,
         storageProvider: a.storageProvider || a.storage_provider || 'inline',
-        storageKey: a.storageKey || a.storage_key || null,
+        hasStorageKey: !!(a.storageKey || a.storage_key || a.storagePath),
       })))
+    }
+
+    if (hasCurrentImageAttachments && validationModel.provider !== 'azure-gpt54' && validationModel.provider !== 'google') {
+      const azureVisionDiagnostics = await getAzureGpt54Diagnostics()
+      azureGpt54Configured = azureVisionDiagnostics.configured
+      azureVisionStatusCode = azureVisionDiagnostics.status
+      azureVisionSafeReason = azureVisionDiagnostics.safeReason
+
+      if (!azureVisionDiagnostics.probeOk) {
+        const publicError = azureVisionDiagnostics.configured
+          ? 'Image understanding is temporarily unavailable right now.'
+          : CHAT_IMAGE_UNDERSTANDING_NOT_CONFIGURED_ERROR
+
+        console.error('[Chat API] Image understanding unavailable for current request', {
+          providerSelected: validationModel.provider,
+          providerAttempted: 'azure-gpt54',
+          messageHasImages: true,
+          attachmentCount: currentMessageAttachmentsCount,
+          imageCount: currentAttachments.filter((attachment: any) => attachment.type === 'image').length,
+          azureGpt54Configured: azureVisionDiagnostics.configured,
+          azureStatusCode: azureVisionDiagnostics.status,
+          safeReason: azureVisionDiagnostics.safeReason,
+        })
+
+        return NextResponse.json({ error: publicError }, { status: 503 })
+      }
+
+      providerForRequest = 'azure-gpt54'
+      visionFallbackUsed = true
     }
 
     const isLoadingMarker = (content: string) => {
@@ -348,6 +386,14 @@ RULES FOR USING THESE RESULTS:
     const currentDocumentFileNames: string[] = []
     const currentDocumentQuestionMatches: string[] = []
     const comprehensiveDocumentRequest = isComprehensiveDocumentRequest(latestUserMessage.content)
+    let documentExtractionResult:
+      | {
+          context: string
+          extractedTexts: Map<string, string>
+          attachmentStatuses: Map<string, 'ready' | 'needs_ocr' | 'failed'>
+          error?: string
+        }
+      | undefined
 
     if (userMessage.attachments && userMessage.attachments.length > 0) {
       const docAttachments = userMessage.attachments.filter((a: any) => a.type === 'document')
@@ -356,6 +402,7 @@ RULES FOR USING THESE RESULTS:
           const result = await buildDocumentContext(docAttachments, {
             comprehensive: comprehensiveDocumentRequest,
           })
+          documentExtractionResult = result
           documentContext = result.context
           for (const [name, text] of result.extractedTexts) {
             extractedDocTexts.set(name, text)
@@ -647,9 +694,24 @@ RULES FOR USING THESE RESULTS:
 
     // Resolve cloud-stored images into data URLs only for the provider call.
     stage = 'image-attachment-hydration'
-    let hydratedMessagesForModel: ChatMessage[]
+    let messagesForModel: ChatMessage[]
+    let attachmentDiagnostics: AttachmentUnderstandingDiagnostics = {
+      messageHasAttachments: hasCurrentAttachments,
+      messageHasImages: hasCurrentImageAttachments,
+      attachmentCount: currentMessageAttachmentsCount,
+      imageCount: userMessage.attachments?.filter((attachment: any) => attachment.type === 'image').length || 0,
+      fileTypes: [] as string[],
+      extractionSucceededCount: 0,
+      extractionFailedCount: 0,
+      providerSelected: providerForRequest,
+      visionFallbackUsed,
+      azureGpt54Configured,
+      azureStatusCode: azureVisionStatusCode,
+      safeReason: azureVisionSafeReason,
+    }
+
     try {
-      hydratedMessagesForModel = await hydrateImageAttachmentsForModel(messagesToSend as ChatMessage[], user.id)
+      messagesForModel = await prepareMessagesForAttachmentModel(messagesToSend as ChatMessage[], user.id)
     } catch (imageErr: any) {
       console.error('[Chat API] Image hydration failed:', imageErr.message)
       return NextResponse.json(
@@ -658,15 +720,23 @@ RULES FOR USING THESE RESULTS:
       )
     }
 
-    // Strip document dataUrls from messages before sending to model
-    const messagesForModel = hydratedMessagesForModel.map((m) => {
-      if (!m.attachments) return m
-      const imageOnly = m.attachments.filter((a) => a.type === 'image')
-      return {
-        ...m,
-        attachments: imageOnly.length > 0 ? imageOnly : undefined,
-      }
-    }) as ChatMessage[]
+    if (hasCurrentAttachments) {
+      const hydratedCurrentMessage = messagesForModel[messagesForModel.length - 1]
+      const preparedAttachmentContext = await prepareCurrentMessageAttachmentsForModel({
+        attachments: userMessage.attachments,
+        comprehensive: comprehensiveDocumentRequest,
+        hydratedCurrentMessage,
+        extractionResult: documentExtractionResult,
+        providerSelected: providerForRequest,
+        visionFallbackUsed,
+        azureGpt54Configured,
+        azureStatusCode: azureVisionStatusCode,
+        safeReason: azureVisionSafeReason,
+      })
+      attachmentDiagnostics = preparedAttachmentContext.diagnostics
+
+      console.log('[Chat API] Attachment diagnostics:', attachmentDiagnostics)
+    }
 
     // Stage: Save user message BEFORE AI call (idempotent via client_message_id)
     stage = 'save-user-message'
@@ -781,12 +851,14 @@ RULES FOR USING THESE RESULTS:
     }
 
     console.log('[Chat API] Calling provider:', {
-      provider: selectedModel.provider,
+      provider: providerForRequest,
+      providerSelected: selectedModel.provider,
       modelId: validatedModel,
       bedrockId: selectedModel.bedrockModelId,
       geminiId: selectedModel.geminiModelId,
       messageCount: messagesForModel.length,
       temperature,
+      visionFallbackUsed,
     })
 
     // Stage: Pre-create assistant message for recovery
@@ -832,13 +904,13 @@ RULES FOR USING THESE RESULTS:
           const maxTokens = reasoningProfile.maxTokens
           const identitySanitizer = createIdentityLeakStreamSanitizer(selectedModel.name)
 
-          if (selectedModel.provider === 'google') {
+          if (providerForRequest === 'google') {
             providerStream = await streamGeminiResponse(validatedModel, messagesForModel, systemPrompt, temperature, maxTokens)
-          } else if (selectedModel.provider === 'anthropic') {
+          } else if (providerForRequest === 'anthropic') {
             providerStream = await streamBedrockResponse(validatedModel, messagesForModel, systemPrompt, temperature, maxTokens)
-          } else if (selectedModel.provider === 'azure-gpt54') {
+          } else if (providerForRequest === 'azure-gpt54') {
             providerStream = await streamAzureGpt54Response(messagesForModel, systemPrompt, temperature, maxTokens)
-          } else if (selectedModel.provider === 'azure-deepseek') {
+          } else if (providerForRequest === 'azure-deepseek') {
             providerStream = await streamAzureDeepSeekResponse(messagesForModel, systemPrompt, temperature, maxTokens)
           } else {
             controller.enqueue(encoder.encode('Error: This EasyPlus tier is unavailable'))
@@ -1005,7 +1077,12 @@ RULES FOR USING THESE RESULTS:
 
           controller.close()
         } catch (err: any) {
-          console.error('[Chat API] Stream error:', err.message)
+          console.error('[Chat API] Stream error:', {
+            message: err.message,
+            provider: providerForRequest,
+            modelId: validatedModel,
+            attachmentDiagnostics,
+          })
           streamFinished = true
 
           // Save whatever content we have so far
