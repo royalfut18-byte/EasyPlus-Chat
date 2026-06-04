@@ -1,7 +1,7 @@
 'use client'
 
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, Copy, Download, Code, Eye, GripVertical, Package, AlertTriangle, Blocks, EyeOff, Monitor, Tablet, Smartphone, RefreshCw, Maximize2, Minimize2 } from 'lucide-react'
+import { X, Copy, Download, Code, Eye, Package, AlertTriangle, Blocks, EyeOff, Monitor, Tablet, Smartphone, RefreshCw, Maximize2, Minimize2, Loader2 } from 'lucide-react'
 import { useState, useEffect, useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { Artifact } from '@/types/models'
@@ -470,305 +470,52 @@ function createPptxBlob(title: string, content: string): Blob {
   ], PPTX_MIME_TYPE)
 }
 
-const HTML_INTERACTION_FALLBACK_SCRIPT = `
-<script>
+const PREVIEW_EVENT_TYPE = 'easyplus-artifact-preview'
+
+const PREVIEW_BRIDGE_SCRIPT = `
+<script data-easyplus-preview-bridge>
 (function () {
-  function showElement(element) {
-    if (!element) return;
-    element.style.display = '';
-    element.classList.add('active');
+  function report(kind, detail) {
+    try {
+      parent.postMessage({ type: '${PREVIEW_EVENT_TYPE}', kind: kind, detail: detail || null }, '*');
+    } catch (error) {
+      // Ignore cross-origin reporting failures inside sandboxed previews.
+    }
   }
 
-  function hideElement(element) {
-    if (!element) return;
-    element.style.display = 'none';
-    element.classList.remove('active');
-  }
-
-  if (!window.showTab) {
-    window.showTab = function (name) {
-      document.querySelectorAll('[id$="-tab"], .tab-content, .tab-pane').forEach(hideElement);
-      showElement(document.getElementById(name + '-tab') || document.getElementById(name));
-
-      document.querySelectorAll('.tab-btn, .tab, [onclick*="showTab"]').forEach(function (button) {
-        var onclick = button.getAttribute('onclick') || '';
-        button.classList.toggle('active', onclick.indexOf("'" + name + "'") !== -1 || onclick.indexOf('"' + name + '"') !== -1);
-      });
-    };
-  }
-
-  if (!window.switchTab) {
-    window.switchTab = function (name) {
-      document.querySelectorAll('.tab-content, [id^="content-"], [id$="-tab"]').forEach(hideElement);
-      showElement(document.getElementById('content-' + name) || document.getElementById(name + '-tab') || document.getElementById(name));
-
-      document.querySelectorAll('.tab-btn, .tab, [onclick*="switchTab"]').forEach(function (button) {
-        var onclick = button.getAttribute('onclick') || '';
-        button.classList.toggle('active', onclick.indexOf("'" + name + "'") !== -1 || onclick.indexOf('"' + name + '"') !== -1);
-      });
-    };
-  }
-
-  if (!window.showSection) {
-    window.showSection = function (name) {
-      document.querySelectorAll('.section').forEach(function (section) {
-        section.classList.remove('active');
-        section.style.display = 'none';
-      });
-      showElement(document.getElementById('section-' + name) || document.getElementById(name));
-
-      document.querySelectorAll('.tab, .tab-btn, [onclick*="showSection"]').forEach(function (button) {
-        var onclick = button.getAttribute('onclick') || '';
-        button.classList.toggle('active', onclick.indexOf("'" + name + "'") !== -1 || onclick.indexOf('"' + name + '"') !== -1);
-      });
-    };
-  }
-
-  if (!window.toggleRoom) {
-    window.toggleRoom = function (room, event) {
-      if (event && event.target && event.target.closest('button')) return;
-      var target = typeof room === 'string' ? document.getElementById(room) : (room && room.closest ? room.closest('.room') : room);
-      if (target) target.classList.toggle('open');
-    };
-  }
-
-  if (!window.revealText) {
-    window.revealText = function (button, event) {
-      if (event) event.stopPropagation();
-      var container = button && button.closest ? button.closest('.scene, .sentence-card, .step, .card') : null;
-      var text = container && container.querySelector('.scene-text, .sentence-text, .step-content, .card-content, .answer');
-      if (!text) return;
-      var isShown = text.classList.toggle('revealed');
-      text.style.display = isShown ? 'block' : '';
-      if (button) button.textContent = isShown ? 'Hide Sentence' : 'Show Sentence';
-    };
-  }
-
-  if (!window.toggleText) {
-    window.toggleText = function (button, event) {
-      if (event) event.stopPropagation();
-      var container = button && button.closest ? button.closest('.scene, .sentence-card, .step, .card, .drill-card') : null;
-      var text = container && container.querySelector('.scene-text, .drill-answer, .sentence-text, .step-content, .card-content, .answer');
-      if (!text) return;
-      var isShown = text.classList.toggle('show');
-      text.classList.toggle('revealed', isShown);
-      text.style.display = isShown ? 'block' : 'none';
-      if (button) button.textContent = isShown ? 'Hide Full Sentence' : 'Show Full Sentence';
-    };
-  }
-
-  if (!window.toggleSentence) {
-    window.toggleSentence = function (card) {
-      var text = card && card.querySelector ? card.querySelector('.sentence-text, .step-content, .content, .card-content') : card;
-      if (!text) return;
-      text.classList.toggle('hidden');
-      card.classList.toggle('hidden-text');
-      card.classList.toggle('revealed');
-    };
-  }
-
-  if (!window.nextCard) {
-    window.nextCard = function () {
-      var cards = Array.from(document.querySelectorAll('.drill-card, .practice-card'));
-      var current = cards.findIndex(function (card) { return card.style.display !== 'none'; });
-      if (current === -1) current = 0;
-      cards.forEach(hideElement);
-      showElement(cards[(current + 1) % cards.length]);
-    };
-  }
-
-  if (!window.prevCard) {
-    window.prevCard = function () {
-      var cards = Array.from(document.querySelectorAll('.drill-card, .practice-card'));
-      var current = cards.findIndex(function (card) { return card.style.display !== 'none'; });
-      if (current === -1) current = 0;
-      cards.forEach(hideElement);
-      showElement(cards[(current - 1 + cards.length) % cards.length]);
-    };
-  }
-
-  if (!window.toggleBlur) {
-    window.toggleBlur = function (element) {
-      if (!element) return;
-      element.classList.toggle('hidden');
-      element.style.filter = element.classList.contains('hidden') ? 'blur(8px)' : '';
-    };
-  }
-
-  if (!window.revealAll) {
-    window.revealAll = function (scope) {
-      var root = scope ? (document.getElementById('section-' + scope) || document.getElementById(scope)) : document;
-      (root || document).querySelectorAll('.hidden, .hidden-text').forEach(function (element) {
-        element.classList.remove('hidden', 'hidden-text');
-        element.style.filter = '';
-      });
-      (root || document).querySelectorAll('.scene-text, .card-content, .step-content').forEach(function (element) {
-        element.classList.add('revealed');
-        element.style.display = 'block';
-      });
-    };
-  }
-
-  if (!window.hideAll) {
-    window.hideAll = function (scope) {
-      var root = scope ? (document.getElementById('section-' + scope) || document.getElementById(scope)) : document;
-      (root || document).querySelectorAll('.sentence-text, .step-content, .card-content').forEach(function (element) {
-        element.classList.add('hidden');
-        element.classList.remove('revealed');
-      });
-      (root || document).querySelectorAll('.scene-text').forEach(function (element) {
-        element.classList.remove('revealed');
-        element.style.display = 'none';
-      });
-    };
-  }
-
-  function resolveSection(name) {
-    return document.getElementById('sec-' + name) ||
-      document.getElementById('section-' + name) ||
-      document.getElementById('content-' + name) ||
-      document.getElementById(name + '-tab') ||
-      document.getElementById(name);
-  }
-
-  // Override common generated handlers so inline onclick attributes work even
-  // when the model omitted the script or used a slightly different naming style.
-  window.showSection = function (name) {
-    document.querySelectorAll('.section, .tab-content, [id^="sec-"], [id^="section-"], [id^="content-"]').forEach(function (section) {
-      section.classList.remove('active');
-      section.style.display = 'none';
+  window.addEventListener('error', function (event) {
+    report('error', {
+      message: event && event.message ? String(event.message) : 'Unknown runtime error',
+      source: event && event.filename ? String(event.filename) : null,
+      line: event && typeof event.lineno === 'number' ? event.lineno : null,
+      column: event && typeof event.colno === 'number' ? event.colno : null
     });
-    showElement(resolveSection(name));
+  });
 
-    document.querySelectorAll('.tab, .tab-btn, [onclick*="showSection"], [onclick*="switchTab"]').forEach(function (button) {
-      var onclick = button.getAttribute('onclick') || '';
-      button.classList.toggle('active', onclick.indexOf("'" + name + "'") !== -1 || onclick.indexOf('"' + name + '"') !== -1);
+  window.addEventListener('unhandledrejection', function (event) {
+    var reason = event && event.reason;
+    report('error', {
+      message: reason && reason.message ? String(reason.message) : String(reason || 'Unhandled promise rejection')
     });
-  };
+  });
 
-  window.switchTab = function (name) {
-    window.showSection(name);
-  };
-
-  window.toggleCard = function (card) {
-    if (!card) return;
-    card.classList.toggle('revealed');
-    var hidden = card.querySelector('.card-hidden, .answer, .details');
-    if (hidden) {
-      var isShown = card.classList.contains('revealed');
-      hidden.style.display = isShown ? 'block' : 'none';
-      hidden.classList.toggle('show', isShown);
-      hidden.classList.toggle('revealed', isShown);
-    }
-  };
-
-  window.toggleText = function (button, event) {
-    if (event) event.stopPropagation();
-    var container = button && button.closest ? button.closest('.scene, .sentence-card, .step, .card, .drill-card, .test-card') : null;
-    var text = container && container.querySelector('.scene-text, .drill-answer, .sentence-text, .step-content, .card-content, .card-hidden, .test-answer, .answer');
-    if (!text) return;
-    var isShown = text.classList.toggle('show');
-    text.classList.toggle('revealed', isShown);
-    text.style.display = isShown ? 'block' : 'none';
-    if (button) {
-      button.textContent = isShown
-        ? button.textContent.replace(/^Show/i, 'Hide')
-        : button.textContent.replace(/^Hide/i, 'Show');
-    }
-  };
-
-  window.toggleRoom = function (room, event) {
-    if (event && event.target && event.target.closest('button')) return;
-    var target = typeof room === 'string' ? document.getElementById(room) : (room && room.closest ? room.closest('.room') : room);
-    if (target) target.classList.toggle('open');
-  };
-
-  document.addEventListener('click', function (event) {
-    var target = event.target;
-    if (!target || !target.closest) return;
-
-    var tab = target.closest('.tab, .tab-btn, [data-tab], [data-section]');
-    if (tab) {
-      var onclick = tab.getAttribute('onclick') || '';
-      var tabName = tab.getAttribute('data-tab') || tab.getAttribute('data-section');
-      var match = onclick.match(/(?:showSection|switchTab|showTab)\\(['"]([^'"]+)['"]\\)/);
-      if (!tabName && match) tabName = match[1];
-      if (tabName) {
-        event.preventDefault();
-        window.showSection(tabName);
-        return;
-      }
-    }
-
-    var reveal = target.closest('button, [role="button"]');
-    if (reveal) {
-      var label = (reveal.textContent || '').toLowerCase();
-      var looksLikeReveal =
-        label.indexOf('show') !== -1 ||
-        label.indexOf('hide') !== -1 ||
-        label.indexOf('reveal') !== -1 ||
-        label.indexOf('full') !== -1 ||
-        label.indexOf('answer') !== -1 ||
-        label.indexOf('sentence') !== -1 ||
-        label.indexOf('text') !== -1;
-
-      if (looksLikeReveal) {
-        var container = reveal.closest('.scene, .sentence-card, .step, .card, .drill-card, .test-card, .flashcard, .practice-card');
-        var text = container && container.querySelector('.scene-text, .drill-answer, .sentence-text, .step-content, .card-content, .card-hidden, .test-answer, .answer, .full-text, .hidden-text, [data-answer], [data-full-text]');
-        if (text) {
-          event.preventDefault();
-          event.stopPropagation();
-          var currentlyHidden = getComputedStyle(text).display === 'none' || !text.classList.contains('show') && !text.classList.contains('revealed') && (text.classList.contains('card-hidden') || text.classList.contains('test-answer') || text.classList.contains('scene-text'));
-          text.classList.toggle('show', currentlyHidden);
-          text.classList.toggle('revealed', currentlyHidden);
-          text.classList.toggle('hidden', !currentlyHidden);
-          text.style.display = currentlyHidden ? 'block' : 'none';
-          reveal.textContent = currentlyHidden
-            ? label.replace('show', 'hide').replace('reveal', 'hide')
-            : label.replace('hide', 'show');
-          return;
-        }
-      }
-    }
-
-    var roomHeader = target.closest('.room-header, .accordion-header, .section-header');
-    if (roomHeader) {
-      var room = roomHeader.closest('.room, .accordion, .collapsible, .section');
-      if (room) {
-        event.preventDefault();
-        room.classList.toggle('open');
-        room.classList.toggle('active', room.classList.contains('open'));
-        return;
-      }
-    }
-
-    var card = target.closest('.card, .sentence-card, .test-card, .flashcard');
-    if (card && !target.closest('button, a, input, textarea, select')) {
-      var hidden = card.querySelector('.card-hidden, .test-answer, .answer, .full-text, [data-answer], [data-full-text]');
-      if (hidden) {
-        event.preventDefault();
-        card.classList.toggle('revealed');
-        var isShown = card.classList.contains('revealed');
-        hidden.classList.toggle('show', isShown);
-        hidden.classList.toggle('revealed', isShown);
-        hidden.style.display = isShown ? 'block' : 'none';
-      }
-    }
-  }, true);
-})();
+  var signalReady = function () { report('ready', null); };
+  document.addEventListener('DOMContentLoaded', signalReady, { once: true });
+  window.addEventListener('load', signalReady, { once: true });
 </script>`
 
-function injectHtmlInteractionFallback(html: string): string {
-  if (html.includes('data-easyplus-fallback-script')) return html
-
-  const fallback = HTML_INTERACTION_FALLBACK_SCRIPT.replace('<script>', '<script data-easyplus-fallback-script>')
+function injectPreviewBridge(html: string): string {
+  if (html.includes('data-easyplus-preview-bridge')) return html
+  if (/<\/head\s*>/i.test(html)) {
+    return html.replace(/<\/head\s*>/i, `${PREVIEW_BRIDGE_SCRIPT}</head>`)
+  }
   if (/<\/body\s*>/i.test(html)) {
-    return html.replace(/<\/body\s*>/i, `${fallback}</body>`)
+    return html.replace(/<\/body\s*>/i, `${PREVIEW_BRIDGE_SCRIPT}</body>`)
   }
   if (/<\/html\s*>/i.test(html)) {
-    return html.replace(/<\/html\s*>/i, `${fallback}</html>`)
+    return html.replace(/<\/html\s*>/i, `${PREVIEW_BRIDGE_SCRIPT}</html>`)
   }
-  return `${html}\n${fallback}`
+  return `${html}\n${PREVIEW_BRIDGE_SCRIPT}`
 }
 
 function createPreviewHtml(title: string, content: string): string {
@@ -788,7 +535,7 @@ ${normalizedContent}
 </body>
 </html>`
 
-  return injectHtmlInteractionFallback(html)
+  return injectPreviewBridge(html)
 }
 
 function createCanvaHtml(title: string, content: string): string {
@@ -1037,6 +784,8 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
   const [refreshKey, setRefreshKey] = useState(0)
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [viewportWidth, setViewportWidth] = useState(0)
+  const [isPreviewLoading, setIsPreviewLoading] = useState(false)
+  const [previewRuntimeError, setPreviewRuntimeError] = useState<string | null>(null)
   const panelRef = useRef<HTMLDivElement>(null)
   const iframeRef = useRef<HTMLIFrameElement>(null)
 
@@ -1057,9 +806,42 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
   useEffect(() => {
     if (!artifact) return
     const previewable = PREVIEWABLE_LANGUAGES.has(artifact.language)
-    setActiveTab(previewable ? 'preview' : 'code')
+    setActiveTab(previewable && !artifact.validationError ? 'preview' : 'code')
     setRefreshKey(k => k + 1)
-  }, [artifact?.id, artifact?.language])
+    setIsPreviewLoading(previewable && !artifact.validationError)
+    setPreviewRuntimeError(artifact.validationError || null)
+  }, [artifact?.id, artifact?.language, artifact?.validationError])
+
+  useEffect(() => {
+    if (!isOpen) return
+
+    const handlePreviewMessage = (event: MessageEvent) => {
+      if (event.source !== iframeRef.current?.contentWindow) return
+      const payload = event.data
+      if (!payload || payload.type !== PREVIEW_EVENT_TYPE) return
+
+      if (payload.kind === 'ready') {
+        setIsPreviewLoading(false)
+        setPreviewRuntimeError(null)
+        return
+      }
+
+      if (payload.kind === 'error') {
+        const detail = payload.detail || {}
+        const parts = [
+          detail.message,
+          detail.source ? `in ${detail.source}` : null,
+          typeof detail.line === 'number' ? `line ${detail.line}` : null,
+        ].filter(Boolean)
+        const message = parts.join(' ') || 'Preview runtime error'
+        setIsPreviewLoading(false)
+        setPreviewRuntimeError(message)
+      }
+    }
+
+    window.addEventListener('message', handlePreviewMessage)
+    return () => window.removeEventListener('message', handlePreviewMessage)
+  }, [isOpen, refreshKey])
 
   useEffect(() => {
     if (!isResizing) return
@@ -1126,6 +908,7 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
   const canPreview = !!artifact && PREVIEWABLE_LANGUAGES.has(artifact.language)
   const isReact = artifact?.language === 'tsx' || artifact?.language === 'jsx'
   const isGeneratedFilePreview = !!artifact && isGeneratedFileArtifactLanguage(artifact.language)
+  const previewBlocked = !!artifact?.validationError
   const zipPreviewArtifact = artifact as ArtifactWithZipPreview | null
   const zipBackedAttachment = artifact?.generatedAttachment?.mimeType === 'application/zip'
     ? artifact.generatedAttachment
@@ -1145,6 +928,36 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
     return zipFiles
       .map((file) => `// ${file.path}\n${file.content}`)
       .join('\n\n')
+  }
+
+  const getDownloadPayload = (artifact: Artifact): { filename: string; mimeType: string; content: string | Blob } => {
+    const safeBaseName = (artifact.title || 'artifact')
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '') || 'artifact'
+
+    const mapping: Record<string, { extension: string; mimeType: string }> = {
+      html: { extension: 'html', mimeType: 'text/html;charset=utf-8' },
+      canva: { extension: 'html', mimeType: 'text/html;charset=utf-8' },
+      tsx: { extension: 'tsx', mimeType: 'text/plain;charset=utf-8' },
+      jsx: { extension: 'jsx', mimeType: 'text/plain;charset=utf-8' },
+      javascript: { extension: 'js', mimeType: 'text/javascript;charset=utf-8' },
+      typescript: { extension: 'ts', mimeType: 'text/plain;charset=utf-8' },
+      css: { extension: 'css', mimeType: 'text/css;charset=utf-8' },
+      python: { extension: 'py', mimeType: 'text/plain;charset=utf-8' },
+      markdown: { extension: 'md', mimeType: 'text/markdown;charset=utf-8' },
+      json: { extension: 'json', mimeType: 'application/json;charset=utf-8' },
+      svg: { extension: 'svg', mimeType: 'image/svg+xml;charset=utf-8' },
+      text: { extension: 'txt', mimeType: 'text/plain;charset=utf-8' },
+    }
+
+    const selected = mapping[artifact.language] || { extension: 'txt', mimeType: 'text/plain;charset=utf-8' }
+    return {
+      filename: `${safeBaseName}.${selected.extension}`,
+      mimeType: selected.mimeType,
+      content: decodePossiblyEscapedText(artifact.code),
+    }
   }
 
   const getPreviewSrcDoc = (artifact: Artifact): string => {
@@ -1339,7 +1152,11 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
             </button>
             <div className="w-px h-6 bg-white/10 mx-1" />
             <button
-              onClick={() => setRefreshKey(k => k + 1)}
+              onClick={() => {
+                setPreviewRuntimeError(artifact?.validationError || null)
+                setIsPreviewLoading(!artifact?.validationError)
+                setRefreshKey(k => k + 1)
+              }}
               title="Refresh preview"
               className="p-2 rounded text-gray-400 hover:text-white hover:bg-white/5 transition-colors"
             >
@@ -1386,8 +1203,42 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
                     : 'Click inside preview to interact. Press keys for controls.'}
                 </p>
               </div>
+              {(previewBlocked || previewRuntimeError) && (
+                <div className="mb-3 w-full max-w-5xl rounded-2xl border border-amber-500/25 bg-amber-500/10 px-4 py-3 text-left">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-amber-100">Preview needs attention</p>
+                      <p className="mt-1 text-sm text-amber-50/90">
+                        {previewRuntimeError || artifact.validationError}
+                      </p>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="border border-white/10 bg-white/5 hover:bg-white/10"
+                        onClick={() => setActiveTab('code')}
+                      >
+                        View broken code
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="border border-white/10 bg-white/5 hover:bg-white/10"
+                        onClick={() => {
+                          setPreviewRuntimeError(artifact.validationError || null)
+                          setIsPreviewLoading(!artifact.validationError)
+                          setRefreshKey(k => k + 1)
+                        }}
+                      >
+                        Reload preview
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              )}
               <div
-                className="bg-white rounded-2xl shadow-[0_30px_120px_rgba(0,0,0,0.45)] overflow-hidden border border-white/15 transition-all duration-300 cursor-pointer"
+                className="relative bg-white rounded-2xl shadow-[0_30px_120px_rgba(0,0,0,0.45)] overflow-hidden border border-white/15 transition-all duration-300 cursor-pointer"
                 style={{
                   width: previewDevice === 'mobile' ? '375px' : previewDevice === 'tablet' ? '768px' : '100%',
                   maxWidth: '100%',
@@ -1396,19 +1247,29 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
                 }}
                 onClick={() => iframeRef.current?.focus()}
               >
+                {isPreviewLoading && !previewBlocked && (
+                  <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/80 text-slate-700">
+                    <div className="flex items-center gap-2 text-sm font-medium">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Loading preview
+                    </div>
+                  </div>
+                )}
                 <iframe
                   ref={iframeRef}
                   key={refreshKey}
                   srcDoc={getPreviewSrcDoc(artifact)}
                   title={artifact.title}
-                  sandbox="allow-scripts allow-forms"
+                  sandbox="allow-scripts allow-forms allow-popups allow-modals allow-downloads"
                   className="w-full h-full border-0 bg-white pointer-events-auto"
                   style={{
                     minHeight: previewDevice !== 'desktop' ? '600px' : undefined,
                   }}
                   tabIndex={0}
                   onLoad={() => {
-                    // Auto-focus iframe after load for keyboard controls
+                    if (!previewBlocked) {
+                      setIsPreviewLoading(false)
+                    }
                     setTimeout(() => iframeRef.current?.focus(), 100)
                   }}
                 />
@@ -1571,37 +1432,14 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
       return
     }
 
-    const extensions: Record<string, string> = {
-      html: 'html',
-      tsx: 'tsx',
-      jsx: 'jsx',
-      javascript: 'js',
-      typescript: 'ts',
-      css: 'css',
-      python: 'py',
-      markdown: 'md',
-      json: 'json',
-      svg: 'svg',
-      text: 'txt',
-      xlsx: 'xlsx',
-      gsheet: 'xlsx',
-      canva: 'html',
-    }
-
-    const extension = extensions[artifact.language] || 'txt'
-    const filename = `${artifact.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.${extension}`
-
+    const payload = getDownloadPayload(artifact)
     const blob = artifact.language === 'xlsx' || artifact.language === 'gsheet'
-        ? createXlsxBlob(artifact.title, artifact.code)
-        : artifact.language === 'canva'
-            ? new Blob([createCanvaHtml(artifact.title, artifact.code)], { type: 'text/html' })
-            : artifact.language === 'html'
-              ? new Blob([createPreviewHtml(artifact.title, artifact.code)], { type: 'text/html' })
-              : new Blob([getCodeDisplayContent(artifact)], { type: 'text/plain' })
+      ? createXlsxBlob(artifact.title, artifact.code)
+      : new Blob([payload.content], { type: payload.mimeType })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = filename
+    a.download = payload.filename
     document.body.appendChild(a)
     a.click()
     document.body.removeChild(a)
@@ -1609,7 +1447,7 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
 
     toast({
       title: 'Downloaded',
-      description: `Artifact saved as ${filename}`,
+      description: `Artifact saved as ${payload.filename}`,
     })
   }
 

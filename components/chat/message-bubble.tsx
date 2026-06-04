@@ -99,7 +99,9 @@ export function MessageBubble({ role, content, model, onRegenerate, attachments,
 
   const hasArtifactCard = !isUser && (hasArtifact || (artifact && artifact.title && artifact.code))
   const artifactSubtitle = artifact
-    ? isGeneratedFileArtifactLanguage(artifact.language)
+    ? artifact.validationError
+      ? 'artifact needs repair'
+      : isGeneratedFileArtifactLanguage(artifact.language)
       ? `${getGeneratedFileLabel(artifact.language)} preview`
       : artifact.generatedAttachment?.mimeType === 'application/zip'
         ? 'html preview from zip'

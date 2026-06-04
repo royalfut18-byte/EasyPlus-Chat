@@ -17,6 +17,7 @@ import { toast } from '@/components/ui/use-toast'
 import { AI_MODELS, DEFAULT_CHAT_MODEL_ID } from '@/types/models'
 import { cn } from '@/lib/utils'
 import { parseArtifactFromResponse } from '@/lib/artifact-parser'
+import { detectArtifactIntent, detectArtifactRefinementIntent, detectZipProjectIntent } from '@/lib/artifact-routing'
 import { sortMessagesChronologically, dedupeMessages, processMessages, processLoadedMessages, getStoredArtifact } from '@/lib/chat/message-utils'
 import { useR2Upload } from '@/hooks/use-r2-upload'
 import { parsePageRangeRequest } from '@/lib/ai/document-requests'
@@ -122,8 +123,13 @@ For refinements, preserve working behavior and return the complete updated artif
 
 Artifact creation and export are EasyPlus app-level capabilities available in every public chat mode.
 
-When the user asks for buildable code/UI artifacts (landing pages, HTML/CSS files, React components, games, quizzes, dashboards, UI mockups, brackets, calculators, timetables, planners, etc.), return a short explanation, then include exactly one artifact block in this exact format:
+When the user asks for buildable code/UI artifacts (landing pages, HTML/CSS files, React components, games, quizzes, dashboards, UI mockups, brackets, calculators, timetables, planners, etc.), return a short explanation, then include exactly one artifact block in this preferred format:
 
+<EASYPLUS_ARTIFACT type="html" title="Title">
+CODE_HERE
+</EASYPLUS_ARTIFACT>
+
+Fallback only if you cannot follow the wrapper format:
 \`\`\`artifact:html:Title
 CODE_HERE
 \`\`\`
@@ -132,6 +138,7 @@ Rules:
 - Use language values: html, tsx, jsx, javascript, typescript, css, python, markdown, json, svg, text, docx, xlsx, pptx, gdoc, gsheet, gslides, canva.
 - Default to artifact:html with a full single-file HTML document, inline CSS, and inline JS so it opens as a live side-panel preview.
 - For visual, interactive, playable, game, quiz, calculator, dashboard, timetable, planner, landing page, website, widget, form, or browser-app requests, use artifact:html by default with complete browser-playable HTML/CSS/JS.
+- If the user asks for a React-style interactive artifact, convert it into a single-file html artifact unless they explicitly ask for source-only TSX/JSX code.
 - Only use artifact:python or Pygame when the user explicitly asks for Python, Pygame, or a Python script.
 - Only use artifact:docx, artifact:xlsx, artifact:pptx, artifact:gdoc, artifact:gsheet, or artifact:gslides when the user explicitly asks for that exact Office/Google file type.
 - Do not choose Word/docx for generic requests like "make something", "make an artifact", "make a document", "write this up", or "create a page".
@@ -215,6 +222,19 @@ function hydrateArtifactWithAttachment(artifact: Artifact | null, attachments?: 
   }
 
   return artifact
+}
+
+function shouldRouteToArtifactMode(
+  message: string,
+  options: {
+    manualArtifactMode: boolean
+    generatedFileIntent: GeneratedFileIntent | null
+    currentArtifact?: Artifact | null
+  }
+): boolean {
+  if (options.generatedFileIntent) return false
+  if (detectZipProjectIntent(message)) return false
+  return options.manualArtifactMode || detectArtifactIntent(message, options.currentArtifact)
 }
 
 type ZipPreviewArtifact = Artifact & {
@@ -1218,8 +1238,12 @@ export default function ChatPage() {
     const clientUserMessageId = crypto.randomUUID()
     const clientAssistantMessageId = crypto.randomUUID()
     const requestId = crypto.randomUUID()
-    const requestArtifactMode = artifactMode
     const requestGeneratedFileIntent = detectGeneratedFileIntent(trimmedContent)
+    const requestArtifactMode = shouldRouteToArtifactMode(trimmedContent, {
+      manualArtifactMode: artifactMode,
+      generatedFileIntent: requestGeneratedFileIntent,
+      currentArtifact: activeArtifact,
+    })
     const requestWebSearchEnabled = webSearchEnabled
     const requestReasoningMode = reasoningMode
 
@@ -1233,6 +1257,15 @@ export default function ChatPage() {
     artifactModeAtSendRef.current = requestArtifactMode
     webSearchEnabledAtSendRef.current = requestWebSearchEnabled
     lastUserPromptRef.current = trimmedContent
+
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('[Artifact] Routing decision', {
+        artifactIntentDetected: requestArtifactMode,
+        refinementIntentDetected: detectArtifactRefinementIntent(trimmedContent, activeArtifact),
+        generatedFileIntent: requestGeneratedFileIntent?.kind || null,
+        manualArtifactMode: artifactMode,
+      })
+    }
 
     const userMessage: Message = {
       id: clientUserMessageId,
@@ -1535,9 +1568,10 @@ export default function ChatPage() {
 
         // Strip <thinking> tags before displaying to user
         const displayContent = hideGeneratedZipManifestFromDisplay(stripThinkingTags(assistantContent))
+        const shouldSuppressStreamingContent = requestArtifactMode || !!requestGeneratedFileIntent
 
-        // Update by ID only - clear statusLabel so real content shows
-        if (contentStarted && displayContent && selectedConversationIdRef.current === sendConversationId) {
+        // Keep artifact/file generation responses out of the visible chat bubble until final parsing completes.
+        if (!shouldSuppressStreamingContent && contentStarted && displayContent && selectedConversationIdRef.current === sendConversationId) {
           setMessages((prev) =>
             processMessages(
               prev.map((m) =>
@@ -1600,12 +1634,16 @@ export default function ChatPage() {
 
       // 10. Parse artifact if enabled and update final message
       if (requestArtifactMode) {
-        const { artifact, cleanContent } = parseArtifactFromResponse(
+        const { artifact, cleanContent, diagnostics } = parseArtifactFromResponse(
           zipCleanContent,
           requestArtifactMode,
           lastUserPromptRef.current
         )
         const renderableArtifact = preferRenderableArtifact(artifact, zipPreviewArtifact)
+
+        if (process.env.NODE_ENV !== 'production') {
+          console.log('[Artifact] Parse diagnostics', diagnostics)
+        }
 
         if (renderableArtifact) {
           const generatedFileResult = await resolveGeneratedFileArtifact(renderableArtifact, sendConversationId, requestId)
@@ -1632,6 +1670,7 @@ export default function ChatPage() {
           }
 
           const resolvedArtifact = generatedFileResult.artifact || renderableArtifact
+          const preserveExistingArtifact = !!resolvedArtifact.validationError && !!activeArtifact
 
           if (process.env.NODE_ENV !== 'production') {
             console.log('[Chat] Artifact detected:', resolvedArtifact.title)
@@ -1642,6 +1681,9 @@ export default function ChatPage() {
             finalContent = isGeneratedFileArtifactLanguage(resolvedArtifact.language)
               ? `I created a ${getGeneratedFileLabel(resolvedArtifact.language)} for you: **${resolvedArtifact.title}**.`
               : `I created an artifact for you: **${resolvedArtifact.title}**.`
+          }
+          if (preserveExistingArtifact) {
+            finalContent = `${finalContent}\n\nThe previous working artifact is still open because the latest update did not validate cleanly.`
           }
 
           // Update with artifact - only if still on this conversation
@@ -1664,14 +1706,17 @@ export default function ChatPage() {
               )
             )
 
-            setActiveArtifact(resolvedArtifact)
-            setIsArtifactOpen(true)
-            setArtifactMessageId(clientAssistantMessageId)
+            if (!preserveExistingArtifact) {
+              setActiveArtifact(resolvedArtifact)
+              setIsArtifactOpen(true)
+              setArtifactMessageId(clientAssistantMessageId)
+            }
           }
 
-          // Save artifact to localStorage
-          saveArtifact(resolvedArtifact, sendConversationId, clientAssistantMessageId)
-          saveProjectArtifact(projectId, resolvedArtifact, sendConversationId, clientAssistantMessageId)
+          if (!preserveExistingArtifact) {
+            saveArtifact(resolvedArtifact, sendConversationId, clientAssistantMessageId)
+            saveProjectArtifact(projectId, resolvedArtifact, sendConversationId, clientAssistantMessageId)
+          }
         } else {
           // No artifact found - update with normal response
           if (process.env.NODE_ENV !== 'production') {
@@ -1703,12 +1748,16 @@ export default function ChatPage() {
         // Some models output artifact/code blocks even when artifactMode wasn't toggled.
         // Try to parse artifact metadata and attach it so the UI can offer "Open Artifact".
         try {
-          const { artifact, cleanContent } = parseArtifactFromResponse(
+          const { artifact, cleanContent, diagnostics } = parseArtifactFromResponse(
             zipCleanContent,
             true,
             lastUserPromptRef.current
           )
           const renderableArtifact = preferRenderableArtifact(artifact, zipPreviewArtifact)
+
+          if (process.env.NODE_ENV !== 'production') {
+            console.log('[Artifact] Fallback parse diagnostics', diagnostics)
+          }
 
           if (renderableArtifact) {
             const generatedFileResult = await resolveGeneratedFileArtifact(renderableArtifact, sendConversationId, requestId)
@@ -1735,6 +1784,7 @@ export default function ChatPage() {
             }
 
             const resolvedArtifact = generatedFileResult.artifact || renderableArtifact
+            const preserveExistingArtifact = !!resolvedArtifact.validationError && !!activeArtifact
 
             if (process.env.NODE_ENV !== 'production') {
               console.log('[Chat] Artifact auto-detected (fallback):', resolvedArtifact.title)
@@ -1745,6 +1795,9 @@ export default function ChatPage() {
               finalContent = isGeneratedFileArtifactLanguage(resolvedArtifact.language)
                 ? `I created a ${getGeneratedFileLabel(resolvedArtifact.language)} for you: **${resolvedArtifact.title}**.`
                 : `I created an artifact for you: **${resolvedArtifact.title}**.`
+            }
+            if (preserveExistingArtifact) {
+              finalContent = `${finalContent}\n\nThe previous working artifact is still open because the latest update did not validate cleanly.`
             }
 
             if (selectedConversationIdRef.current === sendConversationId) {
@@ -1766,14 +1819,17 @@ export default function ChatPage() {
               )
               )
 
-              setActiveArtifact(resolvedArtifact)
-              setIsArtifactOpen(true)
-              setArtifactMessageId(clientAssistantMessageId)
+              if (!preserveExistingArtifact) {
+                setActiveArtifact(resolvedArtifact)
+                setIsArtifactOpen(true)
+                setArtifactMessageId(clientAssistantMessageId)
+              }
             }
 
-            // Save artifact to localStorage for persistence
-            saveArtifact(resolvedArtifact, sendConversationId, clientAssistantMessageId)
-            saveProjectArtifact(projectId, resolvedArtifact, sendConversationId, clientAssistantMessageId)
+            if (!preserveExistingArtifact) {
+              saveArtifact(resolvedArtifact, sendConversationId, clientAssistantMessageId)
+              saveProjectArtifact(projectId, resolvedArtifact, sendConversationId, clientAssistantMessageId)
+            }
           } else {
             // No artifact found - update with normal response
             if (selectedConversationIdRef.current === sendConversationId) {
@@ -2083,8 +2139,12 @@ export default function ChatPage() {
 
     const requestId = crypto.randomUUID()
     const clientAssistantMessageId = crypto.randomUUID()
-    const requestArtifactMode = artifactMode
     const requestGeneratedFileIntent = detectGeneratedFileIntent(trimmedContent)
+    const requestArtifactMode = shouldRouteToArtifactMode(trimmedContent, {
+      manualArtifactMode: artifactMode,
+      generatedFileIntent: requestGeneratedFileIntent,
+      currentArtifact: activeArtifact,
+    })
     const requestWebSearchEnabled = webSearchEnabled
     const requestReasoningMode = reasoningMode
     const modelToUse = currentConversation.model_used || selectedModel
@@ -2238,7 +2298,8 @@ export default function ChatPage() {
         }
 
         const displayContent = hideGeneratedZipManifestFromDisplay(stripThinkingTags(assistantContent))
-        if (displayContent && selectedConversationIdRef.current === conversationId) {
+        const shouldSuppressStreamingContent = requestArtifactMode || !!requestGeneratedFileIntent
+        if (!shouldSuppressStreamingContent && displayContent && selectedConversationIdRef.current === conversationId) {
           setMessages((prev) =>
             processMessages(
               prev.map((message) =>
@@ -2267,7 +2328,7 @@ export default function ChatPage() {
       const zipPreviewArtifact = generatedZipManifest
         ? createZipPreviewArtifact(generatedZipManifest, generatedZipAttachment, trimmedContent)
         : null
-      const { artifact, cleanContent } = parseArtifactFromResponse(
+      const { artifact, cleanContent, diagnostics } = parseArtifactFromResponse(
         zipCleanContent,
         true,
         trimmedContent
@@ -2305,9 +2366,16 @@ export default function ChatPage() {
         }
         return
       }
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('[Artifact] Retry parse diagnostics', diagnostics)
+      }
+
       const resolvedArtifact = generatedFileResult.artifact || renderableArtifact
+      const preserveExistingArtifact = !!resolvedArtifact?.validationError && !!activeArtifact
       const finalContent = resolvedArtifact
-        ? cleanContent
+        ? (preserveExistingArtifact
+            ? `${cleanContent}\n\nThe previous working artifact is still open because the latest update did not validate cleanly.`
+            : cleanContent)
         : zipCleanContent
 
       if (selectedConversationIdRef.current === conversationId) {
@@ -2339,7 +2407,7 @@ export default function ChatPage() {
           )
         )
 
-        if (resolvedArtifact) {
+        if (resolvedArtifact && !preserveExistingArtifact) {
           setActiveArtifact(resolvedArtifact)
           setArtifactMessageId(clientAssistantMessageId)
           setIsArtifactOpen(true)

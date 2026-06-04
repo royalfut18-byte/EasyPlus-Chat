@@ -7,18 +7,34 @@ const BUILDABLE_KEYWORDS = [
   'html', 'css', 'react', 'component', 'game', 'dashboard', 'bracket',
   'calculator', 'app', 'ui', 'mockup', 'page', 'tool', 'generator',
   'form', 'chart', 'graph', 'animation', 'navigation', 'navbar', 'footer',
-  'hero', 'section', 'layout', 'word', 'docx', 'excel', 'xlsx',
-  'spreadsheet', 'sheet', 'sheets', 'powerpoint', 'ppt', 'pptx', 'slides',
-  'presentation', 'google doc', 'google docs', 'google sheet', 'google sheets',
-  'google slides', 'canva', 'deck', 'artifact', 'interactive', 'quiz',
+  'hero', 'section', 'layout', 'artifact', 'interactive', 'quiz',
   'timetable', 'revision', 'budget', 'table', 'widget', 'planner', 'schedule',
-  'converter', 'tracker', 'simulator'
+  'converter', 'tracker', 'simulator', 'flashcard', 'timeline'
 ]
 
 const SUPPORTED_LANGUAGES = new Set([
   'html', 'tsx', 'jsx', 'javascript', 'typescript', 'css', 'python', 'markdown', 'json', 'svg', 'text',
   'docx', 'xlsx', 'pptx', 'gdoc', 'gsheet', 'gslides', 'canva', 'pdf'
 ])
+
+type ArtifactExtractionMethod = 'wrapper' | 'artifact_fence' | 'legacy_wrapper' | 'fenced_code' | 'raw_html' | 'none'
+
+type ArtifactParseDiagnostics = {
+  artifactIntentDetected: boolean
+  artifactType: Artifact['language'] | null
+  sourceLength: number
+  extractionMethod: ArtifactExtractionMethod
+  validationPassed: boolean
+  repairAttempted: boolean
+  repairSucceeded: boolean
+  previewMode: 'iframe_srcdoc' | 'generated_file' | 'download_only' | 'none'
+  runtimeError: string | null
+}
+
+type ArtifactValidationResult = {
+  artifact: Artifact
+  diagnostics: ArtifactParseDiagnostics
+}
 
 function normalizeLanguage(language?: string): Artifact['language'] | null {
   if (!language) return null
@@ -121,7 +137,7 @@ function inferLanguageFromCode(code: string, fallback?: string): Artifact['langu
       JSON.parse(trimmed)
       return 'json'
     } catch {
-      // Fall through to other lightweight detection.
+      // ignore
     }
   }
   if (/^#\s|\n#{1,6}\s|^\s*[-*]\s+/m.test(trimmed)) return 'markdown'
@@ -129,24 +145,31 @@ function inferLanguageFromCode(code: string, fallback?: string): Artifact['langu
 }
 
 function normalizeArtifactCode(language: Artifact['language'], code: string): string {
+  const decoded = decodePossiblyEscapedText(code).replace(/\r\n/g, '\n').trim()
+
   if (language === 'html' || language === 'canva') {
-    return decodePossiblyEscapedText(code).trim()
+    return decoded
   }
 
   if (language === 'text' || language === 'markdown') {
-    const decoded = decodePossiblyEscapedText(code)
-    return decoded.trim()
+    return decoded
   }
 
   return code.trim()
 }
 
-function createArtifact(language: Artifact['language'], title: string, code: string): Artifact {
+function createArtifact(
+  language: Artifact['language'],
+  title: string,
+  code: string,
+  extractionMethod: ArtifactExtractionMethod
+): Artifact {
   return {
-    id: `artifact-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+    id: `artifact-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`,
     title: title.trim() || 'Generated Artifact',
     language,
     code: normalizeArtifactCode(language, code),
+    extractionMethod: extractionMethod === 'none' ? undefined : extractionMethod,
     createdAt: new Date().toISOString(),
   }
 }
@@ -163,32 +186,214 @@ function extractHtmlDocument(content: string): string | null {
     return afterStart.slice(0, endMatch.index + endMatch[0].length)
   }
 
-  // Some model responses get cut off before </html>. Still recover the
-  // document so the user gets an artifact button instead of raw HTML text.
   return afterStart.trim()
 }
 
-function buildCleanContent(content: string, fullMatch: string, artifact: Artifact): string {
-  const beforeArtifact = content.substring(0, content.indexOf(fullMatch)).trim()
-  const afterArtifact = content.substring(content.indexOf(fullMatch) + fullMatch.length).trim()
+function getPreviewMode(language: Artifact['language'] | null): ArtifactParseDiagnostics['previewMode'] {
+  if (!language) return 'none'
+  if (isGeneratedFileArtifactLanguage(language)) return 'generated_file'
+  if (['html', 'canva', 'markdown', 'json', 'svg', 'css', 'javascript', 'text'].includes(language)) return 'iframe_srcdoc'
+  return 'download_only'
+}
+
+function createDiagnostics(
+  language: Artifact['language'] | null,
+  extractionMethod: ArtifactExtractionMethod,
+  sourceLength: number
+): ArtifactParseDiagnostics {
+  return {
+    artifactIntentDetected: false,
+    artifactType: language,
+    sourceLength,
+    extractionMethod,
+    validationPassed: false,
+    repairAttempted: false,
+    repairSucceeded: false,
+    previewMode: getPreviewMode(language),
+    runtimeError: null,
+  }
+}
+
+function ensureHtmlDocument(title: string, code: string): { code: string; repaired: boolean } {
+  let html = normalizeArtifactCode('html', code)
+  let repaired = false
+  const safeTitle = title.replace(/[<>&"]/g, (char) => ({
+    '<': '&lt;',
+    '>': '&gt;',
+    '&': '&amp;',
+    '"': '&quot;',
+  }[char] || char))
+
+  if (!html) return { code: html, repaired }
+
+  const looksLikeFullDocument = /^<!DOCTYPE\s+html/i.test(html) || /<html[\s>]/i.test(html)
+  const looksLikeMarkup = /<\/?[a-z][\w:-]*[\s>]/i.test(html)
+
+  if (!looksLikeFullDocument && looksLikeMarkup) {
+    html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>${safeTitle}</title>
+</head>
+<body>
+${html}
+</body>
+</html>`
+    repaired = true
+  }
+
+  if (/<html[\s>]/i.test(html) && !/<\/html\s*>/i.test(html)) {
+    if (!/<\/body\s*>/i.test(html)) {
+      html += '\n</body>'
+    }
+    html += '\n</html>'
+    repaired = true
+  }
+
+  const tagPairs: Array<{ open: RegExp; close: RegExp; closingTag: string }> = [
+    { open: /<script\b/gi, close: /<\/script>/gi, closingTag: '</script>' },
+    { open: /<style\b/gi, close: /<\/style>/gi, closingTag: '</style>' },
+  ]
+
+  for (const pair of tagPairs) {
+    const openCount = (html.match(pair.open) || []).length
+    const closeCount = (html.match(pair.close) || []).length
+    if (openCount > closeCount) {
+      html += '\n' + pair.closingTag.repeat(openCount - closeCount)
+      repaired = true
+    }
+  }
+
+  return { code: html.trim(), repaired }
+}
+
+function collectMissingInlineHandlers(html: string): string[] {
+  const handlerMatches = Array.from(
+    html.matchAll(/\bon(?:click|change|submit|input|keydown|keyup)\s*=\s*["'][^"']*?([A-Za-z_$][\w$]*)\s*\(/gi)
+  ).map((match) => match[1])
+
+  if (handlerMatches.length === 0) return []
+
+  const definedNames = new Set<string>()
+  const definitionPatterns = [
+    /function\s+([A-Za-z_$][\w$]*)\s*\(/gi,
+    /(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?(?:function|\()/gi,
+    /window\.([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?(?:function|\()/gi,
+  ]
+
+  for (const pattern of definitionPatterns) {
+    for (const match of html.matchAll(pattern)) {
+      definedNames.add(match[1])
+    }
+  }
+
+  return Array.from(new Set(handlerMatches)).filter((name) => !definedNames.has(name))
+}
+
+function validateArtifact(
+  artifact: Artifact,
+  userPrompt?: string,
+  extractionMethod: ArtifactExtractionMethod = 'none'
+): ArtifactValidationResult {
+  const diagnostics = createDiagnostics(artifact.language, extractionMethod, artifact.code.length)
+  diagnostics.artifactIntentDetected = !!userPrompt
+
+  let nextArtifact: Artifact = {
+    ...artifact,
+    validationError: null,
+    validationErrors: [],
+    repaired: false,
+  }
+  const errors: string[] = []
+
+  if (!nextArtifact.code.trim()) {
+    errors.push('Artifact source is empty.')
+  }
+
+  if (nextArtifact.language === 'html' || nextArtifact.language === 'canva') {
+    const repairResult = ensureHtmlDocument(nextArtifact.title, nextArtifact.code)
+    diagnostics.repairAttempted = repairResult.repaired
+    diagnostics.repairSucceeded = repairResult.repaired
+    nextArtifact = {
+      ...nextArtifact,
+      code: repairResult.code,
+      repaired: repairResult.repaired,
+    }
+
+    if (!/<(?:html|body|main|section|div|button|form|svg|canvas)\b/i.test(nextArtifact.code)) {
+      errors.push('HTML artifact does not contain meaningful HTML structure.')
+    }
+
+    const missingHandlers = collectMissingInlineHandlers(nextArtifact.code)
+    if (missingHandlers.length > 0) {
+      errors.push(`Missing inline handler functions: ${missingHandlers.join(', ')}`)
+    }
+
+    const expectsInteractivity = /\b(interactive|quiz|calculator|flashcard|game|timeline|study tool)\b/i.test(String(userPrompt || ''))
+      || /<(button|input|select|textarea|form)\b/i.test(nextArtifact.code)
+      || /\bon(?:click|change|submit|input|keydown|keyup)\s*=/i.test(nextArtifact.code)
+
+    if (expectsInteractivity && !/<script\b/i.test(nextArtifact.code) && missingHandlers.length > 0) {
+      errors.push('Interactive HTML artifact is missing the JavaScript needed for its handlers.')
+    }
+  }
+
+  diagnostics.validationPassed = errors.length === 0
+
+  if (errors.length > 0) {
+    nextArtifact.validationErrors = errors
+    nextArtifact.validationError = errors[0]
+  }
+
+  return { artifact: nextArtifact, diagnostics }
+}
+
+function buildCleanContent(content: string, extractedBlock: string, artifact: Artifact): string {
+  const index = content.indexOf(extractedBlock)
+  const beforeArtifact = (index >= 0 ? content.substring(0, index) : '').trim()
+  const afterArtifact = (index >= 0 ? content.substring(index + extractedBlock.length) : '').trim()
 
   let cleanContent = ''
   if (beforeArtifact) {
     cleanContent += beforeArtifact + '\n\n'
   }
-  const previewLabel = ['html', 'canva', 'markdown', 'json', 'svg', 'css', 'javascript', 'text', 'docx', 'gdoc', 'xlsx', 'gsheet', 'pptx', 'gslides', 'pdf'].includes(artifact.language)
-    ? 'preview, edit, and download'
-    : 'view, copy, and download'
-  if (isGeneratedFileArtifactLanguage(artifact.language)) {
-    cleanContent += `**${getGeneratedFileLabel(artifact.language)} created: ${artifact.title}**\n\n_Open the preview panel to review it. The real downloadable file will be attached separately._`
+
+  if (artifact.validationError) {
+    cleanContent += `Artifact generation hit a validation issue for **${artifact.title}**.\n\n_Open the artifact panel to review the error and inspect the source._`
+  } else if (isGeneratedFileArtifactLanguage(artifact.language)) {
+    cleanContent += `I created a ${getGeneratedFileLabel(artifact.language)} for you: **${artifact.title}**.\n\n_Open the preview panel to review it. The real downloadable file is attached separately._`
   } else {
-    cleanContent += `**Artifact created: ${artifact.title}**\n\n_Open the artifact panel to ${previewLabel} it._`
+    cleanContent += `I created **${artifact.title}** for you.\n\n_Open the artifact panel to preview it, inspect the code, or download it._`
   }
+
   if (afterArtifact) {
     cleanContent += '\n\n' + afterArtifact
   }
 
-  return cleanContent.trim() || `I created an artifact for you: **${artifact.title}**.`
+  return cleanContent.trim() || (
+    artifact.validationError
+      ? `Artifact could not be generated correctly for **${artifact.title}**.`
+      : `I created **${artifact.title}** for you.`
+  )
+}
+
+function parseEasyPlusArtifactWrapper(content: string): { fullMatch: string; language: string; title: string; code: string } | null {
+  const match = content.match(/<EASYPLUS_ARTIFACT\b([^>]*)>([\s\S]*?)<\/EASYPLUS_ARTIFACT>/i)
+  if (!match) return null
+
+  const attrs = match[1] || ''
+  const code = match[2] || ''
+  const typeMatch = attrs.match(/\btype\s*=\s*["']([^"']+)["']/i)
+  const titleMatch = attrs.match(/\btitle\s*=\s*["']([^"']+)["']/i)
+
+  return {
+    fullMatch: match[0],
+    language: typeMatch?.[1] || 'html',
+    title: titleMatch?.[1] || 'Generated Artifact',
+    code,
+  }
 }
 
 export function parseArtifactFromResponse(
@@ -198,67 +403,89 @@ export function parseArtifactFromResponse(
 ): {
   cleanContent: string
   artifact: Artifact | null
+  diagnostics: ArtifactParseDiagnostics
 } {
+  const baseDiagnostics = createDiagnostics(null, 'none', content.length)
+  baseDiagnostics.artifactIntentDetected = artifactMode || !!userPrompt
+
   if (!artifactMode) {
-    return { cleanContent: content, artifact: null }
+    return { cleanContent: content, artifact: null, diagnostics: baseDiagnostics }
   }
 
   const zipResult = parseGeneratedZipFromResponse(content)
   if (zipResult.manifest) {
-    return { cleanContent: zipResult.cleanContent, artifact: null }
+    return { cleanContent: zipResult.cleanContent, artifact: null, diagnostics: baseDiagnostics }
   }
 
-  // Explicit fenced format, with tolerance for model variations.
+  const wrappedArtifact = parseEasyPlusArtifactWrapper(content)
+  if (wrappedArtifact) {
+    const artifact = createArtifact(
+      inferLanguageFromCode(wrappedArtifact.code, wrappedArtifact.language),
+      wrappedArtifact.title,
+      wrappedArtifact.code,
+      'wrapper'
+    )
+    const validated = validateArtifact(artifact, userPrompt, 'wrapper')
+    return {
+      cleanContent: buildCleanContent(content, wrappedArtifact.fullMatch, validated.artifact),
+      artifact: validated.artifact,
+      diagnostics: validated.diagnostics,
+    }
+  }
+
   const artifactBlockRegex = /```\s*artifact\s*[:\-]\s*([a-z0-9+#.-]+)\s*:\s*([^\n`]+)\r?\n([\s\S]*?)```/i
   const artifactMatch = content.match(artifactBlockRegex)
 
   if (artifactMatch) {
     const [fullMatch, language, title, code] = artifactMatch
-    const artifact = createArtifact(inferLanguageFromCode(code, language), title, code)
-    const cleanContent = buildCleanContent(content, fullMatch, artifact)
-
-    return { cleanContent, artifact }
+    const artifact = createArtifact(inferLanguageFromCode(code, language), title, code, 'artifact_fence')
+    const validated = validateArtifact(artifact, userPrompt, 'artifact_fence')
+    return {
+      cleanContent: buildCleanContent(content, fullMatch, validated.artifact),
+      artifact: validated.artifact,
+      diagnostics: validated.diagnostics,
+    }
   }
 
-  // Alternative non-markdown wrapper.
   const altArtifactRegex = /ARTIFACT_BLOCK_START\s*\r?\n\s*artifact\s*[:\-]\s*([a-z0-9+#.-]+)\s*:\s*([^\n]+)\r?\n([\s\S]*?)\r?\nARTIFACT_BLOCK_END/i
   const altArtifactMatch = content.match(altArtifactRegex)
 
   if (altArtifactMatch) {
     const [fullMatch, language, title, code] = altArtifactMatch
-    const artifact = createArtifact(inferLanguageFromCode(code, language), title, code)
-    const cleanContent = buildCleanContent(content, fullMatch, artifact)
-
-    return { cleanContent, artifact }
+    const artifact = createArtifact(inferLanguageFromCode(code, language), title, code, 'legacy_wrapper')
+    const validated = validateArtifact(artifact, userPrompt, 'legacy_wrapper')
+    return {
+      cleanContent: buildCleanContent(content, fullMatch, validated.artifact),
+      artifact: validated.artifact,
+      diagnostics: validated.diagnostics,
+    }
   }
 
-  // HTML code fence fallback. Handles complete and truncated HTML fences.
   const htmlFenceRegex = /```\s*(html|htm)[^\n`]*\r?\n([\s\S]*?)```/i
   const htmlFenceMatch = content.match(htmlFenceRegex)
 
   if (htmlFenceMatch) {
     const [fullMatch, , code] = htmlFenceMatch
-    const artifact = createArtifact('html', generateTitleFromHtml(code, userPrompt), code)
-    const cleanContent = buildCleanContent(content, fullMatch, artifact)
-
-    return { cleanContent, artifact }
+    const artifact = createArtifact('html', generateTitleFromHtml(code, userPrompt), code, 'fenced_code')
+    const validated = validateArtifact(artifact, userPrompt, 'fenced_code')
+    return {
+      cleanContent: buildCleanContent(content, fullMatch, validated.artifact),
+      artifact: validated.artifact,
+      diagnostics: validated.diagnostics,
+    }
   }
 
-  // Raw HTML document fallback for models that ignore artifact fences.
-  // Handles complete documents and truncated responses missing </html>.
   const htmlDocument = extractHtmlDocument(content)
-
   if (htmlDocument) {
-    const code = htmlDocument
-    const artifact = createArtifact('html', generateTitleFromHtml(code, userPrompt), code)
-    const cleanContent = buildCleanContent(content, htmlDocument, artifact)
-
-    return { cleanContent, artifact }
+    const artifact = createArtifact('html', generateTitleFromHtml(htmlDocument, userPrompt), htmlDocument, 'raw_html')
+    const validated = validateArtifact(artifact, userPrompt, 'raw_html')
+    return {
+      cleanContent: buildCleanContent(content, htmlDocument, validated.artifact),
+      artifact: validated.artifact,
+      diagnostics: validated.diagnostics,
+    }
   }
 
-  // Normal code fence fallback. This is what prevents artifact mode from
-  // degrading into a plain Markdown code block when the model forgets the
-  // artifact: prefix.
   if (userPrompt && containsBuildableIntent(userPrompt)) {
     const codeFenceRegex = /```\s*([a-zA-Z0-9+#.-]+)?[^\n`]*\r?\n([\s\S]*?)```/
     const codeMatch = content.match(codeFenceRegex)
@@ -268,15 +495,19 @@ export function parseArtifactFromResponse(
       const artifact = createArtifact(
         inferLanguageFromCode(code, lang),
         generateTitleFromPrompt(userPrompt),
-        code
+        code,
+        'fenced_code'
       )
-      const cleanContent = buildCleanContent(content, fullMatch, artifact)
-
-      return { cleanContent, artifact }
+      const validated = validateArtifact(artifact, userPrompt, 'fenced_code')
+      return {
+        cleanContent: buildCleanContent(content, fullMatch, validated.artifact),
+        artifact: validated.artifact,
+        diagnostics: validated.diagnostics,
+      }
     }
   }
 
-  return { cleanContent: content, artifact: null }
+  return { cleanContent: content, artifact: null, diagnostics: baseDiagnostics }
 }
 
 export function dedupeMessages<T extends { id: string; role: string; content: string; created_at: string }>(
