@@ -160,7 +160,16 @@ function isTimeoutError(error: any): boolean {
 }
 
 function getSafeEasyCodeError(error: any): string {
-  if (isTimeoutError(error)) return 'Easy Code generation timed out. Retry generation.'
+  const category = categorizeEasyCodeError(error)
+  if (category === 'timeout') return 'AI generation timed out.'
+  if (category === 'provider_not_configured') return 'AI provider is not configured.'
+  if (category === 'provider_auth') return 'AI provider credentials are invalid or unauthorized.'
+  if (category === 'deployment_not_found') return 'AI deployment was not found.'
+  if (category === 'provider_busy') return 'AI provider is busy. Try again.'
+  if (category === 'invalid_json' || category === 'invalid_changes' || category === 'no_valid_changes') return 'AI returned invalid file data.'
+  if (category === 'generation_incomplete') return 'Generation incomplete. Retry.'
+  if (category === 'save_failed') return typeof error?.message === 'string' && error.message ? error.message : 'Could not save updated files.'
+  if (category === 'provider_unavailable' || category === 'unknown') return 'AI provider request failed.'
   return typeof error?.message === 'string' && error.message
     ? error.message
     : 'Project was created but generation failed.'
@@ -169,8 +178,15 @@ function getSafeEasyCodeError(error: any): string {
 function categorizeEasyCodeError(error: any): string {
   const message = typeof error?.message === 'string' ? error.message : ''
   if (isTimeoutError(error)) return 'timeout'
+  if (message === 'AI provider is not configured.') return 'provider_not_configured'
   if (message === 'Model provider is not configured.') return 'provider_not_configured'
   if (message === 'DeepSeek V4 Pro is not configured.') return 'provider_not_configured'
+  if (message === 'AI provider request failed.') return 'provider_unavailable'
+  if (message === 'AI generation timed out.') return 'timeout'
+  if (message === 'AI provider credentials are invalid or unauthorized.') return 'provider_auth'
+  if (message === 'AI deployment was not found.') return 'deployment_not_found'
+  if (message === 'AI provider is busy. Try again.') return 'provider_busy'
+  if (message === 'AI returned invalid file data.') return 'invalid_json'
   if (message === 'This EasyPlus mode is temporarily unavailable.') return 'provider_unavailable'
   if (message === 'DeepSeek V4 Pro is temporarily unavailable.') return 'provider_unavailable'
   if (message === 'Model provider is busy. Please try again.') return 'provider_busy'
@@ -180,6 +196,7 @@ function categorizeEasyCodeError(error: any): string {
   if (message === 'The AI returned invalid file data. Try again.') return 'invalid_json'
   if (message === 'The AI returned invalid file changes. Try again.') return 'invalid_changes'
   if (message === 'No valid file changes were returned. Try again.') return 'no_valid_changes'
+  if (message === 'Could not save fallback files.') return 'save_failed'
   if (message === 'Could not save updated files.') return 'save_failed'
   if (message === 'Generation incomplete. Retry.') return 'generation_incomplete'
   return 'unknown'
@@ -272,6 +289,7 @@ function escapeHtml(value: string): string {
 
 function inferStaticSiteTitle(prompt: string): string {
   const text = prompt.toLowerCase()
+  if (/\b(pressure\s*wash|pressure\s*washing|power\s*wash|power\s*washing|soft\s*wash)\b/.test(text)) return 'Premier Pressure Washing'
   if (/\b(car\s*wash|car\s*washing|carwash)\b/.test(text)) return 'Premium Car Wash'
   if (/\b(car\s*detailing|detailing)\b/.test(text)) return 'Elite Auto Detailing'
   if (/\bbakery\b/.test(text)) return 'Artisan Bakery'
@@ -1116,6 +1134,591 @@ document.querySelectorAll('.button').forEach((button) => {
   }
 }
 
+type StaticWebsiteFallbackTheme = {
+  title: string
+  eyebrow: string
+  heroTitle: string
+  heroLead: string
+  stats: Array<{ label: string; value: string }>
+  services: Array<{ title: string; body: string }>
+  results: Array<{ title: string; body: string }>
+  pricing: Array<{ name: string; price: string; body: string; features: string[]; featured?: boolean }>
+  testimonials: Array<{ quote: string; author: string }>
+  faqs: Array<{ question: string; answer: string }>
+  ctaTitle: string
+  ctaLead: string
+  ctaOptions: string[]
+}
+
+function getStaticWebsiteFallbackTheme(prompt: string, title: string): StaticWebsiteFallbackTheme {
+  const text = prompt.toLowerCase()
+  if (/\b(pressure\s*wash|pressure\s*washing|power\s*wash|power\s*washing|soft\s*wash)\b/.test(text)) {
+    return {
+      title,
+      eyebrow: 'Exterior cleaning specialists',
+      heroTitle: 'Restore driveways, siding, and storefronts with a premium pressure washing web presence.',
+      heroLead: 'Easy Code kept this project usable with a polished static fallback designed for local trust, before-and-after selling, pricing packages, and fast quote requests.',
+      stats: [
+        { label: 'Average reply time', value: '10 min' },
+        { label: 'Recurring clients', value: '72%' },
+        { label: '5-star reviews', value: '148+' },
+      ],
+      services: [
+        { title: 'Driveways and paths', body: 'Highlight visible stain removal, algae cleanup, and curb appeal improvements with clear homeowner-friendly language.' },
+        { title: 'House washing', body: 'Position soft-wash safe cleaning for siding, render, brick, and eaves without sounding generic or overly technical.' },
+        { title: 'Commercial frontage', body: 'Present shopfront, entryway, awning, and car park cleaning as a fast-turnaround image upgrade for businesses.' },
+      ],
+      results: [
+        { title: 'Before and after selling', body: 'Frame each service around visible transformation, safer surfaces, and a cleaner property presentation.' },
+        { title: 'Trust-building structure', body: 'Packages, testimonials, and FAQ content answer objections before the customer needs to ask.' },
+      ],
+      pricing: [
+        { name: 'Refresh', price: '$149', body: 'Fast uplift for smaller exterior areas.', features: ['Driveway or patio clean', 'Edge rinse and tidy finish', '48-hour booking window'] },
+        { name: 'Signature', price: '$289', body: 'Best-selling package for a visible property reset.', features: ['Driveway and path cleaning', 'Entry and facade treatment', 'Photo-ready finish'], featured: true },
+        { name: 'Property Reset', price: '$499', body: 'Premium package for larger homes and mixed-use exteriors.', features: ['Full exterior wash plan', 'Soft-wash safe treatment', 'Priority walkthrough'] },
+      ],
+      testimonials: [
+        { quote: 'Our driveway and facade looked brand new, and the quote flow felt easy.', author: 'Mia R., homeowner' },
+        { quote: 'The site feels premium and credible instead of looking like a placeholder.', author: 'Leo T., local operator' },
+        { quote: 'This kept the project launchable even while AI generation was unavailable.', author: 'Priya N., property manager' },
+      ],
+      faqs: [
+        { question: 'Do you handle delicate exterior surfaces?', answer: 'Yes. The copy structure supports both pressure washing and soft-wash positioning so you can tailor the exact services you offer.' },
+        { question: 'Can I add commercial packages later?', answer: 'Yes. The pricing section is easy to extend for strata, retail, and recurring maintenance work.' },
+        { question: 'Will preview and download work immediately?', answer: 'Yes. This fallback includes the required starter files for preview, ZIP export, and follow-up edits.' },
+      ],
+      ctaTitle: 'Quote jobs faster and look established from day one.',
+      ctaLead: 'Use this premium fallback as a working first version while provider access is restored, then refine the copy, pricing, and booking details inside Easy Code.',
+      ctaOptions: ['Driveway cleaning', 'House wash', 'Commercial exterior', 'Custom quote'],
+    }
+  }
+
+  return {
+    title,
+    eyebrow: 'Premium business website',
+    heroTitle: 'Launch a premium static website that is ready to preview immediately.',
+    heroLead: 'This deterministic fallback keeps the project useful with polished sections, responsive design, and starter files that are easy to refine.',
+    stats: [
+      { label: 'Preview status', value: 'Ready' },
+      { label: 'Starter files', value: '4' },
+      { label: 'Launch speed', value: 'Same day' },
+    ],
+    services: [
+      { title: 'Clear positioning', body: 'A strong hero, service cards, and benefits section help visitors understand the offer quickly.' },
+      { title: 'Commercial polish', body: 'Layered backgrounds, premium cards, and careful spacing stop the site from feeling generic.' },
+      { title: 'Simple editing flow', body: 'The starter files remain straightforward so future edits stay easy inside Easy Code.' },
+    ],
+    results: [
+      { title: 'Previewable immediately', body: 'The fallback includes index.html, styles.css, script.js, and README.md so the workspace stays usable.' },
+      { title: 'Built for follow-up edits', body: 'The structure is intentionally clean so future AI or manual improvements do not require a rebuild.' },
+    ],
+    pricing: [
+      { name: 'Starter', price: '$99', body: 'Simple offer for quick conversions.', features: ['Core service section', 'Responsive starter site', 'Single CTA flow'] },
+      { name: 'Growth', price: '$249', body: 'Balanced package with stronger proof and premium detail.', features: ['Expanded sections', 'Social proof cards', 'Priority CTA layout'], featured: true },
+      { name: 'Premium', price: '$499', body: 'High-ticket presentation for premium positioning.', features: ['Feature-rich layout', 'Polished visuals', 'Custom-ready structure'] },
+    ],
+    testimonials: [
+      { quote: 'This gave us a strong starting point instead of a dead-end failed project.', author: 'Avery L.' },
+      { quote: 'It looks intentional and polished, not like a throwaway placeholder.', author: 'Noah C.' },
+      { quote: 'The preview was useful immediately and easy to refine.', author: 'Sofia W.' },
+    ],
+    faqs: [
+      { question: 'Can this be customised for my business?', answer: 'Yes. Replace the business name, copy, pricing, and contact details directly in the starter files.' },
+      { question: 'Why was a fallback created?', answer: 'The AI provider was unavailable, so Easy Code generated a deterministic static website to keep the project usable.' },
+      { question: 'Can I keep editing from here?', answer: 'Yes. Follow-up edits can improve the existing files without duplicating the project.' },
+    ],
+    ctaTitle: 'Keep the project moving instead of waiting on provider recovery.',
+    ctaLead: 'This fallback is intentionally premium, editable, and previewable so you still have a useful first version in the workspace.',
+    ctaOptions: ['Starter package', 'Growth package', 'Premium package', 'Custom enquiry'],
+  }
+}
+
+function createGuaranteedStaticWebsiteFallback(prompt: string, title = inferStaticSiteTitle(prompt), reason = 'AI generation was unavailable, so'): EasyCodeAiResult {
+  const theme = getStaticWebsiteFallbackTheme(prompt, title)
+  const summary = `${reason} Easy Code created a premium static website fallback.`
+  const safeTitle = escapeHtml(theme.title)
+  const servicesMarkup = theme.services.map((item) => `
+          <article class="feature-card">
+            <h3>${escapeHtml(item.title)}</h3>
+            <p>${escapeHtml(item.body)}</p>
+          </article>`).join('')
+  const resultsMarkup = theme.results.map((item) => `
+          <article class="result-card">
+            <h3>${escapeHtml(item.title)}</h3>
+            <p>${escapeHtml(item.body)}</p>
+          </article>`).join('')
+  const pricingMarkup = theme.pricing.map((item) => `
+          <article class="price-card${item.featured ? ' featured' : ''}">
+            <div class="price-head">
+              <span class="plan">${escapeHtml(item.name)}</span>
+              <strong>${escapeHtml(item.price)}</strong>
+              <p>${escapeHtml(item.body)}</p>
+            </div>
+            <ul>
+              ${item.features.map((feature) => `<li>${escapeHtml(feature)}</li>`).join('')}
+            </ul>
+            <a class="button ${item.featured ? 'primary' : 'secondary'}" href="#contact">Choose ${escapeHtml(item.name)}</a>
+          </article>`).join('')
+  const testimonialMarkup = theme.testimonials.map((item) => `
+          <article class="testimonial-card">
+            <p>"${escapeHtml(item.quote)}"</p>
+            <strong>${escapeHtml(item.author)}</strong>
+          </article>`).join('')
+  const faqMarkup = theme.faqs.map((item, index) => `
+          <article class="faq-item${index === 0 ? ' open' : ''}">
+            <button class="faq-question" type="button" aria-expanded="${index === 0 ? 'true' : 'false'}">${escapeHtml(item.question)}</button>
+            <div class="faq-answer"><p>${escapeHtml(item.answer)}</p></div>
+          </article>`).join('')
+  const statsMarkup = theme.stats.map((item) => `
+            <article class="metric">
+              <strong>${escapeHtml(item.value)}</strong>
+              <span>${escapeHtml(item.label)}</span>
+            </article>`).join('')
+  const optionsMarkup = theme.ctaOptions.map((item) => `<option>${escapeHtml(item)}</option>`).join('')
+
+  const indexHtml = `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>${safeTitle}</title>
+  <meta name="description" content="${escapeHtml(theme.heroLead)}">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Instrument+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="page-shell">
+    <header class="site-header">
+      <nav class="nav">
+        <a class="brand" href="#home">${safeTitle}</a>
+        <button class="menu-button" type="button" aria-label="Toggle menu" aria-expanded="false">Menu</button>
+        <div class="nav-links">
+          <a href="#services">Services</a>
+          <a href="#results">Before / After</a>
+          <a href="#pricing">Pricing</a>
+          <a href="#testimonials">Testimonials</a>
+          <a href="#faq">FAQ</a>
+          <a href="#contact">Book now</a>
+        </div>
+      </nav>
+    </header>
+
+    <main>
+      <section id="home" class="hero section">
+        <div class="hero-copy reveal">
+          <span class="eyebrow">${escapeHtml(theme.eyebrow)}</span>
+          <h1>${escapeHtml(theme.heroTitle)}</h1>
+          <p class="lead">${escapeHtml(theme.heroLead)}</p>
+          <div class="hero-actions">
+            <a class="button primary" href="#contact">Request a quote</a>
+            <a class="button secondary" href="#pricing">View packages</a>
+          </div>
+          <div class="metrics-grid">
+            ${statsMarkup}
+          </div>
+        </div>
+
+        <aside class="hero-panel reveal">
+          <span class="eyebrow">Premium static fallback</span>
+          <h2>Built to stay useful even when AI generation is unavailable.</h2>
+          <p>The starter includes the required four files, responsive design, and sections tuned for immediate preview and follow-up edits.</p>
+          <ul class="hero-points">
+            <li>Hero section with strong CTA</li>
+            <li>Services, before/after, pricing, testimonials, and FAQ</li>
+            <li>Preview-ready HTML, CSS, JavaScript, and README</li>
+          </ul>
+        </aside>
+      </section>
+
+      <section id="services" class="section reveal">
+        <div class="section-heading">
+          <span class="eyebrow">Services</span>
+          <h2>Structure that sells the job clearly.</h2>
+        </div>
+        <div class="card-grid">
+          ${servicesMarkup}
+        </div>
+      </section>
+
+      <section id="results" class="section reveal">
+        <div class="section-heading">
+          <span class="eyebrow">Before / After</span>
+          <h2>Show visible outcomes, not vague promises.</h2>
+        </div>
+        <div class="results-grid">
+          ${resultsMarkup}
+        </div>
+      </section>
+
+      <section id="pricing" class="section reveal">
+        <div class="section-heading">
+          <span class="eyebrow">Pricing Packages</span>
+          <h2>Clear packages that support upsells without clutter.</h2>
+        </div>
+        <div class="pricing-grid">
+          ${pricingMarkup}
+        </div>
+      </section>
+
+      <section id="testimonials" class="section reveal">
+        <div class="section-heading">
+          <span class="eyebrow">Testimonials</span>
+          <h2>Trust signals that make the business feel established.</h2>
+        </div>
+        <div class="card-grid">
+          ${testimonialMarkup}
+        </div>
+      </section>
+
+      <section id="faq" class="section reveal">
+        <div class="section-heading">
+          <span class="eyebrow">FAQ</span>
+          <h2>Answer the last questions before the customer reaches out.</h2>
+        </div>
+        <div class="faq-list">
+          ${faqMarkup}
+        </div>
+      </section>
+
+      <section id="contact" class="section contact-section reveal">
+        <div class="contact-copy">
+          <span class="eyebrow">Booking CTA</span>
+          <h2>${escapeHtml(theme.ctaTitle)}</h2>
+          <p>${escapeHtml(theme.ctaLead)}</p>
+        </div>
+        <form class="contact-card">
+          <label>
+            Name
+            <input type="text" placeholder="Alex Morgan">
+          </label>
+          <label>
+            Email
+            <input type="email" placeholder="alex@example.com">
+          </label>
+          <label>
+            Service
+            <select>
+              ${optionsMarkup}
+            </select>
+          </label>
+          <button class="button primary" type="button" id="demo-submit">Request booking</button>
+          <p class="fine-print">Demo interaction only. Connect this CTA to your real booking or lead form when ready.</p>
+        </form>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <p>&copy; <span id="year"></span> ${safeTitle}. Premium static fallback crafted inside Easy Code.</p>
+    </footer>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
+`
+
+  const stylesCss = `:root {
+  --bg: #08131f;
+  --panel: rgba(8, 19, 31, 0.78);
+  --line: rgba(255, 255, 255, 0.1);
+  --text: #f5f7fb;
+  --muted: #a8b8cb;
+  --accent-soft: rgba(112, 215, 255, 0.16);
+  --shadow: 0 24px 90px rgba(0, 0, 0, 0.34);
+  --radius-xl: 30px;
+  --radius-lg: 22px;
+  color-scheme: dark;
+  font-family: "Instrument Sans", sans-serif;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0;
+  color: var(--text);
+  background:
+    radial-gradient(circle at top left, rgba(34, 182, 255, 0.3), transparent 34%),
+    radial-gradient(circle at 85% 0%, rgba(136, 240, 196, 0.16), transparent 24%),
+    linear-gradient(180deg, #07111c 0%, #0b1827 46%, #07111c 100%);
+}
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background-image: linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px);
+  background-size: 36px 36px;
+  mask-image: radial-gradient(circle at center, black 42%, transparent 86%);
+}
+a { color: inherit; text-decoration: none; }
+button, input, select { font: inherit; }
+.site-header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  backdrop-filter: blur(22px);
+  background: rgba(6, 16, 28, 0.72);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+.nav, .section, .site-footer {
+  width: min(1160px, calc(100% - 2rem));
+  margin: 0 auto;
+}
+.nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 0;
+}
+.brand, h1, h2, h3, .price-head strong, .metric strong { font-family: "Space Grotesk", sans-serif; }
+.brand {
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.menu-button {
+  display: none;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--text);
+  border-radius: 999px;
+  padding: 0.7rem 1rem;
+}
+.nav-links {
+  display: flex;
+  align-items: center;
+  gap: 1.1rem;
+  color: var(--muted);
+}
+.hero {
+  display: grid;
+  grid-template-columns: 1.1fr 0.9fr;
+  gap: 1.25rem;
+  padding-top: 4.5rem;
+}
+.section { padding: 1.5rem 0 2.25rem; }
+.hero-copy, .hero-panel, .feature-card, .result-card, .price-card, .testimonial-card, .faq-item, .contact-card {
+  background: linear-gradient(180deg, rgba(17, 34, 55, 0.86), rgba(8, 19, 31, 0.9));
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(18px);
+}
+.hero-copy, .hero-panel, .contact-card {
+  border-radius: var(--radius-xl);
+  padding: 2rem;
+}
+.feature-card, .result-card, .price-card, .testimonial-card, .faq-item { border-radius: var(--radius-lg); padding: 1.3rem; }
+.eyebrow, .plan {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 0.38rem 0.8rem;
+  background: var(--accent-soft);
+  color: #e4f8ff;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+h1, h2 { margin: 1rem 0 0.8rem; line-height: 0.98; }
+h1 { font-size: clamp(2.8rem, 6vw, 5rem); }
+h2 { font-size: clamp(2rem, 4vw, 3rem); }
+.lead, .hero-panel p, .feature-card p, .result-card p, .price-head p, .testimonial-card p, .faq-answer p, .contact-copy p, .fine-print, label {
+  color: var(--muted);
+  line-height: 1.7;
+}
+.hero-actions { display: flex; gap: 1rem; flex-wrap: wrap; margin: 1.6rem 0; }
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  padding: 0.95rem 1.3rem;
+  border: 1px solid transparent;
+  font-weight: 700;
+  cursor: pointer;
+}
+.button.primary { background: linear-gradient(135deg, #7ce6ff, #22b6ff); color: #05111a; }
+.button.secondary { border-color: var(--line); background: rgba(255, 255, 255, 0.02); }
+.metrics-grid, .card-grid, .pricing-grid, .results-grid, .contact-section { display: grid; gap: 1rem; }
+.metrics-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.metric { border-radius: var(--radius-lg); padding: 1.15rem; background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.08); }
+.metric strong { display: block; font-size: 1.55rem; }
+.metric span { color: var(--muted); }
+.hero-points, .price-card ul { margin: 1rem 0 0; padding-left: 1.1rem; color: var(--muted); }
+.card-grid, .pricing-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.results-grid, .contact-section { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.price-card.featured { transform: translateY(-0.35rem); border-color: rgba(124, 230, 255, 0.32); }
+.price-head strong { display: block; font-size: 2rem; margin: 0.6rem 0 0.3rem; }
+.faq-list { display: grid; gap: 0.9rem; }
+.faq-item { overflow: hidden; }
+.faq-question {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  padding: 1.1rem 1.2rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.faq-answer {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.24s ease, padding 0.24s ease;
+  padding: 0 1.2rem;
+}
+.faq-item.open .faq-answer { max-height: 200px; padding-bottom: 1rem; }
+.contact-card { display: grid; gap: 0.95rem; }
+.contact-card label { display: grid; gap: 0.45rem; }
+.contact-card input, .contact-card select {
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  padding: 0.9rem 0.95rem;
+}
+.site-footer { padding: 0 0 2.6rem; color: var(--muted); }
+.reveal { opacity: 0; transform: translateY(22px); transition: opacity 0.55s ease, transform 0.55s ease; }
+.reveal.visible { opacity: 1; transform: translateY(0); }
+@media (max-width: 980px) {
+  .hero, .results-grid, .contact-section, .card-grid, .pricing-grid { grid-template-columns: 1fr; }
+}
+@media (max-width: 760px) {
+  .nav { align-items: flex-start; flex-direction: column; }
+  .menu-button { display: inline-flex; }
+  .nav-links {
+    display: none;
+    width: 100%;
+    flex-direction: column;
+    align-items: flex-start;
+    padding-top: 0.6rem;
+  }
+  .nav-links.open { display: flex; }
+  .hero { padding-top: 3.6rem; }
+  .hero-copy, .hero-panel, .contact-card { padding: 1.35rem; }
+  .metrics-grid { grid-template-columns: 1fr; }
+}
+`
+
+  const scriptJs = `const menuButton = document.querySelector('.menu-button');
+const navLinks = document.querySelector('.nav-links');
+const faqButtons = document.querySelectorAll('.faq-question');
+const revealItems = document.querySelectorAll('.reveal');
+const submitButton = document.getElementById('demo-submit');
+const year = document.getElementById('year');
+
+if (year) year.textContent = new Date().getFullYear().toString();
+
+if (menuButton && navLinks) {
+  menuButton.addEventListener('click', () => {
+    const open = navLinks.classList.toggle('open');
+    menuButton.setAttribute('aria-expanded', String(open));
+  });
+}
+
+document.querySelectorAll('a[href^="#"]').forEach((link) => {
+  link.addEventListener('click', (event) => {
+    const href = link.getAttribute('href');
+    if (!href) return;
+    const target = document.querySelector(href);
+    if (!target) return;
+    event.preventDefault();
+    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    navLinks?.classList.remove('open');
+    menuButton?.setAttribute('aria-expanded', 'false');
+  });
+});
+
+faqButtons.forEach((button) => {
+  button.addEventListener('click', () => {
+    const item = button.closest('.faq-item');
+    if (!item) return;
+    const open = item.classList.toggle('open');
+    button.setAttribute('aria-expanded', String(open));
+  });
+});
+
+if (submitButton) {
+  submitButton.addEventListener('click', () => {
+    submitButton.textContent = 'Quote requested';
+    submitButton.setAttribute('disabled', 'true');
+    window.setTimeout(() => {
+      submitButton.textContent = 'Request booking';
+      submitButton.removeAttribute('disabled');
+    }, 1600);
+  });
+}
+
+const revealObserver = new IntersectionObserver((entries) => {
+  entries.forEach((entry) => {
+    if (entry.isIntersecting) {
+      entry.target.classList.add('visible');
+      revealObserver.unobserve(entry.target);
+    }
+  });
+}, { threshold: 0.16 });
+
+revealItems.forEach((item) => revealObserver.observe(item));
+`
+
+  const readme = `# ${theme.title}
+
+${summary}
+
+## Included files
+
+- \`index.html\`
+- \`styles.css\`
+- \`script.js\`
+- \`README.md\`
+
+## What this fallback includes
+
+- Responsive premium landing page
+- Hero, services, before/after, pricing, testimonials, FAQ, and booking CTA
+- Preview-ready static HTML, CSS, and JavaScript
+
+## Next steps
+
+1. Open \`index.html\` in the Easy Code preview or a browser.
+2. Replace the business details, service copy, and pricing.
+3. Connect the CTA to your real booking or quote flow when ready.
+`
+
+  const files: EasyCodeAiFile[] = [
+    { path: 'index.html', language: 'html', content: indexHtml, operation: 'create' },
+    { path: 'styles.css', language: 'css', content: stylesCss, operation: 'create' },
+    { path: 'script.js', language: 'javascript', content: scriptJs, operation: 'create' },
+    { path: 'README.md', language: 'markdown', content: readme, operation: 'create' },
+  ]
+
+  const guaranteedFiles = EASY_CODE_STATIC_FILES.map((path) => {
+    const existing = files.find((file) => file.path === path)
+    if (existing?.content?.trim()) return existing
+    if (path === 'index.html') return { path, language: 'html', content: '<!doctype html><title>Fallback</title><h1>Fallback website</h1>', operation: 'create' as const }
+    if (path === 'styles.css') return { path, language: 'css', content: 'body { font-family: sans-serif; }', operation: 'create' as const }
+    if (path === 'script.js') return { path, language: 'javascript', content: 'console.log("Easy Code fallback ready");', operation: 'create' as const }
+    return { path, language: 'markdown', content: `# ${theme.title}\n`, operation: 'create' as const }
+  })
+
+  return {
+    summary,
+    title: theme.title,
+    framework: 'html',
+    previewType: 'static-html',
+    instructions: [
+      'Customize the business copy and pricing in index.html.',
+      'Adjust the visual design in styles.css.',
+      'Connect the CTA behavior in script.js.',
+    ],
+    files: guaranteedFiles,
+  }
+}
+
 export function sanitizeEasyCodePrompt(input: unknown): string {
   if (typeof input !== 'string') return ''
   return input.replace(/\s+/g, ' ').trim().slice(0, EASY_CODE_MAX_PROMPT_LENGTH)
@@ -1324,7 +1927,7 @@ async function callEasyCodeJsonProvider(
       timeoutMs,
       phase,
       projectId: options.projectId,
-      responseFormat: 'json_object',
+      responseFormat: 'text',
     }),
     getAzureGpt54ConfigSnapshot()
   )
@@ -1354,11 +1957,16 @@ async function parseEasyCodeJson(
 ): Promise<{ aiResult: EasyCodeAiResult; diagnostics: EasyCodeAiDiagnostics[] }> {
   try {
     const result = normalizeAiResult(JSON.parse(extractJson(text)))
-    console.info('[Easy Code] JSON parse succeeded', { projectId: projectId || null, fileCount: result.files.length })
+    console.info('[Easy Code] JSON parse succeeded', {
+      projectId: projectId || null,
+      jsonParseSuccess: true,
+      fileCount: result.files.length,
+    })
     return { aiResult: result, diagnostics: priorDiagnostics }
   } catch (parseError: any) {
     console.warn('[Easy Code] JSON parse failed, attempting one repair pass', {
       projectId: projectId || null,
+      jsonParseSuccess: false,
       message: parseError?.message,
     })
     const repaired = await callEasyCodeJsonProvider([
@@ -1370,11 +1978,17 @@ async function parseEasyCodeJson(
     ], 4096, { timeoutMs: EASY_CODE_REPAIR_TIMEOUT_MS, phase: 'repair', projectId })
     try {
       const result = normalizeAiResult(JSON.parse(extractJson(repaired.content)))
-      console.info('[Easy Code] JSON repair succeeded', { projectId: projectId || null, fileCount: result.files.length, repairPassSuccess: true })
+      console.info('[Easy Code] JSON repair succeeded', {
+        projectId: projectId || null,
+        jsonParseSuccess: true,
+        fileCount: result.files.length,
+        repairPassSuccess: true,
+      })
       return { aiResult: result, diagnostics: [...priorDiagnostics, ...repaired.diagnostics] }
     } catch (repairError: any) {
       console.error('[Easy Code] JSON repair failed', {
         projectId: projectId || null,
+        jsonParseSuccess: false,
         message: repairError?.message,
         repairPassSuccess: false,
         errorCategory: categorizeEasyCodeError(repairError),
@@ -1770,24 +2384,14 @@ export async function runEasyCodeInitialGeneration(userId: string, projectId: st
     const message = getSafeEasyCodeError(error)
     const errorCategory = categorizeEasyCodeError(error)
     const errorDiagnostics: EasyCodeAiDiagnostics[] = Array.isArray(error?.easyCodeDiagnostics) ? error.easyCodeDiagnostics : []
-    const allowStaticFallback = staticLandingPage && [
-      'timeout',
-      'provider_not_configured',
-      'provider_unavailable',
-      'provider_busy',
-      'provider_auth',
-      'deployment_not_found',
-      'invalid_json',
-      'invalid_changes',
-      'generation_incomplete',
-    ].includes(errorCategory)
+    const allowStaticFallback = staticLandingPage && errorCategory !== 'save_failed'
     if (allowStaticFallback) {
       try {
         const db = await getDb()
         const fallbackReason = isTimeoutError(error)
           ? 'AI generation took too long, so'
           : 'AI generation was unavailable, so'
-        const fallbackResult = buildFallbackStaticSite(cleanPrompt, fallbackReason)
+        const fallbackResult = createGuaranteedStaticWebsiteFallback(cleanPrompt, inferStaticSiteTitle(cleanPrompt), fallbackReason)
         const fallbackFiles = fallbackResult.files.map(file => file.path)
         const fallbackDiagnostics = [
           ...errorDiagnostics,
@@ -1824,11 +2428,14 @@ export async function runEasyCodeInitialGeneration(userId: string, projectId: st
         const savedFiles = await getEasyCodeFiles(userId, projectId)
         const readiness = getEasyCodeReadiness(savedFiles, { ...project, framework: 'html' })
         const missingStarterFiles = getMissingStaticStarterFiles(savedFiles)
+        const savedPaths = savedFiles.map((file) => file.path.toLowerCase())
 
         console.info('[Easy Code] Static fallback saved files', {
           projectId,
           fallbackUsed: true,
           savedFiles: savedFiles.length,
+          filesSavedCount: savedFiles.length,
+          savedPaths,
           missingStarterFiles,
           previewAvailable: readiness.hasIndexHtml,
           ready: readiness.ready,
@@ -1836,7 +2443,7 @@ export async function runEasyCodeInitialGeneration(userId: string, projectId: st
         })
 
         if (missingStarterFiles.length > 0 || !readiness.ready) {
-          throw new Error('Fallback project could not be saved completely.')
+          throw new Error('Could not save fallback files.')
         }
 
         await db.from('easy_code_messages').insert({
@@ -1860,12 +2467,15 @@ export async function runEasyCodeInitialGeneration(userId: string, projectId: st
         await updateEasyCodeGenerationState(userId, projectId, {
           status: 'ready',
           phase: 'complete',
-          error: fallbackResult.summary,
-          metadata: withEasyCodeDiagnostics(
-            buildEasyCodeProgress('complete', fallbackFiles, fallbackResult.summary, 'static_site'),
-            fallbackDiagnostics,
-            'fallback'
-          ),
+          error: null,
+          metadata: {
+            ...withEasyCodeDiagnostics(
+              buildEasyCodeProgress('complete', fallbackFiles, null, 'static_site'),
+              fallbackDiagnostics,
+              'fallback'
+            ),
+            warning: fallbackResult.summary,
+          },
           title: fallbackResult.title || project.title,
           framework: 'html',
           lastGeneratedAt: new Date().toISOString(),
@@ -1890,6 +2500,7 @@ export async function runEasyCodeInitialGeneration(userId: string, projectId: st
           message: fallbackError?.message,
           originalMessage: message,
           errorCategory,
+          fallbackUsed: false,
         })
       }
     }

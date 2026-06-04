@@ -52,6 +52,7 @@ export interface AzureGpt54JsonOptions {
   phase?: string
   projectId?: string
   responseFormat?: 'json_object' | 'text'
+  responseFormatRetryAttempted?: boolean
 }
 
 let availabilityCache: { checkedAt: number; diagnostics: AzureGpt54Diagnostics } | null = null
@@ -146,6 +147,25 @@ function getSafeTimeoutError(): Error {
 
 function getSafeConfigurationError(): Error {
   return new Error('Model provider is not configured.')
+}
+
+async function readProviderErrorPayload(response: Response): Promise<{ code: string | null; message: string | null }> {
+  const body = await response.text().catch(() => '')
+  if (!body) return { code: null, message: null }
+  try {
+    const parsed = JSON.parse(body)
+    return {
+      code: typeof parsed?.error?.code === 'string' ? parsed.error.code : null,
+      message: typeof parsed?.error?.message === 'string' ? parsed.error.message : body.slice(0, 240),
+    }
+  } catch {
+    return { code: null, message: body.slice(0, 240) }
+  }
+}
+
+function isUnsupportedJsonResponseFormat(payload: { code: string | null; message: string | null }): boolean {
+  const detail = `${payload.code || ''} ${payload.message || ''}`.toLowerCase()
+  return detail.includes('response_format') || detail.includes('json_object')
 }
 
 function toProviderError(
@@ -402,6 +422,7 @@ export async function generateAzureGpt54Json(
     maxTokens,
     timeoutMs,
     temperature,
+    responseFormat: options.responseFormat || 'text',
   })
 
   let response: Response
@@ -447,13 +468,35 @@ export async function generateAzureGpt54Json(
   }
 
   if (!response.ok) {
+    const errorPayload = await readProviderErrorPayload(response)
     console.error('[Azure GPT-5.4] JSON request failed', {
       status: response.status,
       authMode,
       projectId: options.projectId || null,
       phase: options.phase || 'json_generation',
       durationMs: Date.now() - startedAt,
+      responseFormat: options.responseFormat || 'text',
+      providerErrorCode: errorPayload.code,
+      providerErrorMessage: errorPayload.message,
     })
+    if (
+      options.responseFormat === 'json_object' &&
+      !options.responseFormatRetryAttempted &&
+      response.status >= 400 &&
+      response.status < 500 &&
+      isUnsupportedJsonResponseFormat(errorPayload)
+    ) {
+      console.warn('[Azure GPT-5.4] Retrying JSON request without response_format', {
+        projectId: options.projectId || null,
+        phase: options.phase || 'json_generation',
+        status: response.status,
+      })
+      return generateAzureGpt54Json(messages, {
+        ...options,
+        responseFormat: 'text',
+        responseFormatRetryAttempted: true,
+      })
+    }
     throw toProviderError(getSafeProviderError(response.status), snapshot, response.status)
   }
 
