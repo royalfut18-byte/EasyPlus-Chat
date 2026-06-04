@@ -20,6 +20,8 @@ export class AzureTextProviderError extends Error {
   readonly status: number | null
   readonly timeoutHit: boolean
   readonly safeReason: string
+  readonly providerErrorCode: string | null
+  readonly providerErrorMessage: string | null
   readonly endpointHost: string | null
   readonly endpointPath: string
   readonly model: string
@@ -33,6 +35,8 @@ export class AzureTextProviderError extends Error {
       status?: number | null
       timeoutHit?: boolean
       safeReason: string
+      providerErrorCode?: string | null
+      providerErrorMessage?: string | null
       endpointHost: string | null
       endpointPath: string
       model: string
@@ -46,6 +50,8 @@ export class AzureTextProviderError extends Error {
     this.status = options.status ?? null
     this.timeoutHit = Boolean(options.timeoutHit)
     this.safeReason = options.safeReason
+    this.providerErrorCode = options.providerErrorCode ?? null
+    this.providerErrorMessage = options.providerErrorMessage ?? null
     this.endpointHost = options.endpointHost
     this.endpointPath = options.endpointPath
     this.model = options.model

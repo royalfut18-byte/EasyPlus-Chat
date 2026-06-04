@@ -115,6 +115,12 @@ function getChatCompletionsUrl(baseUrl: string): string {
   return `${baseUrl}/chat/completions`
 }
 
+function getCompletionTokenField(model: string, maxTokens: number): { max_tokens?: number; max_completion_tokens?: number } {
+  return /^gpt-5(?:$|[\.-])/i.test(model)
+    ? { max_completion_tokens: maxTokens }
+    : { max_tokens: maxTokens }
+}
+
 function getEndpointMetadata(baseUrl?: string): { endpointHost: string | null; endpointPath: string } {
   if (!baseUrl) return { endpointHost: null, endpointPath: '/chat/completions' }
   try {
@@ -149,6 +155,23 @@ function getSafeConfigurationError(): Error {
   return new Error('Model provider is not configured.')
 }
 
+function getProviderErrorFromPayload(
+  status: number,
+  payload: { code: string | null; message: string | null }
+): Error {
+  if (status === 400) {
+    const detail = `${payload.code || ''} ${payload.message || ''}`.toLowerCase()
+    if (detail.includes('max_tokens') && detail.includes('max_completion_tokens')) {
+      return new Error('Model request was rejected because max_tokens is unsupported for this model.')
+    }
+    if (detail.includes('response_format') || detail.includes('json_object')) {
+      return new Error('Model request was rejected because response_format is unsupported for this model.')
+    }
+    return new Error('Model request was rejected by the provider.')
+  }
+  return getSafeProviderError(status)
+}
+
 async function readProviderErrorPayload(response: Response): Promise<{ code: string | null; message: string | null }> {
   const body = await response.text().catch(() => '')
   if (!body) return { code: null, message: null }
@@ -172,13 +195,17 @@ function toProviderError(
   error: Error,
   snapshot: AzureTextProviderConfigSnapshot,
   status?: number | null,
-  timeoutHit = false
+  timeoutHit = false,
+  providerErrorCode?: string | null,
+  providerErrorMessage?: string | null
 ): AzureTextProviderError {
   return new AzureTextProviderError(error.message, {
     provider: 'azure-gpt54',
     status,
     timeoutHit,
     safeReason: error.message,
+    providerErrorCode,
+    providerErrorMessage,
     endpointHost: snapshot.endpointHost,
     endpointPath: snapshot.endpointPath,
     model: snapshot.model,
@@ -281,13 +308,15 @@ export async function getAzureGpt54Diagnostics(force = false): Promise<AzureGpt5
         model,
         messages: [{ role: 'user', content: 'hi' }],
         temperature: 0,
-        max_tokens: 8,
+        ...getCompletionTokenField(model, 8),
         stream: false,
       }),
       signal: AbortSignal.timeout(30_000),
     })
 
     if (!response.ok) {
+      const errorPayload = await readProviderErrorPayload(response)
+      const providerError = getProviderErrorFromPayload(response.status, errorPayload)
       const diagnostics = {
         configured: true,
         apiKeyConfigured,
@@ -299,13 +328,7 @@ export async function getAzureGpt54Diagnostics(force = false): Promise<AzureGpt5
         model,
         lastProbeAt,
         envStatus,
-        safeReason: response.status === 401 || response.status === 403
-          ? 'Model provider credentials are invalid or unauthorized.'
-          : response.status === 404
-            ? 'Model deployment was not found.'
-            : response.status === 429
-              ? 'Model provider is busy. Please try again.'
-              : 'This EasyPlus mode is temporarily unavailable.',
+        safeReason: providerError.message,
       }
       console.error('[Azure GPT-5.4] Availability probe failed', {
         status: response.status,
@@ -313,6 +336,8 @@ export async function getAzureGpt54Diagnostics(force = false): Promise<AzureGpt5
         baseUrlConfigured,
         modelConfigured,
         model,
+        providerErrorCode: errorPayload.code,
+        providerErrorMessage: errorPayload.message,
         ...endpoint,
         envStatus,
       })
@@ -435,7 +460,7 @@ export async function generateAzureGpt54Json(
         model,
         messages,
         temperature,
-        max_tokens: maxTokens,
+        ...getCompletionTokenField(model, maxTokens),
         stream: false,
         ...(options.responseFormat === 'json_object'
           ? { response_format: { type: 'json_object' } }
@@ -458,7 +483,8 @@ export async function generateAzureGpt54Json(
       error?.message?.startsWith('This EasyPlus mode') ||
       error?.message?.startsWith('Model provider') ||
       error?.message?.startsWith('Model deployment') ||
-      error?.message?.startsWith('The AI returned')
+      error?.message?.startsWith('The AI returned') ||
+      error?.message?.startsWith('Model request was rejected')
     ) {
       throw error instanceof AzureTextProviderError
         ? error
@@ -469,6 +495,7 @@ export async function generateAzureGpt54Json(
 
   if (!response.ok) {
     const errorPayload = await readProviderErrorPayload(response)
+    const providerError = getProviderErrorFromPayload(response.status, errorPayload)
     console.error('[Azure GPT-5.4] JSON request failed', {
       status: response.status,
       authMode,
@@ -497,7 +524,14 @@ export async function generateAzureGpt54Json(
         responseFormatRetryAttempted: true,
       })
     }
-    throw toProviderError(getSafeProviderError(response.status), snapshot, response.status)
+    throw toProviderError(
+      providerError,
+      snapshot,
+      response.status,
+      false,
+      errorPayload.code,
+      errorPayload.message
+    )
   }
 
   const data = await response.json().catch(() => null)

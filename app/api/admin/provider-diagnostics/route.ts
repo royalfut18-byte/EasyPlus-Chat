@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getAdminAccess } from '@/lib/admin-access.server'
 import { getAzureDeepSeekDiagnostics } from '@/lib/ai/azure-deepseek.server'
+import { getEasyCodeProviderDiagnosticsSummary } from '@/lib/ai/easy-code-provider-diagnostics.server'
 import { getAzureGpt54Diagnostics } from '@/lib/ai/azure-gpt54.server'
 import { getAzureImageDiagnostics } from '@/lib/ai/azure-image.server'
 import { getPublicChatRoutingDiagnostics } from '@/lib/ai/model-routing.server'
@@ -24,11 +25,13 @@ export async function GET() {
     getPublicChatRoutingDiagnostics(),
   ])
   const r2 = getR2ConfigStatus()
+  const easyCodeProvider = getEasyCodeProviderDiagnosticsSummary()
 
   return NextResponse.json({
     chatTextRouting,
     azureGpt54: gpt54,
     azureDeepseek: deepseek,
+    ...easyCodeProvider,
     azureImageGeneration: {
       ...imageGeneration,
       r2Configured: r2.configured,
