@@ -142,9 +142,9 @@ function getSafeProviderError(status?: number): Error {
     return new Error('Model provider is busy. Please try again.')
   }
   if (status != null && status >= 500) {
-    return new Error('This EasyPlus mode is temporarily unavailable.')
+    return new Error('Model provider request failed.')
   }
-  return new Error('This EasyPlus mode is temporarily unavailable.')
+  return new Error('Model provider request failed.')
 }
 
 function getSafeTimeoutError(): Error {
@@ -384,7 +384,9 @@ export async function getAzureGpt54Diagnostics(force = false): Promise<AzureGpt5
       model,
       lastProbeAt,
       envStatus,
-      safeReason: error?.name === 'TimeoutError' ? 'Model took too long to respond. Please try again.' : 'This EasyPlus mode is temporarily unavailable.',
+      safeReason: error?.name === 'TimeoutError'
+        ? 'Model took too long to respond. Please try again.'
+        : 'Model provider could not be reached.',
     }
     console.error('[Azure GPT-5.4] Availability probe exception', {
       message: error.message,
@@ -704,7 +706,7 @@ export async function streamAzureGpt54Response(
   } catch (error: any) {
     clearTimeout(totalTimeout)
     if (
-      error?.message?.startsWith('This EasyPlus mode') ||
+      error?.message?.startsWith('Model provider request failed.') ||
       error?.message?.startsWith('Model provider') ||
       error?.message?.startsWith('Model deployment') ||
       error?.message?.startsWith('Model took')
@@ -717,6 +719,11 @@ export async function streamAzureGpt54Response(
       timeoutHit,
       streamStarted: false,
     })
-    throw toProviderError(timeoutHit ? getSafeTimeoutError() : getSafeProviderError(), snapshot, null, timeoutHit)
+    throw toProviderError(
+      timeoutHit ? getSafeTimeoutError() : new Error('Model provider could not be reached.'),
+      snapshot,
+      null,
+      timeoutHit
+    )
   }
 }

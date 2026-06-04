@@ -2,8 +2,15 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { streamBedrockResponse, getModelCost } from '@/lib/ai/bedrock'
 import { streamGeminiResponse } from '@/lib/ai/gemini'
-import { getAzureGpt54Diagnostics, streamAzureGpt54Response } from '@/lib/ai/azure-gpt54.server'
-import { streamAzureDeepSeekResponse } from '@/lib/ai/azure-deepseek.server'
+import {
+  getAzureGpt54ConfigSnapshot,
+  getAzureGpt54Diagnostics,
+  streamAzureGpt54Response,
+} from '@/lib/ai/azure-gpt54.server'
+import {
+  getAzureDeepSeekConfigSnapshot,
+  streamAzureDeepSeekResponse,
+} from '@/lib/ai/azure-deepseek.server'
 import { searchWeb, buildWebSearchQuery } from '@/lib/ai/web-search'
 import { buildSystemPrompt, isTimeSensitiveQuery, detectQueryType } from '@/lib/ai/system-prompt'
 import { buildDocumentContext, isComprehensiveDocumentRequest } from '@/lib/ai/document-extract'
@@ -29,6 +36,7 @@ import { getPublicModelName, getResolvedInternalModel, toPublicModelId } from '@
 import { getReasoningProfile, getReasoningSystemAddendum, type ReasoningProfile } from '@/lib/ai/reasoning-profiles'
 import { getAccountEntitlement, getEntitlementBlockResponse } from '@/lib/account-entitlements.server'
 import { createProjectMemory, getRelevantProjectContext } from '@/lib/projects.server'
+import { isAzureTextProviderError } from '@/lib/ai/azure-provider-error'
 import {
   type AttachmentUnderstandingDiagnostics,
   prepareCurrentMessageAttachmentsForModel,
@@ -89,6 +97,54 @@ function createIdentityLeakStreamSanitizer(publicModelName: string) {
       return sanitizeIdentityLeak(remaining, publicModelName)
     },
   }
+}
+
+type ChatProviderAttempt = {
+  provider: 'google' | 'anthropic' | 'azure-gpt54' | 'azure-deepseek'
+  configured: boolean
+  attempted: boolean
+  succeeded: boolean
+  status: number | null
+  safeReason: string | null
+}
+
+type ChatProviderName = ChatProviderAttempt['provider']
+
+function buildTextProviderAttemptOrder(provider: string): ChatProviderName[] {
+  if (provider === 'google') return ['google']
+  if (provider === 'anthropic') return ['anthropic']
+
+  const gpt54Snapshot = getAzureGpt54ConfigSnapshot()
+  const deepSeekSnapshot = getAzureDeepSeekConfigSnapshot()
+  const gpt54Configured = gpt54Snapshot.envStatus.apiKey.configured &&
+    gpt54Snapshot.envStatus.baseUrl.configured &&
+    gpt54Snapshot.envStatus.model.configured
+  const deepSeekConfigured = deepSeekSnapshot.envStatus.apiKey.configured &&
+    deepSeekSnapshot.envStatus.baseUrl.configured &&
+    deepSeekSnapshot.envStatus.model.configured
+
+  const order: Array<'azure-gpt54' | 'azure-deepseek'> = []
+  if (gpt54Configured) order.push('azure-gpt54')
+  if (deepSeekConfigured) order.push('azure-deepseek')
+
+  if (order.length === 0) {
+    return ['azure-gpt54', 'azure-deepseek']
+  }
+
+  return order
+}
+
+function buildNoProviderAvailableError(attempts: ChatProviderAttempt[]): Error {
+  const attempted = attempts.filter((attempt) => attempt.attempted)
+  if (attempted.length === 1 && attempted[0].safeReason) {
+    return new Error(attempted[0].safeReason)
+  }
+
+  const hasConfiguredProvider = attempts.some((attempt) => attempt.configured)
+  if (!hasConfiguredProvider) {
+    return new Error('Model provider is not configured.')
+  }
+  return new Error('No chat provider is currently available. Please check provider configuration.')
 }
 
 export async function POST(request: NextRequest) {
@@ -174,18 +230,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Model is not available' }, { status: 400 })
     }
 
-    if (validationModel.publicError) {
-      if (validationModel.originalProvider === 'azure-gpt54') {
-        console.error('[Chat API] Public chat model unavailable before provider call', {
-          publicModelId: validatedModel,
-          effectiveProvider: validationModel.provider,
-          fallbackActive: validationModel.fallbackActive,
-          adminDiagnostic: validationModel.adminDiagnostic,
-        })
-        return NextResponse.json({ error: validationModel.publicError }, { status: 503 })
-      }
-
-      return NextResponse.json({ error: validationModel.publicError }, { status: 400 })
+    if (validationModel.provider === 'image') {
+      return NextResponse.json({ error: 'Model is not available' }, { status: 400 })
     }
 
     // Stage: Profile
@@ -656,6 +702,9 @@ RULES FOR USING THESE RESULTS:
     // Stage: Route to provider
     stage = 'provider-routing'
     const selectedModel = validationModel
+    const providerAttemptOrder = hasCurrentImageAttachments && providerForRequest === 'azure-gpt54'
+      ? (['azure-gpt54'] as ChatProviderName[])
+      : buildTextProviderAttemptOrder(selectedModel.provider)
 
     if (!selectedModel) {
       console.error('[Chat API] Unknown model after validation:', validatedModel)
@@ -703,7 +752,7 @@ RULES FOR USING THESE RESULTS:
       fileTypes: [] as string[],
       extractionSucceededCount: 0,
       extractionFailedCount: 0,
-      providerSelected: providerForRequest,
+      providerSelected: providerAttemptOrder[0] || providerForRequest,
       visionFallbackUsed,
       azureGpt54Configured,
       azureStatusCode: azureVisionStatusCode,
@@ -727,7 +776,7 @@ RULES FOR USING THESE RESULTS:
         comprehensive: comprehensiveDocumentRequest,
         hydratedCurrentMessage,
         extractionResult: documentExtractionResult,
-        providerSelected: providerForRequest,
+        providerSelected: providerAttemptOrder[0] || providerForRequest,
         visionFallbackUsed,
         azureGpt54Configured,
         azureStatusCode: azureVisionStatusCode,
@@ -851,8 +900,9 @@ RULES FOR USING THESE RESULTS:
     }
 
     console.log('[Chat API] Calling provider:', {
-      provider: providerForRequest,
+      provider: providerAttemptOrder[0] || providerForRequest,
       providerSelected: selectedModel.provider,
+      providerAttemptOrder,
       modelId: validatedModel,
       bedrockId: selectedModel.bedrockModelId,
       geminiId: selectedModel.geminiModelId,
@@ -900,23 +950,96 @@ RULES FOR USING THESE RESULTS:
       async start(controller) {
         try {
           // Call AI provider with reasoning-adjusted maxTokens
-          let providerStream: ReadableStream
+          let providerStream: ReadableStream | null = null
           const maxTokens = reasoningProfile.maxTokens
           const identitySanitizer = createIdentityLeakStreamSanitizer(selectedModel.name)
+          const providerAttempts: ChatProviderAttempt[] = []
+          let finalProviderUsed: ChatProviderAttempt['provider'] | null = null
+          let lastError: Error | null = null
 
-          if (providerForRequest === 'google') {
-            providerStream = await streamGeminiResponse(validatedModel, messagesForModel, systemPrompt, temperature, maxTokens)
-          } else if (providerForRequest === 'anthropic') {
-            providerStream = await streamBedrockResponse(validatedModel, messagesForModel, systemPrompt, temperature, maxTokens)
-          } else if (providerForRequest === 'azure-gpt54') {
-            providerStream = await streamAzureGpt54Response(messagesForModel, systemPrompt, temperature, maxTokens)
-          } else if (providerForRequest === 'azure-deepseek') {
-            providerStream = await streamAzureDeepSeekResponse(messagesForModel, systemPrompt, temperature, maxTokens)
-          } else {
-            controller.enqueue(encoder.encode('Error: This EasyPlus tier is unavailable'))
-            controller.close()
-            return
+          for (const attemptedProvider of providerAttemptOrder) {
+            const configured = attemptedProvider === 'azure-gpt54'
+              ? (() => {
+                  const snapshot = getAzureGpt54ConfigSnapshot()
+                  return snapshot.envStatus.apiKey.configured &&
+                    snapshot.envStatus.baseUrl.configured &&
+                    snapshot.envStatus.model.configured
+                })()
+              : attemptedProvider === 'azure-deepseek'
+                ? (() => {
+                    const snapshot = getAzureDeepSeekConfigSnapshot()
+                    return snapshot.envStatus.apiKey.configured &&
+                      snapshot.envStatus.baseUrl.configured &&
+                      snapshot.envStatus.model.configured
+                  })()
+                : true
+
+            try {
+              if (attemptedProvider === 'google') {
+                providerStream = await streamGeminiResponse(validatedModel, messagesForModel, systemPrompt, temperature, maxTokens)
+              } else if (attemptedProvider === 'anthropic') {
+                providerStream = await streamBedrockResponse(validatedModel, messagesForModel, systemPrompt, temperature, maxTokens)
+              } else if (attemptedProvider === 'azure-gpt54') {
+                providerStream = await streamAzureGpt54Response(messagesForModel, systemPrompt, temperature, maxTokens)
+              } else {
+                providerStream = await streamAzureDeepSeekResponse(messagesForModel, systemPrompt, temperature, maxTokens)
+              }
+
+              finalProviderUsed = attemptedProvider
+              providerAttempts.push({
+                provider: attemptedProvider,
+                configured,
+                attempted: true,
+                succeeded: true,
+                status: null,
+                safeReason: null,
+              })
+              break
+            } catch (error: any) {
+              lastError = error instanceof Error ? error : new Error(String(error))
+              providerAttempts.push({
+                provider: attemptedProvider,
+                configured,
+                attempted: true,
+                succeeded: false,
+                status: isAzureTextProviderError(error) ? error.status : null,
+                safeReason: isAzureTextProviderError(error)
+                  ? error.safeReason
+                  : lastError.message || 'Model provider request failed.',
+              })
+
+              console.error('[Chat API] Provider attempt failed', {
+                publicModelId: validatedModel,
+                providerAttempted: attemptedProvider,
+                configured,
+                status: isAzureTextProviderError(error) ? error.status : null,
+                safeReason: isAzureTextProviderError(error) ? error.safeReason : lastError.message,
+              })
+            }
           }
+
+          if (!providerStream || !finalProviderUsed) {
+            const finalError = buildNoProviderAvailableError(providerAttempts)
+            console.error('[Chat API] No chat provider available for request', {
+              publicModelId: validatedModel,
+              preferredProvider: providerAttemptOrder[0] || selectedModel.provider,
+              fallbackProviderAttempted: providerAttempts.find((attempt) => attempt.provider !== providerAttemptOrder[0])?.provider || null,
+              finalProviderUsed: null,
+              finalStatus: 'failed',
+              safeReason: finalError.message,
+              attempts: providerAttempts,
+            })
+            throw finalError
+          }
+
+          console.log('[Chat API] Provider resolved for request', {
+            publicModelId: validatedModel,
+            preferredProvider: providerAttemptOrder[0] || selectedModel.provider,
+            fallbackProviderAttempted: providerAttempts.find((attempt) => attempt.provider !== finalProviderUsed)?.provider || null,
+            finalProviderUsed,
+            finalStatus: 'streaming',
+            attempts: providerAttempts,
+          })
 
           // Read from provider and forward to client
           const reader = providerStream.getReader()
@@ -1079,7 +1202,7 @@ RULES FOR USING THESE RESULTS:
         } catch (err: any) {
           console.error('[Chat API] Stream error:', {
             message: err.message,
-            provider: providerForRequest,
+            provider: providerAttemptOrder[0] || providerForRequest,
             modelId: validatedModel,
             attachmentDiagnostics,
           })

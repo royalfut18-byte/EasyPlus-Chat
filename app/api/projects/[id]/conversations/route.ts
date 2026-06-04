@@ -45,7 +45,7 @@ export async function POST(
     const { title, model, reasoningMode } = await request.json()
     const publicModelId = toPublicModelId(model)
     const resolvedModel = await getResolvedInternalModel(publicModelId)
-    if (!resolvedModel || resolvedModel.provider === 'image' || resolvedModel.publicError) {
+    if (!resolvedModel || resolvedModel.provider === 'image') {
       return NextResponse.json({ error: 'Model is not available' }, { status: 400 })
     }
 

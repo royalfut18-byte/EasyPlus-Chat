@@ -21,6 +21,7 @@ export interface AzureDeepSeekDiagnostics {
   status: number | null
   endpointHost: string | null
   endpointPath: '/openai/v1/chat/completions' | string
+  model: string
   lastProbeAt: string
   envStatus: {
     apiKey: { exists: boolean; configured: boolean }
@@ -75,18 +76,27 @@ export function getAzureDeepSeekConfigSnapshot(): AzureTextProviderConfigSnapsho
 }
 
 function getSafeProviderError(status?: number): Error {
-  if (status === 429 || (status != null && status >= 500)) {
-    return new Error('DeepSeek V4 Pro is temporarily busy. Please try again in a moment.')
+  if (status === 401 || status === 403) {
+    return new Error('Model provider credentials are invalid or unauthorized.')
   }
-  return new Error('DeepSeek V4 Pro is temporarily unavailable.')
+  if (status === 404) {
+    return new Error('Model deployment was not found.')
+  }
+  if (status === 429) {
+    return new Error('Model provider is busy. Please try again.')
+  }
+  if (status != null && status >= 500) {
+    return new Error('Model provider request failed.')
+  }
+  return new Error('Model provider request failed.')
 }
 
 function getSafeTimeoutError(): Error {
-  return new Error('DeepSeek V4 Pro is taking too long to respond. Please try again.')
+  return new Error('Model took too long to respond. Please try again.')
 }
 
 function getSafeConfigurationError(): Error {
-  return new Error('DeepSeek V4 Pro is not configured.')
+  return new Error('Model provider is not configured.')
 }
 
 type AuthMode = 'api-key' | 'bearer'
@@ -172,13 +182,10 @@ export async function getAzureDeepSeekDiagnostics(force = false): Promise<AzureD
       probeOk: false,
       status: null,
       ...endpoint,
+      model,
       lastProbeAt,
       envStatus,
-      safeReason: !apiKey
-        ? 'Missing Azure API key configuration'
-        : !baseUrl
-          ? 'Missing Azure base URL configuration'
-          : 'Missing Azure model configuration',
+      safeReason: 'Model provider is not configured.',
     }
     console.error('[Azure DeepSeek] Missing provider configuration', {
       apiKeyConfigured,
@@ -214,15 +221,10 @@ export async function getAzureDeepSeekDiagnostics(force = false): Promise<AzureD
         probeOk: false,
         status: response.status,
         ...endpoint,
+        model,
         lastProbeAt,
         envStatus,
-        safeReason: response.status === 401 || response.status === 403
-          ? 'Invalid Azure key or unauthorized deployment'
-          : response.status === 404
-            ? 'Azure deployment/model endpoint not found'
-            : response.status === 429
-              ? 'Azure provider is busy'
-              : 'Azure provider request failed',
+        safeReason: getSafeProviderError(response.status).message,
       }
       console.error('[Azure DeepSeek] Availability probe failed', {
         status: response.status,
@@ -248,6 +250,7 @@ export async function getAzureDeepSeekDiagnostics(force = false): Promise<AzureD
       probeOk: available,
       status: response.status,
       ...endpoint,
+      model,
       lastProbeAt,
       envStatus,
       safeReason: available ? 'Available' : 'Azure provider returned no content',
@@ -272,9 +275,12 @@ export async function getAzureDeepSeekDiagnostics(force = false): Promise<AzureD
       probeOk: false,
       status: null,
       ...endpoint,
+      model,
       lastProbeAt,
       envStatus,
-      safeReason: error?.name === 'TimeoutError' ? 'Azure provider probe timed out' : 'Azure provider is unreachable',
+      safeReason: error?.name === 'TimeoutError'
+        ? 'Model took too long to respond. Please try again.'
+        : 'Model provider could not be reached.',
     }
     console.error('[Azure DeepSeek] Availability probe exception', {
       message: error.message,
@@ -441,7 +447,12 @@ export async function streamAzureDeepSeekResponse(
       timeoutHit,
       streamStarted: false,
     })
-    throw toProviderError(timeoutHit ? getSafeTimeoutError() : getSafeProviderError(), snapshot, null, timeoutHit)
+    throw toProviderError(
+      timeoutHit ? getSafeTimeoutError() : new Error('Model provider could not be reached.'),
+      snapshot,
+      null,
+      timeoutHit
+    )
   }
 }
 

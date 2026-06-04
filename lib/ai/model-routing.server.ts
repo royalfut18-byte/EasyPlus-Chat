@@ -96,35 +96,25 @@ function resolveModel(
 
 async function resolveAzureTextModel(model: InternalAIModel): Promise<ResolvedInternalAIModel> {
   const gpt54Configured = isAzureGpt54Configured()
-  if (gpt54Configured) {
-    const gpt54Diagnostics = await getAzureGpt54Diagnostics()
-    if (gpt54Diagnostics.probeOk) {
-      return resolveModel(model, 'azure-gpt54')
-    }
-  }
-
   const deepSeekConfigured = isAzureDeepSeekConfigured()
-  if (deepSeekConfigured) {
-    const deepSeekDiagnostics = await getAzureDeepSeekDiagnostics()
-    if (deepSeekDiagnostics.probeOk) {
-      return resolveModel(model, 'azure-deepseek', {
-        fallbackActive: true,
-        adminDiagnostic: gpt54Configured
-          ? 'GPT-5.4 unavailable, using DeepSeek fallback'
-          : 'GPT-5.4 missing, using DeepSeek fallback',
-      })
-    }
+
+  if (gpt54Configured) {
+    return resolveModel(model, 'azure-gpt54', {
+      adminDiagnostic: deepSeekConfigured
+        ? 'GPT-5.4 configured; DeepSeek fallback also configured'
+        : 'GPT-5.4 configured; DeepSeek fallback is not configured',
+    })
   }
 
-  return resolveModel(model, model.provider, {
-    adminDiagnostic: gpt54Configured
-      ? deepSeekConfigured
-        ? 'GPT-5.4 unavailable and DeepSeek fallback unavailable'
-        : 'GPT-5.4 unavailable and DeepSeek fallback is not configured'
-      : deepSeekConfigured
-        ? 'GPT-5.4 missing and DeepSeek fallback unavailable'
-        : 'GPT-5.4 missing and DeepSeek fallback is not configured',
-    publicError: 'Model provider is not configured.',
+  if (deepSeekConfigured) {
+    return resolveModel(model, 'azure-deepseek', {
+      fallbackActive: true,
+      adminDiagnostic: 'GPT-5.4 is not configured; DeepSeek fallback is configured',
+    })
+  }
+
+  return resolveModel(model, 'azure-gpt54', {
+    adminDiagnostic: 'No Azure text provider is configured.',
   })
 }
 
@@ -151,31 +141,26 @@ export function getPublicModelName(modelId: string): string {
 
 export async function isChatModelAvailable(modelId: string): Promise<boolean> {
   const model = await getResolvedInternalModel(modelId)
-  return Boolean(model && model.provider !== 'image' && !model.publicError)
+  return Boolean(model && model.provider !== 'image')
 }
 
 export async function getAvailablePublicModelIds(): Promise<string[]> {
-  const availableModels = await Promise.all(INTERNAL_AI_MODELS.map(async (model) => {
-    if (model.provider === 'image') {
-      const configured = Boolean(
-        readServerEnv('AZURE_IMAGE_API_KEY') &&
-        readServerEnv('AZURE_IMAGE_BASE_URL') &&
-        isR2Configured()
-      )
-      return configured && await isAzureImageAvailable()
-    }
-
-    if (model.provider === 'azure-gpt54') {
-      const resolved = await getResolvedInternalModel(model.id)
-      return Boolean(resolved && !resolved.publicError)
-    }
-
-    return true
-  }))
-
-  return INTERNAL_AI_MODELS
-    .filter((_, index) => availableModels[index])
+  const textModelIds = INTERNAL_AI_MODELS
+    .filter((model) => model.provider !== 'image')
     .map((model) => model.id)
+
+  const imageConfigured = Boolean(
+    readServerEnv('AZURE_IMAGE_API_KEY') &&
+    readServerEnv('AZURE_IMAGE_BASE_URL') &&
+    isR2Configured()
+  )
+
+  if (!imageConfigured) {
+    return textModelIds
+  }
+
+  const imageAvailable = await isAzureImageAvailable().catch(() => false)
+  return imageAvailable ? [...textModelIds, 'image-generation'] : textModelIds
 }
 
 export async function getPublicChatRoutingDiagnostics() {
@@ -206,9 +191,11 @@ export async function getPublicChatRoutingDiagnostics() {
   }
 
   return {
-    effectiveProvider: null,
-    fallbackActive: false,
-    safeReason: 'Model provider is not configured.',
+    effectiveProvider: gpt54Configured ? 'azure-gpt54' as const : isAzureDeepSeekConfigured() ? 'azure-deepseek' as const : null,
+    fallbackActive: !gpt54Configured && isAzureDeepSeekConfigured(),
+    safeReason: gpt54Configured || isAzureDeepSeekConfigured()
+      ? 'Provider configuration exists but has not been verified by a successful probe.'
+      : 'Model provider is not configured.',
   }
 }
 
