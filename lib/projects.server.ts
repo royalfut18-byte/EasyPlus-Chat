@@ -162,6 +162,29 @@ export async function archiveProject(projectId: string, userId: string) {
   return updateProject(projectId, userId, { archived_at: new Date().toISOString() } as any)
 }
 
+export async function deleteProject(projectId: string, userId: string) {
+  const db = await createServiceClient() as any
+  
+  // Delete in order of dependencies
+  // Delete project artifacts
+  await db.from('project_artifacts').delete().eq('project_id', projectId).eq('user_id', userId)
+  
+  // Delete project memories
+  await db.from('project_memories').delete().eq('project_id', projectId).eq('user_id', userId)
+  
+  // Delete conversations (this will cascade to messages, attachments, etc. if constraints are set)
+  await db.from('conversations').delete().eq('project_id', projectId).eq('user_id', userId)
+  
+  // Delete the project itself
+  const { error } = await db
+    .from('projects')
+    .delete()
+    .eq('id', projectId)
+    .eq('user_id', userId)
+  
+  if (error) throw error
+}
+
 export async function getProjectConversations(projectId: string, userId: string) {
   const db = await createServiceClient() as any
   const { data, error } = await db

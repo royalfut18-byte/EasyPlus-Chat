@@ -16,6 +16,12 @@ export interface GeneratedZipManifest {
   files: GeneratedZipFile[]
 }
 
+export interface GeneratedZipPreview {
+  entryPath: string
+  code: string
+  files: GeneratedZipFile[]
+}
+
 const BLOCKED_SEGMENTS = new Set([
   '.env',
   '.git',
@@ -26,6 +32,235 @@ const BLOCKED_SEGMENTS = new Set([
 
 function byteLength(value: string): number {
   return new TextEncoder().encode(value).byteLength
+}
+
+function looksLikeEscapedMarkup(value: string): boolean {
+  return /\\[nrt"]/.test(value) && /(?:<!DOCTYPE|<html\b|<body\b|<head\b|<main\b|<div\b|<section\b|<script\b|<style\b|<\/[a-z]+>)/i.test(value)
+}
+
+export function decodePossiblyEscapedText(value: string): string {
+  let current = value
+
+  for (let i = 0; i < 3; i++) {
+    const trimmed = current.trim()
+    if (!trimmed) break
+
+    if (trimmed.startsWith('"') && trimmed.endsWith('"')) {
+      try {
+        const parsed = JSON.parse(trimmed)
+        if (typeof parsed === 'string') {
+          current = parsed
+          continue
+        }
+      } catch {
+        // Fall through to lightweight decoding below.
+      }
+    }
+
+    if (looksLikeEscapedMarkup(current)) {
+      const decoded = current
+        .replace(/\\r\\n/g, '\n')
+        .replace(/\\n/g, '\n')
+        .replace(/\\r/g, '\n')
+        .replace(/\\t/g, '\t')
+        .replace(/\\"/g, '"')
+        .replace(/\\'/g, "'")
+        .replace(/\\\\/g, '\\')
+
+      if (decoded !== current) {
+        current = decoded
+        continue
+      }
+    }
+
+    break
+  }
+
+  return current
+}
+
+function tryParseManifest(candidate: string): GeneratedZipManifest | null {
+  try {
+    return validateGeneratedZipManifest(JSON.parse(candidate.trim()))
+  } catch {
+    return null
+  }
+}
+
+function findBalancedJsonObject(content: string, startIndex: number): { start: number; end: number; text: string } | null {
+  let depth = 0
+  let inString = false
+  let isEscaped = false
+
+  for (let index = startIndex; index < content.length; index++) {
+    const char = content[index]
+
+    if (inString) {
+      if (isEscaped) {
+        isEscaped = false
+      } else if (char === '\\') {
+        isEscaped = true
+      } else if (char === '"') {
+        inString = false
+      }
+      continue
+    }
+
+    if (char === '"') {
+      inString = true
+      continue
+    }
+
+    if (char === '{') {
+      depth += 1
+      continue
+    }
+
+    if (char === '}') {
+      depth -= 1
+      if (depth === 0) {
+        return {
+          start: startIndex,
+          end: index + 1,
+          text: content.slice(startIndex, index + 1),
+        }
+      }
+    }
+  }
+
+  return null
+}
+
+function findGeneratedZipManifestRange(content: string): { manifest: GeneratedZipManifest; start: number; end: number } | null {
+  const blockRegex = /```(?:generated_zip|generated-zip|zip_manifest)\s*\r?\n([\s\S]*?)```/i
+  const blockMatch = content.match(blockRegex)
+  if (blockMatch) {
+    const manifest = tryParseManifest(blockMatch[1])
+    if (manifest) {
+      return {
+        manifest,
+        start: blockMatch.index || 0,
+        end: (blockMatch.index || 0) + blockMatch[0].length,
+      }
+    }
+  }
+
+  const typeRegex = /"type"\s*:\s*"generated_zip"/ig
+  let match: RegExpExecArray | null
+
+  while ((match = typeRegex.exec(content)) !== null) {
+    let objectStart = content.lastIndexOf('{', match.index)
+
+    while (objectStart >= 0) {
+      const candidate = findBalancedJsonObject(content, objectStart)
+      if (!candidate || candidate.end <= match.index) {
+        objectStart = content.lastIndexOf('{', objectStart - 1)
+        continue
+      }
+
+      const manifest = tryParseManifest(candidate.text)
+      if (manifest) {
+        return {
+          manifest,
+          start: candidate.start,
+          end: candidate.end,
+        }
+      }
+
+      objectStart = content.lastIndexOf('{', objectStart - 1)
+    }
+  }
+
+  return null
+}
+
+function normalizeZipPath(path: string): string {
+  const normalizedSegments: string[] = []
+  for (const segment of path.split('/')) {
+    if (!segment || segment === '.') continue
+    if (segment === '..') {
+      normalizedSegments.pop()
+      continue
+    }
+    normalizedSegments.push(segment)
+  }
+  return normalizedSegments.join('/')
+}
+
+function resolveZipAssetPath(basePath: string, targetPath: string): string | null {
+  const trimmed = targetPath.trim()
+  if (!trimmed || /^(?:[a-z]+:)?\/\//i.test(trimmed) || /^(?:data:|mailto:|tel:|#)/i.test(trimmed)) return null
+
+  const withoutHash = trimmed.split('#')[0]
+  const withoutQuery = withoutHash.split('?')[0]
+  if (!withoutQuery) return null
+
+  const baseSegments = normalizeZipPath(basePath).split('/').slice(0, -1)
+  const targetSegments = withoutQuery.startsWith('/')
+    ? withoutQuery.replace(/^\/+/, '').split('/')
+    : [...baseSegments, ...withoutQuery.split('/')]
+
+  return normalizeZipPath(targetSegments.join('/'))
+}
+
+function chooseHtmlPreviewFile(files: GeneratedZipFile[]): GeneratedZipFile | null {
+  const htmlFiles = files.filter((file) => /\.(?:html?|xhtml)$/i.test(file.path))
+  if (htmlFiles.length === 0) return null
+
+  return (
+    htmlFiles.find((file) => /(^|\/)index\.html?$/i.test(file.path)) ||
+    htmlFiles[0]
+  )
+}
+
+function inlineHtmlAssets(entryPath: string, html: string, filesByPath: Map<string, string>): string {
+  let result = html
+
+  result = result.replace(
+    /<link\b([^>]*?)rel=["']?stylesheet["']?([^>]*?)href=["']([^"']+)["']([^>]*)>/gi,
+    (fullMatch, beforeRel, between, href, afterHref) => {
+      const resolvedPath = resolveZipAssetPath(entryPath, href)
+      if (!resolvedPath) return fullMatch
+
+      const content = filesByPath.get(resolvedPath.toLowerCase())
+      if (typeof content !== 'string') return fullMatch
+
+      return `<style data-easyplus-inline="${resolvedPath}">\n${content}\n</style>`
+    }
+  )
+
+  result = result.replace(
+    /<script\b([^>]*?)src=["']([^"']+)["']([^>]*)>\s*<\/script>/gi,
+    (fullMatch, beforeSrc, src, afterSrc) => {
+      const resolvedPath = resolveZipAssetPath(entryPath, src)
+      if (!resolvedPath) return fullMatch
+
+      const content = filesByPath.get(resolvedPath.toLowerCase())
+      if (typeof content !== 'string') return fullMatch
+
+      return `<script data-easyplus-inline="${resolvedPath}">\n${content}\n</script>`
+    }
+  )
+
+  return result
+}
+
+export function buildGeneratedZipPreview(manifest: GeneratedZipManifest): GeneratedZipPreview | null {
+  const files = manifest.files.map((file) => ({
+    path: file.path,
+    content: decodePossiblyEscapedText(file.content),
+  }))
+  const htmlFile = chooseHtmlPreviewFile(files)
+  if (!htmlFile) return null
+
+  const filesByPath = new Map(files.map((file) => [normalizeZipPath(file.path).toLowerCase(), file.content]))
+  const previewHtml = inlineHtmlAssets(htmlFile.path, htmlFile.content, filesByPath)
+
+  return {
+    entryPath: htmlFile.path,
+    code: previewHtml,
+    files,
+  }
 }
 
 export function sanitizeZipFilename(value: unknown): string {
@@ -122,36 +357,25 @@ export function parseGeneratedZipFromResponse(content: string): {
   cleanContent: string
   manifest: GeneratedZipManifest | null
 } {
-  const blockRegex = /```(?:generated_zip|generated-zip|zip_manifest)\s*\r?\n([\s\S]*?)```/i
-  const match = content.match(blockRegex)
+  const match = findGeneratedZipManifestRange(content)
   if (!match) return { cleanContent: content, manifest: null }
 
-  try {
-    const parsed = JSON.parse(match[1].trim())
-    const manifest = validateGeneratedZipManifest(parsed)
-    const before = content.slice(0, match.index).trim()
-    const after = content.slice((match.index || 0) + match[0].length).trim()
-    const cleanContent = [before, `**Generated files:** ${manifest.filename}`, after]
-      .filter(Boolean)
-      .join('\n\n')
+  const before = content.slice(0, match.start).trim()
+  const after = content.slice(match.end).trim()
+  const cleanContent = [before, `**Generated files:** ${match.manifest.filename}`, after]
+    .filter(Boolean)
+    .join('\n\n')
 
-    return { cleanContent, manifest }
-  } catch {
-    const before = content.slice(0, match.index).trim()
-    const after = content.slice((match.index || 0) + match[0].length).trim()
-    return {
-      cleanContent: [before, 'I could not prepare the downloadable ZIP from this response. Please try again.', after]
-        .filter(Boolean)
-        .join('\n\n'),
-      manifest: null,
-    }
+  return {
+    cleanContent,
+    manifest: match.manifest,
   }
 }
 
 export function hideGeneratedZipManifestFromDisplay(content: string): string {
-  const markerIndex = content.search(/```(?:generated_zip|generated-zip|zip_manifest)\b/i)
-  if (markerIndex < 0) return content
+  const match = findGeneratedZipManifestRange(content)
+  if (!match) return content
 
-  const visibleContent = content.slice(0, markerIndex).trimEnd()
+  const visibleContent = content.slice(0, match.start).trimEnd()
   return `${visibleContent}${visibleContent ? '\n\n' : ''}_Preparing downloadable ZIP..._`
 }

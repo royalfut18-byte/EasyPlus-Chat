@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Archive, Brain, Check, Download, Edit3, FileText, FolderOpen, MessageSquare, PanelRightOpen, Plus, Settings, Trash2, Upload, X } from 'lucide-react'
+import { Brain, Check, Download, Edit3, FileText, FolderOpen, MessageSquare, PanelRightOpen, Plus, Settings, Trash2, Upload, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -178,16 +178,16 @@ export function ProjectWorkspaceClient({
     }
   }
 
-  const archiveProject = async () => {
-    if (!window.confirm('Archive this project? Chats, files, and memories are kept but hidden from the Projects list.')) return
+  const deleteProject = async () => {
+    if (!window.confirm('Delete this project permanently? All chats, files, and memories will be permanently deleted. This cannot be undone.')) return
     try {
       const response = await fetch(`/api/projects/${project.id}`, { method: 'DELETE' })
       const data = await response.json().catch(() => ({}))
-      if (!response.ok) throw new Error(data.error || 'Failed to archive project')
-      toast({ title: 'Project archived' })
+      if (!response.ok) throw new Error(data.error || 'Failed to delete project')
+      toast({ title: 'Project deleted' })
       router.push('/projects')
     } catch (error: any) {
-      toast({ title: 'Could not archive project', description: error.message, variant: 'destructive' })
+      toast({ title: 'Could not delete project', description: error.message, variant: 'destructive' })
     }
   }
 
@@ -380,9 +380,9 @@ export function ProjectWorkspaceClient({
         <Panel title="Project settings" icon={<Settings />}>
           <ProjectSettingsForm projectForm={projectForm} setProjectForm={setProjectForm} saveProject={saveProject} isSavingProject={isSavingProject} />
           <div className="mt-6 border-t border-white/[0.08] pt-5">
-            <Button onClick={archiveProject} variant="ghost" className="border border-red-400/20 bg-red-500/10 text-red-200 hover:bg-red-500/20">
-              <Archive className="mr-2 h-4 w-4" />
-              Archive Project
+            <Button onClick={deleteProject} variant="ghost" className="border border-red-400/20 bg-red-500/10 text-red-200 hover:bg-red-500/20">
+              <Trash2 className="mr-2 h-4 w-4" />
+              Delete Project
             </Button>
           </div>
         </Panel>

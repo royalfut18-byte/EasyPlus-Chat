@@ -20,7 +20,7 @@ import { parseArtifactFromResponse } from '@/lib/artifact-parser'
 import { sortMessagesChronologically, dedupeMessages, processMessages, processLoadedMessages, getStoredArtifact } from '@/lib/chat/message-utils'
 import { useR2Upload } from '@/hooks/use-r2-upload'
 import { parsePageRangeRequest } from '@/lib/ai/document-requests'
-import { hideGeneratedZipManifestFromDisplay, parseGeneratedZipFromResponse, type GeneratedZipManifest } from '@/lib/generated-zip'
+import { buildGeneratedZipPreview, hideGeneratedZipManifestFromDisplay, parseGeneratedZipFromResponse, type GeneratedZipFile, type GeneratedZipManifest } from '@/lib/generated-zip'
 import { createGeneratedFileAttachment } from '@/lib/generated-file-client'
 import { detectGeneratedFileIntent, getGeneratedFileLabel, getGeneratedFileMimeType, isGeneratedFileArtifactLanguage, type GeneratedFileIntent } from '@/lib/generated-files'
 import type { Conversation, Message, ChatAttachment, Artifact, ReasoningMode } from '@/types/models'
@@ -201,10 +201,72 @@ ${refinementContext}
 }
 
 function hydrateArtifactWithAttachment(artifact: Artifact | null, attachments?: ChatAttachment[] | null): Artifact | null {
-  if (!artifact || !attachments?.length || !isGeneratedFileArtifactLanguage(artifact.language)) return artifact
-  const expectedMimeType = getGeneratedFileMimeType(artifact.language)
-  const candidate = attachments.find((attachment) => attachment.mimeType === expectedMimeType && attachment.generated)
-  return candidate ? { ...artifact, generatedAttachment: candidate } : artifact
+  if (!artifact || !attachments?.length) return artifact
+
+  if (isGeneratedFileArtifactLanguage(artifact.language)) {
+    const expectedMimeType = getGeneratedFileMimeType(artifact.language)
+    const candidate = attachments.find((attachment) => attachment.mimeType === expectedMimeType && attachment.generated)
+    return candidate ? { ...artifact, generatedAttachment: candidate } : artifact
+  }
+
+  if (artifact.generatedAttachment?.mimeType === 'application/zip') {
+    const zipAttachment = attachments.find((attachment) => attachment.mimeType === 'application/zip' && attachment.generated)
+    return zipAttachment ? { ...artifact, generatedAttachment: zipAttachment } : artifact
+  }
+
+  return artifact
+}
+
+type ZipPreviewArtifact = Artifact & {
+  zipPreviewFiles?: GeneratedZipFile[]
+  zipPreviewPath?: string
+}
+
+function createZipPreviewArtifact(
+  manifest: GeneratedZipManifest,
+  generatedAttachment: ChatAttachment | null,
+  userPrompt?: string
+): ZipPreviewArtifact | null {
+  const preview = buildGeneratedZipPreview(manifest)
+  if (!preview) return null
+
+  const fallbackTitle = preview.entryPath
+    .split('/')
+    .pop()
+    ?.replace(/\.(html?|xhtml)$/i, '')
+    ?.replace(/[-_]+/g, ' ')
+    .trim()
+  const title = userPrompt?.trim()
+    ? generateConversationTitle(userPrompt)
+    : fallbackTitle || manifest.filename.replace(/\.zip$/i, '') || 'Generated Website Preview'
+
+  return {
+    id: `artifact-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`,
+    title,
+    language: 'html',
+    code: preview.code,
+    generatedAttachment: generatedAttachment || undefined,
+    createdAt: new Date().toISOString(),
+    zipPreviewFiles: preview.files,
+    zipPreviewPath: preview.entryPath,
+  }
+}
+
+function preferRenderableArtifact(
+  parsedArtifact: Artifact | null,
+  zipPreviewArtifact: ZipPreviewArtifact | null
+): Artifact | null {
+  if (!parsedArtifact) return zipPreviewArtifact
+  if (!zipPreviewArtifact) return parsedArtifact
+
+  if (parsedArtifact.language === 'html' && parsedArtifact.code === zipPreviewArtifact.code) {
+    return {
+      ...zipPreviewArtifact,
+      title: parsedArtifact.title || zipPreviewArtifact.title,
+    }
+  }
+
+  return parsedArtifact
 }
 
 function mergeAttachments(
@@ -1521,6 +1583,9 @@ export default function ChatPage() {
       const generatedZipAttachment = generatedZipManifest
         ? await createGeneratedZip(generatedZipManifest, sendConversationId, projectId, requestId)
         : null
+      const zipPreviewArtifact = generatedZipManifest
+        ? createZipPreviewArtifact(generatedZipManifest, generatedZipAttachment, lastUserPromptRef.current)
+        : null
       const withGeneratedOutputs = (
         message: Message,
         generatedFileAttachment?: ChatAttachment | null
@@ -1540,9 +1605,10 @@ export default function ChatPage() {
           requestArtifactMode,
           lastUserPromptRef.current
         )
+        const renderableArtifact = preferRenderableArtifact(artifact, zipPreviewArtifact)
 
-        if (artifact) {
-          const generatedFileResult = await resolveGeneratedFileArtifact(artifact, sendConversationId, requestId)
+        if (renderableArtifact) {
+          const generatedFileResult = await resolveGeneratedFileArtifact(renderableArtifact, sendConversationId, requestId)
           if (generatedFileResult.errorMessage) {
             if (selectedConversationIdRef.current === sendConversationId) {
               setMessages((prev) =>
@@ -1565,7 +1631,7 @@ export default function ChatPage() {
             return
           }
 
-          const resolvedArtifact = generatedFileResult.artifact || artifact
+          const resolvedArtifact = generatedFileResult.artifact || renderableArtifact
 
           if (process.env.NODE_ENV !== 'production') {
             console.log('[Chat] Artifact detected:', resolvedArtifact.title)
@@ -1642,9 +1708,10 @@ export default function ChatPage() {
             true,
             lastUserPromptRef.current
           )
+          const renderableArtifact = preferRenderableArtifact(artifact, zipPreviewArtifact)
 
-          if (artifact) {
-            const generatedFileResult = await resolveGeneratedFileArtifact(artifact, sendConversationId, requestId)
+          if (renderableArtifact) {
+            const generatedFileResult = await resolveGeneratedFileArtifact(renderableArtifact, sendConversationId, requestId)
             if (generatedFileResult.errorMessage) {
               if (selectedConversationIdRef.current === sendConversationId) {
                 setMessages((prev) =>
@@ -1667,7 +1734,7 @@ export default function ChatPage() {
               return
             }
 
-            const resolvedArtifact = generatedFileResult.artifact || artifact
+            const resolvedArtifact = generatedFileResult.artifact || renderableArtifact
 
             if (process.env.NODE_ENV !== 'production') {
               console.log('[Chat] Artifact auto-detected (fallback):', resolvedArtifact.title)
@@ -2197,13 +2264,17 @@ export default function ChatPage() {
       const generatedZipAttachment = generatedZipManifest
         ? await createGeneratedZip(generatedZipManifest, conversationId, projectId, requestId)
         : null
+      const zipPreviewArtifact = generatedZipManifest
+        ? createZipPreviewArtifact(generatedZipManifest, generatedZipAttachment, trimmedContent)
+        : null
       const { artifact, cleanContent } = parseArtifactFromResponse(
         zipCleanContent,
         true,
         trimmedContent
       )
-      const generatedFileResult = artifact
-        ? await resolveGeneratedFileArtifact(artifact, conversationId, requestId)
+      const renderableArtifact = preferRenderableArtifact(artifact, zipPreviewArtifact)
+      const generatedFileResult = renderableArtifact
+        ? await resolveGeneratedFileArtifact(renderableArtifact, conversationId, requestId)
         : { artifact: null, attachment: null, errorMessage: null }
       if (generatedFileResult.errorMessage) {
         if (selectedConversationIdRef.current === conversationId) {
@@ -2234,7 +2305,7 @@ export default function ChatPage() {
         }
         return
       }
-      const resolvedArtifact = generatedFileResult.artifact || artifact
+      const resolvedArtifact = generatedFileResult.artifact || renderableArtifact
       const finalContent = resolvedArtifact
         ? cleanContent
         : zipCleanContent
@@ -3038,7 +3109,7 @@ export default function ChatPage() {
                     const artifactForMessage = hydrateArtifactWithAttachment(rawArtifactForMessage, message.attachments)
                     const contentForMessage = parsedArtifactResponse?.artifact
                       ? parsedArtifactResponse.cleanContent
-                      : message.content
+                      : hideGeneratedZipManifestFromDisplay(message.content)
 
                     return (
                       <MessageBubble

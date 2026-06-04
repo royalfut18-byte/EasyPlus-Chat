@@ -2,6 +2,10 @@ import 'server-only'
 
 import type { ChatMessage } from '@/types/models'
 import { getServerEnvStatus, readServerEnv } from '@/lib/server-env'
+import {
+  AzureTextProviderError,
+  type AzureTextProviderConfigSnapshot,
+} from '@/lib/ai/azure-provider-error'
 
 const DEFAULT_AZURE_DEEPSEEK_MODEL = 'DeepSeek-V4-Pro'
 const REQUEST_TIMEOUT_MS = 120_000
@@ -56,6 +60,20 @@ function getProviderConfig() {
   }
 }
 
+export function getAzureDeepSeekConfigSnapshot(): AzureTextProviderConfigSnapshot {
+  const { model, apiKeyConfigured, baseUrlConfigured, modelConfigured, envStatus, baseUrl } = getProviderConfig()
+  const endpoint = getEndpointMetadata(baseUrl)
+  return {
+    provider: 'azure-deepseek',
+    apiKeyConfigured,
+    baseUrlConfigured,
+    modelConfigured,
+    ...endpoint,
+    model,
+    envStatus,
+  }
+}
+
 function getSafeProviderError(status?: number): Error {
   if (status === 429 || (status != null && status >= 500)) {
     return new Error('DeepSeek V4 Pro is temporarily busy. Please try again in a moment.')
@@ -67,6 +85,10 @@ function getSafeTimeoutError(): Error {
   return new Error('DeepSeek V4 Pro is taking too long to respond. Please try again.')
 }
 
+function getSafeConfigurationError(): Error {
+  return new Error('DeepSeek V4 Pro is not configured.')
+}
+
 type AuthMode = 'api-key' | 'bearer'
 
 function getHeaders(apiKey: string, authMode: AuthMode): Record<string, string> {
@@ -76,6 +98,27 @@ function getHeaders(apiKey: string, authMode: AuthMode): Record<string, string> 
       ? { 'api-key': apiKey }
       : { Authorization: `Bearer ${apiKey}` }),
   }
+}
+
+function toProviderError(
+  error: Error,
+  snapshot: AzureTextProviderConfigSnapshot,
+  status?: number | null,
+  timeoutHit = false
+): AzureTextProviderError {
+  return new AzureTextProviderError(error.message, {
+    provider: 'azure-deepseek',
+    status,
+    timeoutHit,
+    safeReason: error.message,
+    endpointHost: snapshot.endpointHost,
+    endpointPath: snapshot.endpointPath,
+    model: snapshot.model,
+    envStatus: snapshot.envStatus,
+    envConfigured: snapshot.envStatus.apiKey.configured &&
+      snapshot.envStatus.baseUrl.configured &&
+      snapshot.envStatus.model.configured,
+  })
 }
 
 function getChatCompletionsUrl(baseUrl: string): string {
@@ -120,9 +163,9 @@ export async function getAzureDeepSeekDiagnostics(force = false): Promise<AzureD
 
   const { apiKey, baseUrl, model, apiKeyConfigured, baseUrlConfigured, modelConfigured, envStatus } = getProviderConfig()
   const endpoint = getEndpointMetadata(baseUrl)
-  if (!apiKey || !baseUrl || !modelConfigured) {
+  if (!apiKey || !baseUrl) {
     const diagnostics = {
-      configured: Boolean(apiKey && baseUrl && modelConfigured),
+      configured: Boolean(apiKey && baseUrl && model),
       apiKeyConfigured,
       baseUrlConfigured,
       modelConfigured,
@@ -260,8 +303,9 @@ export async function streamAzureDeepSeekResponse(
 ): Promise<ReadableStream> {
   const { apiKey, baseUrl, model, apiKeyConfigured, baseUrlConfigured, modelConfigured, envStatus } = getProviderConfig()
   const endpoint = getEndpointMetadata(baseUrl)
+  const snapshot = getAzureDeepSeekConfigSnapshot()
 
-  if (!apiKey || !baseUrl || !modelConfigured) {
+  if (!apiKey || !baseUrl) {
     console.error('[Azure DeepSeek] Missing provider configuration', {
       apiKeyConfigured,
       baseUrlConfigured,
@@ -270,7 +314,7 @@ export async function streamAzureDeepSeekResponse(
       ...endpoint,
       model,
     })
-    throw getSafeProviderError()
+    throw toProviderError(getSafeConfigurationError(), snapshot)
   }
 
   const controller = new AbortController()
@@ -303,7 +347,7 @@ export async function streamAzureDeepSeekResponse(
         ...endpoint,
         model,
       })
-      throw getSafeProviderError(response.status)
+      throw toProviderError(getSafeProviderError(response.status), snapshot, response.status)
     }
 
     const reader = response.body.getReader()
@@ -397,6 +441,127 @@ export async function streamAzureDeepSeekResponse(
       timeoutHit,
       streamStarted: false,
     })
-    throw timeoutHit ? getSafeTimeoutError() : getSafeProviderError()
+    throw toProviderError(timeoutHit ? getSafeTimeoutError() : getSafeProviderError(), snapshot, null, timeoutHit)
   }
+}
+
+export async function generateAzureDeepSeekJson(
+  messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>,
+  options: {
+    maxTokens?: number
+    temperature?: number
+    timeoutMs?: number
+    phase?: string
+    projectId?: string
+  } = {}
+): Promise<string> {
+  const {
+    apiKey,
+    baseUrl,
+    model,
+    apiKeyConfigured,
+    baseUrlConfigured,
+    modelConfigured,
+    envStatus,
+  } = getProviderConfig()
+  const endpoint = getEndpointMetadata(baseUrl)
+  const snapshot = getAzureDeepSeekConfigSnapshot()
+
+  if (!apiKey || !baseUrl) {
+    console.error('[Azure DeepSeek] Missing provider configuration', {
+      apiKeyConfigured,
+      baseUrlConfigured,
+      modelConfigured,
+      envStatus,
+      ...endpoint,
+      model,
+      phase: options.phase || 'json_generation',
+      projectId: options.projectId || null,
+    })
+    throw toProviderError(getSafeConfigurationError(), snapshot)
+  }
+
+  const maxTokens = Math.min(options.maxTokens ?? 8192, 8192)
+  const temperature = options.temperature ?? 0.2
+  const timeoutMs = options.timeoutMs ?? 60_000
+  const startedAt = Date.now()
+
+  console.info('[Azure DeepSeek] JSON request started', {
+    projectId: options.projectId || null,
+    phase: options.phase || 'json_generation',
+    maxTokens,
+    timeoutMs,
+    temperature,
+  })
+
+  let response: Response
+  let authMode: AuthMode = 'api-key'
+
+  try {
+    const result = await fetchWithAuthFallback(getChatCompletionsUrl(baseUrl), apiKey, {
+      method: 'POST',
+      body: JSON.stringify({
+        model,
+        messages,
+        temperature,
+        max_tokens: maxTokens,
+        stream: false,
+      }),
+      signal: AbortSignal.timeout(timeoutMs),
+    })
+    response = result.response
+    authMode = result.authMode
+  } catch (error: any) {
+    const timeoutHit = error?.name === 'TimeoutError' || error?.name === 'AbortError'
+    console.error('[Azure DeepSeek] JSON request failed before response', {
+      message: error?.message,
+      timeoutHit,
+      projectId: options.projectId || null,
+      phase: options.phase || 'json_generation',
+      durationMs: Date.now() - startedAt,
+    })
+    if (error instanceof AzureTextProviderError) throw error
+    if (error?.message?.startsWith('DeepSeek V4 Pro')) {
+      throw toProviderError(error, snapshot, null, timeoutHit)
+    }
+    throw toProviderError(timeoutHit ? getSafeTimeoutError() : getSafeProviderError(), snapshot, null, timeoutHit)
+  }
+
+  if (!response.ok) {
+    console.error('[Azure DeepSeek] JSON request failed', {
+      status: response.status,
+      authMode,
+      projectId: options.projectId || null,
+      phase: options.phase || 'json_generation',
+      durationMs: Date.now() - startedAt,
+    })
+    throw toProviderError(getSafeProviderError(response.status), snapshot, response.status)
+  }
+
+  const data = await response.json().catch(() => null)
+  const content = data?.choices?.[0]?.message?.content
+  const normalized = typeof content === 'string'
+    ? content
+    : Array.isArray(content)
+      ? content.map((part: any) => part?.text || '').join('')
+      : ''
+
+  if (!normalized.trim()) {
+    console.error('[Azure DeepSeek] JSON request returned empty content', {
+      projectId: options.projectId || null,
+      phase: options.phase || 'json_generation',
+      durationMs: Date.now() - startedAt,
+    })
+    throw new Error('The AI returned invalid file changes. Try again.')
+  }
+
+  console.info('[Azure DeepSeek] JSON request ended', {
+    projectId: options.projectId || null,
+    phase: options.phase || 'json_generation',
+    durationMs: Date.now() - startedAt,
+    responseChars: normalized.length,
+    authMode,
+  })
+
+  return normalized
 }

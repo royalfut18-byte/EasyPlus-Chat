@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { Archive, FolderOpen, MessageSquare, Plus, Search, Upload, Brain } from 'lucide-react'
+import { Trash2, FolderOpen, MessageSquare, Plus, Search, Upload, Brain } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
@@ -76,17 +76,17 @@ export function ProjectsClient({ initialProjects }: { initialProjects: ProjectCa
     }
   }
 
-  const archiveProject = async (id: string) => {
-    if (!window.confirm('Archive this project? Chats and files are kept, but the project is hidden from the main list.')) return
+  const deleteProject = async (id: string) => {
+    if (!window.confirm('Delete this project permanently? All chats, files, and memory will be deleted. This cannot be undone.')) return
 
     try {
       const response = await fetch(`/api/projects/${id}`, { method: 'DELETE' })
       const data = await response.json().catch(() => ({}))
-      if (!response.ok) throw new Error(data.error || 'Failed to archive project')
+      if (!response.ok) throw new Error(data.error || 'Failed to delete project')
       setProjects(prev => prev.filter(project => project.id !== id))
-      toast({ title: 'Project archived' })
+      toast({ title: 'Project deleted' })
     } catch (error: any) {
-      toast({ title: 'Could not archive project', description: error.message, variant: 'destructive' })
+      toast({ title: 'Could not delete project', description: error.message, variant: 'destructive' })
     }
   }
 
@@ -150,11 +150,11 @@ export function ProjectsClient({ initialProjects }: { initialProjects: ProjectCa
                   </p>
                 </Link>
                 <button
-                  onClick={() => archiveProject(project.id)}
+                  onClick={() => deleteProject(project.id)}
                   className="rounded-lg p-2 text-gray-500 opacity-0 transition-all hover:bg-red-500/10 hover:text-red-300 group-hover:opacity-100"
-                  title="Archive project"
+                  title="Delete project"
                 >
-                  <Archive className="h-4 w-4" />
+                  <Trash2 className="h-4 w-4" />
                 </button>
               </div>
 
@@ -221,7 +221,7 @@ function Metric({ href, icon, label, value }: { href: string; icon: React.ReactN
       href={href}
       className="inline-flex h-7 items-center gap-1.5 rounded-full border border-white/[0.06] bg-white/[0.02] px-2.5 text-[11px] leading-none text-gray-400 transition-colors hover:border-violet-400/20 hover:bg-violet-500/[0.06] hover:text-gray-200"
     >
-      <span className="h-3 w-3 shrink-0 text-violet-300/80">{icon}</span>
+      <span className="h-4 w-4 shrink-0 text-violet-300/80">{icon}</span>
       <span className="font-medium text-gray-200">{value ?? '-'}</span>
       <span>{labelText.toLowerCase()}</span>
     </Link>

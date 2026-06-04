@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Artifact } from '@/types/models'
 import { toast } from '@/components/ui/use-toast'
 import { getGeneratedFileExtension, getGeneratedFileLabel, isGeneratedFileArtifactLanguage } from '@/lib/generated-files'
+import { decodePossiblyEscapedText, type GeneratedZipFile } from '@/lib/generated-zip'
 import { cn } from '@/lib/utils'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism'
@@ -41,6 +42,11 @@ const PREVIEWABLE_LANGUAGES = new Set([
   'gslides',
   'pdf',
 ])
+
+type ArtifactWithZipPreview = Artifact & {
+  zipPreviewFiles?: GeneratedZipFile[]
+  zipPreviewPath?: string
+}
 
 function escapeXml(value: string): string {
   return value
@@ -766,7 +772,8 @@ function injectHtmlInteractionFallback(html: string): string {
 }
 
 function createPreviewHtml(title: string, content: string): string {
-  const trimmed = content.trim()
+  const normalizedContent = decodePossiblyEscapedText(content)
+  const trimmed = normalizedContent.trim()
   const html = /^<!DOCTYPE\s+html/i.test(trimmed) || /<html[\s>]/i.test(trimmed)
     ? trimmed
     : `<!DOCTYPE html>
@@ -777,7 +784,7 @@ function createPreviewHtml(title: string, content: string): string {
   <title>${escapeXml(title)}</title>
 </head>
 <body>
-${content}
+${normalizedContent}
 </body>
 </html>`
 
@@ -1119,11 +1126,26 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
   const canPreview = !!artifact && PREVIEWABLE_LANGUAGES.has(artifact.language)
   const isReact = artifact?.language === 'tsx' || artifact?.language === 'jsx'
   const isGeneratedFilePreview = !!artifact && isGeneratedFileArtifactLanguage(artifact.language)
+  const zipPreviewArtifact = artifact as ArtifactWithZipPreview | null
+  const zipBackedAttachment = artifact?.generatedAttachment?.mimeType === 'application/zip'
+    ? artifact.generatedAttachment
+    : null
   const generatedDownloadExtension =
     artifact && isGeneratedFileArtifactLanguage(artifact.language)
       ? getGeneratedFileExtension(artifact.language)
       : null
   const currentTab = activeTab
+
+  const getCodeDisplayContent = (artifact: Artifact | null): string => {
+    if (!artifact) return ''
+
+    const zipFiles = (artifact as ArtifactWithZipPreview).zipPreviewFiles
+    if (!zipFiles?.length) return artifact.code
+
+    return zipFiles
+      .map((file) => `// ${file.path}\n${file.content}`)
+      .join('\n\n')
+  }
 
   const getPreviewSrcDoc = (artifact: Artifact): string => {
     if (artifact.language === 'canva') return createCanvaHtml(artifact.title, artifact.code)
@@ -1186,18 +1208,26 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
     if (isGeneratedFileArtifactLanguage(artifact.language)) {
       return `${getGeneratedFileLabel(artifact.language)} preview`
     }
+    if (artifact.generatedAttachment?.mimeType === 'application/zip') {
+      const previewPath = (artifact as ArtifactWithZipPreview).zipPreviewPath
+      return previewPath ? `HTML preview from ${previewPath}` : 'HTML preview from ZIP'
+    }
     return `${getLanguageLabel(artifact)} artifact`
   }
 
   const getGeneratedFileDownloadUrl = (artifact: Artifact): string | null => {
-    if (!isGeneratedFileArtifactLanguage(artifact.language)) return null
+    if (!isGeneratedFileArtifactLanguage(artifact.language) && artifact.generatedAttachment?.mimeType !== 'application/zip') return null
     const attachment = artifact.generatedAttachment
     if (attachment?.attachmentId) {
       return `/api/attachments/file?attachmentId=${encodeURIComponent(attachment.attachmentId)}&download=1`
     }
     const storageKey = attachment?.storageKey || attachment?.storagePath
     if (storageKey) {
-      const name = attachment?.name || `${artifact.title}.${getGeneratedFileExtension(artifact.language)}`
+      const name = attachment?.name || (
+        isGeneratedFileArtifactLanguage(artifact.language)
+          ? `${artifact.title}.${getGeneratedFileExtension(artifact.language)}`
+          : `${artifact.title}.zip`
+      )
       const mimeType = attachment?.mimeType || 'application/octet-stream'
       return `/api/attachments/file?key=${encodeURIComponent(storageKey)}&name=${encodeURIComponent(name)}&mimeType=${encodeURIComponent(mimeType)}&download=1`
     }
@@ -1437,7 +1467,7 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
               showLineNumbers
               wrapLines
             >
-              {artifact.code}
+              {getCodeDisplayContent(artifact)}
             </SyntaxHighlighter>
           </div>
         )}
@@ -1452,18 +1482,24 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
             variant="ghost"
           >
             <Copy className="h-4 w-4 mr-2" />
-            {['docx', 'gdoc', 'xlsx', 'gsheet', 'pptx', 'gslides', 'pdf'].includes(artifact.language) ? 'Copy Preview' : 'Copy Code'}
+            {['docx', 'gdoc', 'xlsx', 'gsheet', 'pptx', 'gslides', 'pdf'].includes(artifact.language)
+              ? 'Copy Preview'
+              : zipPreviewArtifact?.zipPreviewFiles?.length
+                ? 'Copy Files'
+                : 'Copy Code'}
           </Button>
           <Button
             onClick={handleDownload}
             className="min-w-[130px] flex-1 bg-violet-600/80 hover:bg-violet-600 text-white"
           >
             <Download className="h-4 w-4 mr-2" />
-            {isGeneratedFilePreview
+            {zipBackedAttachment
+              ? 'Download ZIP'
+              : isGeneratedFilePreview
               ? `Download ${generatedDownloadExtension?.toUpperCase() || 'FILE'}`
               : 'Download'}
           </Button>
-          {!isGeneratedFilePreview && (
+          {!isGeneratedFilePreview && !zipBackedAttachment && (
             <Button
               onClick={handleDownloadZip}
               className="min-w-[130px] flex-1 bg-fuchsia-600/80 hover:bg-fuchsia-600 text-white"
@@ -1479,15 +1515,38 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
 
   const handleCopy = () => {
     if (!artifact?.code) return
-    navigator.clipboard.writeText(artifact.code)
+    navigator.clipboard.writeText(getCodeDisplayContent(artifact))
     toast({
       title: 'Copied to clipboard',
-      description: isGeneratedFilePreview ? 'Preview content copied successfully' : 'Artifact code copied successfully',
+      description: isGeneratedFilePreview
+        ? 'Preview content copied successfully'
+        : zipPreviewArtifact?.zipPreviewFiles?.length
+          ? 'Artifact files copied successfully'
+          : 'Artifact code copied successfully',
     })
   }
 
   const handleDownload = () => {
     if (!artifact?.code) return
+
+    if (zipBackedAttachment) {
+      const downloadUrl = getGeneratedFileDownloadUrl(artifact)
+      if (!downloadUrl) {
+        toast({
+          title: 'Download failed',
+          description: 'ZIP package could not be downloaded correctly. Please try again.',
+          variant: 'destructive',
+        })
+        return
+      }
+
+      window.open(downloadUrl, '_blank', 'noopener,noreferrer')
+      toast({
+        title: 'Download started',
+        description: `Downloading ${artifact.generatedAttachment?.name || `${artifact.title}.zip`}`,
+      })
+      return
+    }
 
     if (isGeneratedFileArtifactLanguage(artifact.language)) {
       const downloadUrl = getGeneratedFileDownloadUrl(artifact)
@@ -1538,7 +1597,7 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
             ? new Blob([createCanvaHtml(artifact.title, artifact.code)], { type: 'text/html' })
             : artifact.language === 'html'
               ? new Blob([createPreviewHtml(artifact.title, artifact.code)], { type: 'text/html' })
-              : new Blob([artifact.code], { type: 'text/plain' })
+              : new Blob([getCodeDisplayContent(artifact)], { type: 'text/plain' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url

@@ -1,5 +1,6 @@
 import type { Artifact } from '@/types/models'
 import { getGeneratedFileLabel, isGeneratedFileArtifactLanguage } from '@/lib/generated-files'
+import { decodePossiblyEscapedText, parseGeneratedZipFromResponse } from '@/lib/generated-zip'
 
 const BUILDABLE_KEYWORDS = [
   'make', 'build', 'create', 'design', 'code', 'website', 'landing page',
@@ -127,12 +128,25 @@ function inferLanguageFromCode(code: string, fallback?: string): Artifact['langu
   return 'text'
 }
 
+function normalizeArtifactCode(language: Artifact['language'], code: string): string {
+  if (language === 'html' || language === 'canva') {
+    return decodePossiblyEscapedText(code).trim()
+  }
+
+  if (language === 'text' || language === 'markdown') {
+    const decoded = decodePossiblyEscapedText(code)
+    return decoded.trim()
+  }
+
+  return code.trim()
+}
+
 function createArtifact(language: Artifact['language'], title: string, code: string): Artifact {
   return {
     id: `artifact-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
     title: title.trim() || 'Generated Artifact',
     language,
-    code: code.trim(),
+    code: normalizeArtifactCode(language, code),
     createdAt: new Date().toISOString(),
   }
 }
@@ -187,6 +201,11 @@ export function parseArtifactFromResponse(
 } {
   if (!artifactMode) {
     return { cleanContent: content, artifact: null }
+  }
+
+  const zipResult = parseGeneratedZipFromResponse(content)
+  if (zipResult.manifest) {
+    return { cleanContent: zipResult.cleanContent, artifact: null }
   }
 
   // Explicit fenced format, with tolerance for model variations.

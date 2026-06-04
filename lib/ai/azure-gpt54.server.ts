@@ -2,6 +2,10 @@ import 'server-only'
 
 import type { ChatAttachment, ChatMessage } from '@/types/models'
 import { getServerEnvStatus, readServerEnv } from '@/lib/server-env'
+import {
+  AzureTextProviderError,
+  type AzureTextProviderConfigSnapshot,
+} from '@/lib/ai/azure-provider-error'
 
 const DEFAULT_AZURE_GPT54_MODEL = 'gpt-5.4'
 const REQUEST_TIMEOUT_MS = 120_000
@@ -83,6 +87,20 @@ function getProviderConfig() {
   }
 }
 
+export function getAzureGpt54ConfigSnapshot(): AzureTextProviderConfigSnapshot {
+  const { model, apiKeyConfigured, baseUrlConfigured, modelConfigured, envStatus, baseUrl } = getProviderConfig()
+  const endpoint = getEndpointMetadata(baseUrl)
+  return {
+    provider: 'azure-gpt54',
+    apiKeyConfigured,
+    baseUrlConfigured,
+    modelConfigured,
+    ...endpoint,
+    model,
+    envStatus,
+  }
+}
+
 function getHeaders(apiKey: string, authMode: AuthMode): Record<string, string> {
   return {
     'Content-Type': 'application/json',
@@ -128,6 +146,27 @@ function getSafeTimeoutError(): Error {
 
 function getSafeConfigurationError(): Error {
   return new Error('Model provider is not configured.')
+}
+
+function toProviderError(
+  error: Error,
+  snapshot: AzureTextProviderConfigSnapshot,
+  status?: number | null,
+  timeoutHit = false
+): AzureTextProviderError {
+  return new AzureTextProviderError(error.message, {
+    provider: 'azure-gpt54',
+    status,
+    timeoutHit,
+    safeReason: error.message,
+    endpointHost: snapshot.endpointHost,
+    endpointPath: snapshot.endpointPath,
+    model: snapshot.model,
+    envStatus: snapshot.envStatus,
+    envConfigured: snapshot.envStatus.apiKey.configured &&
+      snapshot.envStatus.baseUrl.configured &&
+      snapshot.envStatus.model.configured,
+  })
 }
 
 async function fetchWithAuthFallback(
@@ -189,9 +228,9 @@ export async function getAzureGpt54Diagnostics(force = false): Promise<AzureGpt5
 
   const { apiKey, baseUrl, model, apiKeyConfigured, baseUrlConfigured, modelConfigured, envStatus } = getProviderConfig()
   const endpoint = getEndpointMetadata(baseUrl)
-  if (!apiKey || !baseUrl || !modelConfigured) {
+  if (!apiKey || !baseUrl) {
     const diagnostics = {
-      configured: Boolean(apiKey && baseUrl && modelConfigured),
+      configured: Boolean(apiKey && baseUrl && model),
       apiKeyConfigured,
       baseUrlConfigured,
       modelConfigured,
@@ -336,7 +375,9 @@ export async function generateAzureGpt54Json(
   } = getProviderConfig()
   const endpoint = getEndpointMetadata(baseUrl)
 
-  if (!apiKey || !baseUrl || !modelConfigured) {
+  const snapshot = getAzureGpt54ConfigSnapshot()
+
+  if (!apiKey || !baseUrl) {
     console.error('[Azure GPT-5.4] Missing provider configuration', {
       apiKeyConfigured,
       baseUrlConfigured,
@@ -347,7 +388,7 @@ export async function generateAzureGpt54Json(
       phase: options.phase || 'json_generation',
       projectId: options.projectId || null,
     })
-    throw getSafeConfigurationError()
+    throw toProviderError(getSafeConfigurationError(), snapshot)
   }
 
   const maxTokens = Math.min(options.maxTokens ?? 8192, 8192)
@@ -398,9 +439,11 @@ export async function generateAzureGpt54Json(
       error?.message?.startsWith('Model deployment') ||
       error?.message?.startsWith('The AI returned')
     ) {
-      throw error
+      throw error instanceof AzureTextProviderError
+        ? error
+        : toProviderError(error, snapshot, null, timeoutHit)
     }
-    throw timeoutHit ? getSafeTimeoutError() : getSafeProviderError()
+    throw toProviderError(timeoutHit ? getSafeTimeoutError() : getSafeProviderError(), snapshot, null, timeoutHit)
   }
 
   if (!response.ok) {
@@ -411,7 +454,7 @@ export async function generateAzureGpt54Json(
       phase: options.phase || 'json_generation',
       durationMs: Date.now() - startedAt,
     })
-    throw getSafeProviderError(response.status)
+    throw toProviderError(getSafeProviderError(response.status), snapshot, response.status)
   }
 
   const data = await response.json().catch(() => null)
@@ -451,7 +494,9 @@ export async function streamAzureGpt54Response(
   const { apiKey, baseUrl, model, apiKeyConfigured, baseUrlConfigured, modelConfigured, envStatus } = getProviderConfig()
   const endpoint = getEndpointMetadata(baseUrl)
 
-  if (!apiKey || !baseUrl || !modelConfigured) {
+  const snapshot = getAzureGpt54ConfigSnapshot()
+
+  if (!apiKey || !baseUrl) {
     console.error('[Azure GPT-5.4] Missing provider configuration', {
       apiKeyConfigured,
       baseUrlConfigured,
@@ -460,7 +505,7 @@ export async function streamAzureGpt54Response(
       envStatus,
       ...endpoint,
     })
-    throw getSafeConfigurationError()
+    throw toProviderError(getSafeConfigurationError(), snapshot)
   }
 
   const controller = new AbortController()
@@ -488,7 +533,7 @@ export async function streamAzureGpt54Response(
         model,
         ...endpoint,
       })
-      throw getSafeProviderError(response.status)
+      throw toProviderError(getSafeProviderError(response.status), snapshot, response.status)
     }
 
     const reader = response.body.getReader()
@@ -595,6 +640,6 @@ export async function streamAzureGpt54Response(
       timeoutHit,
       streamStarted: false,
     })
-    throw timeoutHit ? getSafeTimeoutError() : getSafeProviderError()
+    throw toProviderError(timeoutHit ? getSafeTimeoutError() : getSafeProviderError(), snapshot, null, timeoutHit)
   }
 }

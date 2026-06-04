@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getAccountEntitlement, getEntitlementBlockResponse } from '@/lib/account-entitlements.server'
-import { getProjectById, updateProject, archiveProject, ensureUserActive } from '@/lib/projects.server'
+import { getProjectById, updateProject, deleteProject, ensureUserActive } from '@/lib/projects.server'
 
 export async function GET(request: NextRequest) {
   try {
@@ -63,10 +63,10 @@ export async function DELETE(request: NextRequest) {
     if (!project || project.user_id !== user.id || project.archived_at) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
     await ensureUserActive(user.id)
-    await archiveProject(id, user.id)
+    await deleteProject(id, user.id)
     return NextResponse.json({ success: true })
   } catch (error: any) {
     console.error('[Projects API] DELETE failed:', error)
-    return NextResponse.json({ error: error.message || 'Failed to archive' }, { status: 500 })
+    return NextResponse.json({ error: error.message || 'Failed to delete project' }, { status: 500 })
   }
 }

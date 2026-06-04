@@ -22,13 +22,15 @@ export async function POST(_request: NextRequest, { params }: { params: Promise<
     return NextResponse.json(result, { headers: { 'Cache-Control': 'private, no-store, max-age=0' } })
   } catch (error: any) {
     const timeoutHit = /aborted|timeout|timed out/i.test(error?.message || '') || error?.name === 'AbortError' || error?.name === 'TimeoutError'
+    const diagnostics = Array.isArray(error?.easyCodeDiagnostics) ? error.easyCodeDiagnostics : undefined
     console.error('[Easy Code] Generate route failed', {
       message: error?.message,
       phase: 'generate_project',
       timeoutHit,
+      diagnostics,
     })
     return NextResponse.json(
-      { error: error?.message || 'Project was created but generation failed.' },
+      { error: error?.message || 'Project was created but generation failed.', diagnostics },
       { status: timeoutHit ? 504 : 500 }
     )
   }

@@ -17,6 +17,7 @@ import { Button } from '@/components/ui/button'
 import { toast } from '@/components/ui/use-toast'
 import { cleanAssistantText } from '@/lib/ai/format-response'
 import { getGeneratedFileLabel, isGeneratedFileArtifactLanguage } from '@/lib/generated-files'
+import { hideGeneratedZipManifestFromDisplay } from '@/lib/generated-zip'
 import 'katex/dist/katex.min.css'
 
 import type { ChatAttachment, Artifact } from '@/types/models'
@@ -67,7 +68,7 @@ export function MessageBubble({ role, content, model, onRegenerate, attachments,
   )
   if (isOnlyMarker) return null
 
-  const safeContent = !isUser ? cleanAssistantText(rawContent) : rawContent
+  const safeContent = !isUser ? cleanAssistantText(hideGeneratedZipManifestFromDisplay(rawContent)) : rawContent
 
   const getAttachmentOpenUrl = (attachment: ChatAttachment): string | null => {
     if (attachment.dataUrl) return attachment.dataUrl
@@ -100,6 +101,8 @@ export function MessageBubble({ role, content, model, onRegenerate, attachments,
   const artifactSubtitle = artifact
     ? isGeneratedFileArtifactLanguage(artifact.language)
       ? `${getGeneratedFileLabel(artifact.language)} preview`
+      : artifact.generatedAttachment?.mimeType === 'application/zip'
+        ? 'html preview from zip'
       : `${artifact.language} artifact`
     : null
 
