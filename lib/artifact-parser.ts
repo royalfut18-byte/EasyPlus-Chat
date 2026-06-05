@@ -189,6 +189,16 @@ function extractHtmlDocument(content: string): string | null {
   return afterStart.trim()
 }
 
+function extractHtmlLikeFragment(content: string): string | null {
+  const trimmed = decodePossiblyEscapedText(content).trim()
+  if (!trimmed) return null
+  if (/^<!DOCTYPE\s+html/i.test(trimmed) || /^<html[\s>]/i.test(trimmed)) return trimmed
+  if (/^<(main|section|div|article|button|form|svg|style|script|canvas)\b/i.test(trimmed)) {
+    return trimmed
+  }
+  return null
+}
+
 function getPreviewMode(language: Artifact['language'] | null): ArtifactParseDiagnostics['previewMode'] {
   if (!language) return 'none'
   if (isGeneratedFileArtifactLanguage(language)) return 'generated_file'
@@ -483,6 +493,39 @@ export function parseArtifactFromResponse(
       cleanContent: buildCleanContent(content, htmlDocument, validated.artifact),
       artifact: validated.artifact,
       diagnostics: validated.diagnostics,
+    }
+  }
+
+  const artifactIntentDetected = artifactMode || (userPrompt ? containsBuildableIntent(userPrompt) : false)
+  if (artifactIntentDetected) {
+    const genericFenceRegex = /```\s*(html|svg|markdown|md|jsx|tsx|javascript|typescript|css|json|text)?[^\n`]*\r?\n([\s\S]*?)```/i
+    const genericFenceMatch = content.match(genericFenceRegex)
+
+    if (genericFenceMatch) {
+      const [fullMatch, lang, code] = genericFenceMatch
+      const artifact = createArtifact(
+        inferLanguageFromCode(code, lang),
+        generateTitleFromPrompt(userPrompt || ''),
+        code,
+        'fenced_code'
+      )
+      const validated = validateArtifact(artifact, userPrompt, 'fenced_code')
+      return {
+        cleanContent: buildCleanContent(content, fullMatch, validated.artifact),
+        artifact: validated.artifact,
+        diagnostics: validated.diagnostics,
+      }
+    }
+
+    const htmlFragment = extractHtmlLikeFragment(content)
+    if (htmlFragment) {
+      const artifact = createArtifact('html', generateTitleFromHtml(htmlFragment, userPrompt), htmlFragment, 'raw_html')
+      const validated = validateArtifact(artifact, userPrompt, 'raw_html')
+      return {
+        cleanContent: buildCleanContent(content, htmlFragment, validated.artifact),
+        artifact: validated.artifact,
+        diagnostics: validated.diagnostics,
+      }
     }
   }
 

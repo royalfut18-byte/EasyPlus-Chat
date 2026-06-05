@@ -31,7 +31,7 @@ import {
 import { buildContext, formatContextForPrompt, searchCrossConversationContext } from '@/lib/ai/context-builder'
 import { shouldUpdateSummary, updateConversationSummary, chunkLongMessage, saveAttachmentMemory } from '@/lib/ai/conversation-summary'
 import { isLongTaskRequest, LONG_TASK_SYSTEM_ADDENDUM } from '@/lib/ai/long-task'
-import type { ChatMessage, ReasoningMode } from '@/types/models'
+import type { ChatAttachment, ChatMessage, ReasoningMode } from '@/types/models'
 import { getPublicModelName, getResolvedInternalModel, toPublicModelId } from '@/lib/ai/model-routing.server'
 import { getReasoningProfile, getReasoningSystemAddendum, type ReasoningProfile } from '@/lib/ai/reasoning-profiles'
 import { getAccountEntitlement, getEntitlementBlockResponse } from '@/lib/account-entitlements.server'
@@ -41,6 +41,7 @@ import {
   type AttachmentUnderstandingDiagnostics,
   prepareCurrentMessageAttachmentsForModel,
   prepareMessagesForAttachmentModel,
+  reconstructHistoricalAttachmentsForFollowUp,
   validateCurrentMessageAttachments,
 } from '@/lib/ai/attachment-understanding.server'
 import { CHAT_IMAGE_UNDERSTANDING_NOT_CONFIGURED_ERROR } from '@/lib/chat-attachments'
@@ -145,6 +146,25 @@ function buildNoProviderAvailableError(attempts: ChatProviderAttempt[]): Error {
     return new Error('Model provider is not configured.')
   }
   return new Error('No chat provider is currently available. Please check provider configuration.')
+}
+
+function mergeMessageAttachments(
+  existing: ChatMessage['attachments'],
+  incoming: ChatAttachment[]
+): ChatAttachment[] | undefined {
+  const merged = [...(existing || [])]
+  const seen = new Set(
+    merged.map((attachment) => attachment.attachmentId || attachment.storageKey || attachment.storagePath || `${attachment.name}|${attachment.mimeType}`)
+  )
+
+  for (const attachment of incoming) {
+    const key = attachment.attachmentId || attachment.storageKey || attachment.storagePath || `${attachment.name}|${attachment.mimeType}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    merged.push(attachment)
+  }
+
+  return merged.length > 0 ? merged : undefined
 }
 
 export async function POST(request: NextRequest) {
@@ -283,10 +303,10 @@ export async function POST(request: NextRequest) {
       content: sanitizeDatabaseText(message.content),
     }))
     const userMessage = normalizedMessages[normalizedMessages.length - 1]
-    const currentAttachments = userMessage.attachments || []
-    const currentMessageAttachmentsCount = currentAttachments.length
-    const hasCurrentAttachments = currentMessageAttachmentsCount > 0
-    const hasCurrentImageAttachments = currentAttachments.some((attachment: any) => attachment.type === 'image')
+    let currentAttachments = userMessage.attachments || []
+    let currentMessageAttachmentsCount = currentAttachments.length
+    let hasCurrentAttachments = currentMessageAttachmentsCount > 0
+    let hasCurrentImageAttachments = currentAttachments.some((attachment: any) => attachment.type === 'image')
     let providerForRequest = validationModel.provider
     let visionFallbackUsed = false
     let azureVisionStatusCode: number | null = null
@@ -371,7 +391,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'No valid messages to process' }, { status: 400 })
     }
 
-    const latestUserMessage = cleanedMessages[cleanedMessages.length - 1]
+    let latestUserMessage = cleanedMessages[cleanedMessages.length - 1]
     let messagesToSend = cleanedMessages as ChatMessage[]
     const detectedQuestionNumber = parseQuestionNumberRequest(latestUserMessage.content)
 
@@ -427,6 +447,7 @@ RULES FOR USING THESE RESULTS:
     // Stage: Document extraction
     stage = 'document-extraction'
     let documentContext = ''
+    let historicalImageAttachments: ChatAttachment[] = []
     const extractedDocTexts = new Map<string, string>()
     const attachmentProcessingStatuses = new Map<string, string>()
     const currentDocumentFileNames: string[] = []
@@ -489,6 +510,53 @@ RULES FOR USING THESE RESULTS:
       }
     }
 
+    if (!hasCurrentAttachments && conversationId) {
+      try {
+        const historicalFollowUp = await reconstructHistoricalAttachmentsForFollowUp({
+          db,
+          userId: user.id,
+          conversationId,
+          latestMessage: latestUserMessage.content,
+          currentMessages: cleanedMessages,
+        })
+
+        if (historicalFollowUp.userMessageAugmented && historicalFollowUp.attachments.length > 0) {
+          historicalImageAttachments = historicalFollowUp.attachments.filter((attachment) => attachment.type === 'image')
+          if (historicalImageAttachments.length > 0) {
+            latestUserMessage = {
+              ...latestUserMessage,
+              attachments: mergeMessageAttachments(latestUserMessage.attachments, historicalImageAttachments),
+            }
+            currentAttachments = latestUserMessage.attachments || []
+            currentMessageAttachmentsCount = currentAttachments.length
+            hasCurrentAttachments = currentMessageAttachmentsCount > 0
+            hasCurrentImageAttachments = currentAttachments.some((attachment: any) => attachment.type === 'image')
+            messagesToSend = [...messagesToSend.slice(0, -1), latestUserMessage]
+          }
+        }
+      } catch (historicalErr: any) {
+        console.warn('[Chat API] Historical attachment reconstruction skipped:', historicalErr.message)
+      }
+    }
+
+    if (hasCurrentImageAttachments && providerForRequest !== 'azure-gpt54' && providerForRequest !== 'google') {
+      const azureVisionDiagnostics = await getAzureGpt54Diagnostics()
+      azureGpt54Configured = azureVisionDiagnostics.configured
+      azureVisionStatusCode = azureVisionDiagnostics.status
+      azureVisionSafeReason = azureVisionDiagnostics.safeReason
+
+      if (!azureVisionDiagnostics.probeOk) {
+        const publicError = azureVisionDiagnostics.configured
+          ? 'Image understanding is temporarily unavailable right now.'
+          : CHAT_IMAGE_UNDERSTANDING_NOT_CONFIGURED_ERROR
+
+        return NextResponse.json({ error: publicError }, { status: 503 })
+      }
+
+      providerForRequest = 'azure-gpt54'
+      visionFallbackUsed = true
+    }
+
     // Reconstruct context from historical messages that had attachments (skip in instant mode)
     let historicalAttachmentContext = ''
     if (reasoningMode !== 'instant') {
@@ -499,7 +567,7 @@ RULES FOR USING THESE RESULTS:
             if (att.type === 'document' && att.textContent) {
               historicalAttachmentContext += `[Previously attached document: ${att.name}]\n${att.textContent.substring(0, 4000)}\n[/Previously attached document]\n\n`
             } else if (att.type === 'image') {
-              historicalAttachmentContext += `[Previously attached image: ${att.name}] (image was shared earlier in this conversation)\n\n`
+              historicalAttachmentContext += `[Previously attached image: ${att.name}] The original image can be reloaded from conversation history when the user refers to it again.\n\n`
             }
           }
         }
@@ -748,7 +816,7 @@ RULES FOR USING THESE RESULTS:
       messageHasAttachments: hasCurrentAttachments,
       messageHasImages: hasCurrentImageAttachments,
       attachmentCount: currentMessageAttachmentsCount,
-      imageCount: userMessage.attachments?.filter((attachment: any) => attachment.type === 'image').length || 0,
+      imageCount: currentAttachments.filter((attachment: any) => attachment.type === 'image').length,
       fileTypes: [] as string[],
       extractionSucceededCount: 0,
       extractionFailedCount: 0,
@@ -772,7 +840,7 @@ RULES FOR USING THESE RESULTS:
     if (hasCurrentAttachments) {
       const hydratedCurrentMessage = messagesForModel[messagesForModel.length - 1]
       const preparedAttachmentContext = await prepareCurrentMessageAttachmentsForModel({
-        attachments: userMessage.attachments,
+        attachments: currentAttachments,
         comprehensive: comprehensiveDocumentRequest,
         hydratedCurrentMessage,
         extractionResult: documentExtractionResult,

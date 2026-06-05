@@ -237,6 +237,20 @@ function shouldRouteToArtifactMode(
   return options.manualArtifactMode || detectArtifactIntent(message, options.currentArtifact)
 }
 
+function looksLikeStreamingArtifactPayload(content: string): boolean {
+  const trimmed = content.trimStart()
+  if (!trimmed) return false
+  return (
+    trimmed.includes('<EASYPLUS_ARTIFACT') ||
+    trimmed.includes('```artifact:') ||
+    trimmed.includes('ARTIFACT_BLOCK_START') ||
+    /^```(?:html|svg|jsx|tsx|css|javascript|typescript|markdown|md)\b/i.test(trimmed) ||
+    /^<!DOCTYPE\s+html/i.test(trimmed) ||
+    /^<html[\s>]/i.test(trimmed) ||
+    /^<(main|section|div|article|button|form|svg|style|script|canvas)\b/i.test(trimmed)
+  )
+}
+
 type ZipPreviewArtifact = Artifact & {
   zipPreviewFiles?: GeneratedZipFile[]
   zipPreviewPath?: string
@@ -1568,7 +1582,10 @@ export default function ChatPage() {
 
         // Strip <thinking> tags before displaying to user
         const displayContent = hideGeneratedZipManifestFromDisplay(stripThinkingTags(assistantContent))
-        const shouldSuppressStreamingContent = requestArtifactMode || !!requestGeneratedFileIntent
+        const shouldSuppressStreamingContent =
+          requestArtifactMode ||
+          !!requestGeneratedFileIntent ||
+          looksLikeStreamingArtifactPayload(displayContent)
 
         // Keep artifact/file generation responses out of the visible chat bubble until final parsing completes.
         if (!shouldSuppressStreamingContent && contentStarted && displayContent && selectedConversationIdRef.current === sendConversationId) {
@@ -2298,7 +2315,10 @@ export default function ChatPage() {
         }
 
         const displayContent = hideGeneratedZipManifestFromDisplay(stripThinkingTags(assistantContent))
-        const shouldSuppressStreamingContent = requestArtifactMode || !!requestGeneratedFileIntent
+        const shouldSuppressStreamingContent =
+          requestArtifactMode ||
+          !!requestGeneratedFileIntent ||
+          looksLikeStreamingArtifactPayload(displayContent)
         if (!shouldSuppressStreamingContent && displayContent && selectedConversationIdRef.current === conversationId) {
           setMessages((prev) =>
             processMessages(

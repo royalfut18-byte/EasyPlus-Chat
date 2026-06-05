@@ -1,5 +1,5 @@
 import type { ChatAttachment } from '@/types/models'
-import { isR2Configured, createPresignedDownloadUrl } from '@/lib/storage/r2'
+import { downloadObjectFromR2, isR2Configured } from '@/lib/storage/r2'
 import { inflateRawSync } from 'node:zlib'
 import { formatZipContext, readSafeZipAttachment } from '@/lib/zip/safe-zip.server'
 
@@ -239,11 +239,7 @@ function extractPptxText(buffer: Buffer): string {
 async function fetchR2FileAsBuffer(storageKey: string): Promise<Buffer | null> {
   try {
     if (!isR2Configured()) return null
-    const signedUrl = await createPresignedDownloadUrl(storageKey)
-    const res = await fetch(signedUrl)
-    if (!res.ok) return null
-    const arrayBuffer = await res.arrayBuffer()
-    return Buffer.from(arrayBuffer)
+    return await downloadObjectFromR2(storageKey)
   } catch (err: any) {
     console.error('[Document Extract] R2 fetch failed:', err.message)
     return null

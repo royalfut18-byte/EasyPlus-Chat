@@ -1,5 +1,5 @@
 import type { ChatAttachment, ChatMessage } from '@/types/models'
-import { createPresignedDownloadUrl, isR2Configured } from '@/lib/storage/r2'
+import { downloadObjectFromR2, isR2Configured } from '@/lib/storage/r2'
 
 const MODEL_IMAGE_MIME_TYPES = new Set(['image/png', 'image/jpeg', 'image/jpg', 'image/webp'])
 const MAX_MODEL_IMAGE_BYTES = 5 * 1024 * 1024
@@ -47,21 +47,14 @@ async function hydrateImageAttachment(
     throw new Error('Cloud image storage is not configured.')
   }
 
-  const signedUrl = await createPresignedDownloadUrl(storageKey)
-  const response = await fetch(signedUrl, { cache: 'no-store' })
-
-  if (!response.ok) {
-    throw new Error(`Could not load uploaded image "${attachment.name}" from cloud storage.`)
-  }
-
-  const arrayBuffer = await response.arrayBuffer()
-  if (arrayBuffer.byteLength > MAX_MODEL_IMAGE_BYTES) {
+  const buffer = await downloadObjectFromR2(storageKey)
+  if (buffer.byteLength > MAX_MODEL_IMAGE_BYTES) {
     throw new Error(
-      `Image "${attachment.name}" is ${formatMB(arrayBuffer.byteLength)}MB after compression. Please upload a smaller image.`
+      `Image "${attachment.name}" is ${formatMB(buffer.byteLength)}MB after compression. Please upload a smaller image.`
     )
   }
 
-  const dataUrl = `data:${mimeType};base64,${Buffer.from(arrayBuffer).toString('base64')}`
+  const dataUrl = `data:${mimeType};base64,${buffer.toString('base64')}`
 
   return {
     ...attachment,

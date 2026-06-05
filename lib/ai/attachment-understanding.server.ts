@@ -1,5 +1,6 @@
 import 'server-only'
 
+import type { SupabaseClient } from '@supabase/supabase-js'
 import type { ChatAttachment, ChatMessage } from '@/types/models'
 import {
   buildDocumentContext,
@@ -35,12 +36,18 @@ type PreparedAttachmentKind =
   | 'unknown'
 
 export interface PreparedAttachmentContext {
+  id?: string
   kind: PreparedAttachmentKind
   name: string
   mimeType: string
   sizeBytes: number
   textContent?: string
   imageDataUrl?: string
+  extractedItems?: Array<{
+    name: string
+    kind: string
+    textContent?: string
+  }>
   warning?: string
 }
 
@@ -67,6 +74,12 @@ export interface PreparedCurrentMessageAttachments {
   diagnostics: AttachmentUnderstandingDiagnostics
 }
 
+export interface HistoricalAttachmentFollowUpResult {
+  attachments: ChatAttachment[]
+  userMessageAugmented: boolean
+  source: 'image' | 'file' | 'none'
+}
+
 function detectPreparedAttachmentKind(attachment: ChatAttachment): PreparedAttachmentKind {
   const mimeType = normalizeChatAttachmentMimeType(attachment.mimeType)
   const ext = getChatAttachmentExtension(attachment.name)
@@ -88,6 +101,86 @@ function detectPreparedAttachmentKind(attachment: ChatAttachment): PreparedAttac
 function trimPreparedDocumentText(text: string): string {
   if (text.length <= MAX_CHAT_TOTAL_EXTRACTED_TEXT_CHARS) return text
   return `${text.slice(0, MAX_CHAT_TOTAL_EXTRACTED_TEXT_CHARS)}\n\n[Document truncated due to attachment context limit.]`
+}
+
+function looksLikeImageFollowUp(message: string): boolean {
+  return /\b(image|photo|picture|screenshot|diagram|graph|chart|ui shot|screen shot)\b/i.test(message) &&
+    /\b(sent|uploaded|shared|attached|earlier|before|previous|last|that|this)\b/i.test(message)
+}
+
+function looksLikeFileFollowUp(message: string): boolean {
+  return /\b(file|document|pdf|docx|word|pptx|powerpoint|csv|xlsx|spreadsheet|zip|attachment)\b/i.test(message) &&
+    /\b(sent|uploaded|shared|attached|earlier|before|previous|last|that|this|summari[sz]e|look at|compare)\b/i.test(message)
+}
+
+function normalizeHistoricalAttachmentRow(row: any): ChatAttachment | null {
+  const importantDetails = row?.important_details || {}
+  const storageKey = row?.storage_path || importantDetails.storageKey || importantDetails.storagePath || null
+  const fileType = row?.file_type === 'image' ? 'image' : 'document'
+  const attachment: ChatAttachment = {
+    type: fileType,
+    name: row?.file_name || 'attachment',
+    mimeType: row?.mime_type || 'application/octet-stream',
+    size: typeof row?.size_bytes === 'number' ? row.size_bytes : undefined,
+    textContent: row?.extracted_text || undefined,
+    storageProvider: storageKey ? 'r2' : undefined,
+    storageKey: storageKey || undefined,
+    storagePath: storageKey || undefined,
+    bucket: importantDetails.bucket || undefined,
+    attachmentId: row?.id || undefined,
+    processingStatus: row?.processing_status || undefined,
+    ocrStatus: row?.ocr_status || undefined,
+    pageCount: row?.page_count || undefined,
+  }
+
+  if (attachment.type === 'image' && !attachment.storageKey && !attachment.dataUrl) {
+    return null
+  }
+
+  return attachment
+}
+
+export async function reconstructHistoricalAttachmentsForFollowUp(params: {
+  db: SupabaseClient
+  userId: string
+  conversationId: string
+  latestMessage: string
+  currentMessages: ChatMessage[]
+}): Promise<HistoricalAttachmentFollowUpResult> {
+  const { db, userId, conversationId, latestMessage, currentMessages } = params
+  const latestCurrentMessage = currentMessages[currentMessages.length - 1]
+  if (latestCurrentMessage?.attachments?.length) {
+    return { attachments: [], userMessageAugmented: false, source: 'none' }
+  }
+
+  const wantsImage = looksLikeImageFollowUp(latestMessage)
+  const wantsFile = !wantsImage && looksLikeFileFollowUp(latestMessage)
+  if (!wantsImage && !wantsFile) {
+    return { attachments: [], userMessageAugmented: false, source: 'none' }
+  }
+
+  const { data: rows, error } = await db
+    .from('attachments')
+    .select('id, file_name, file_type, mime_type, storage_path, extracted_text, important_details, processing_status, ocr_status, page_count, created_at')
+    .eq('conversation_id', conversationId)
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+    .limit(wantsImage ? 4 : 6)
+
+  if (error || !rows?.length) {
+    return { attachments: [], userMessageAugmented: false, source: wantsImage ? 'image' : 'file' }
+  }
+
+  const filteredRows = (rows as any[]).filter((row) => wantsImage ? row.file_type === 'image' : row.file_type !== 'image')
+  const attachments = filteredRows
+    .map(normalizeHistoricalAttachmentRow)
+    .filter((attachment): attachment is ChatAttachment => Boolean(attachment))
+
+  return {
+    attachments,
+    userMessageAugmented: attachments.length > 0 && wantsImage,
+    source: wantsImage ? 'image' : 'file',
+  }
 }
 
 function buildPreparedAttachments(
@@ -113,6 +206,7 @@ function buildPreparedAttachments(
     }
 
     return {
+      id: attachment.attachmentId,
       kind,
       name: attachment.name,
       mimeType: normalizeChatAttachmentMimeType(attachment.mimeType),

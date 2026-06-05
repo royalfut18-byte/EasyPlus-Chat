@@ -806,10 +806,10 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
   useEffect(() => {
     if (!artifact) return
     const previewable = PREVIEWABLE_LANGUAGES.has(artifact.language)
-    setActiveTab(previewable && !artifact.validationError ? 'preview' : 'code')
+    setActiveTab(previewable ? 'preview' : 'code')
     setRefreshKey(k => k + 1)
-    setIsPreviewLoading(previewable && !artifact.validationError)
-    setPreviewRuntimeError(artifact.validationError || null)
+    setIsPreviewLoading(previewable)
+    setPreviewRuntimeError(null)
   }, [artifact?.id, artifact?.language, artifact?.validationError])
 
   useEffect(() => {
@@ -908,7 +908,7 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
   const canPreview = !!artifact && PREVIEWABLE_LANGUAGES.has(artifact.language)
   const isReact = artifact?.language === 'tsx' || artifact?.language === 'jsx'
   const isGeneratedFilePreview = !!artifact && isGeneratedFileArtifactLanguage(artifact.language)
-  const previewBlocked = !!artifact?.validationError
+  const previewBlocked = false
   const zipPreviewArtifact = artifact as ArtifactWithZipPreview | null
   const zipBackedAttachment = artifact?.generatedAttachment?.mimeType === 'application/zip'
     ? artifact.generatedAttachment
@@ -1153,8 +1153,8 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
             <div className="w-px h-6 bg-white/10 mx-1" />
             <button
               onClick={() => {
-                setPreviewRuntimeError(artifact?.validationError || null)
-                setIsPreviewLoading(!artifact?.validationError)
+                setPreviewRuntimeError(null)
+                setIsPreviewLoading(true)
                 setRefreshKey(k => k + 1)
               }}
               title="Refresh preview"
@@ -1226,8 +1226,8 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
                         variant="ghost"
                         className="border border-white/10 bg-white/5 hover:bg-white/10"
                         onClick={() => {
-                          setPreviewRuntimeError(artifact.validationError || null)
-                          setIsPreviewLoading(!artifact.validationError)
+                          setPreviewRuntimeError(null)
+                          setIsPreviewLoading(true)
                           setRefreshKey(k => k + 1)
                         }}
                       >
