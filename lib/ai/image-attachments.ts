@@ -29,14 +29,14 @@ async function hydrateImageAttachment(
   const mimeType = normalizeImageMimeType(attachment.mimeType)
   if (!MODEL_IMAGE_MIME_TYPES.has(mimeType)) {
     if (!isCurrentMessage) return attachment
-    throw new Error(`Unsupported image type for "${attachment.name}". Please upload PNG, JPEG, or WebP.`)
+    throw new Error('Unsupported image type. Please upload PNG, JPG, or WEBP.')
   }
 
   const storageKey = getStorageKey(attachment)
   if (!storageKey) {
     // Historical messages may lack storage keys — skip silently
     if (!isCurrentMessage) return attachment
-    throw new Error(`Image "${attachment.name}" did not finish uploading. Remove it and upload it again.`)
+    throw new Error('Image upload was not attached to the message. Please upload it again.')
   }
 
   if (!storageKey.startsWith(`uploads/${userId}/`)) {
@@ -44,14 +44,12 @@ async function hydrateImageAttachment(
   }
 
   if (!isR2Configured()) {
-    throw new Error('Cloud image storage is not configured.')
+    throw new Error('Could not read the uploaded image. Please re-upload it.')
   }
 
   const buffer = await downloadObjectFromR2(storageKey)
   if (buffer.byteLength > MAX_MODEL_IMAGE_BYTES) {
-    throw new Error(
-      `Image "${attachment.name}" is ${formatMB(buffer.byteLength)}MB after compression. Please upload a smaller image.`
-    )
+    throw new Error('Image is too large. Please upload a smaller image.')
   }
 
   const dataUrl = `data:${mimeType};base64,${buffer.toString('base64')}`

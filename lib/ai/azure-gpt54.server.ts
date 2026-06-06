@@ -266,6 +266,18 @@ function toAzureChatMessages(messages: ChatMessage[], systemPromptText: string):
   ]
 }
 
+function getVisionPayloadDiagnostics(messages: ChatMessage[]) {
+  const imageCount = messages.reduce((count, message) => {
+    if (message.role !== 'user' || !message.attachments) return count
+    return count + message.attachments.filter((attachment) => attachment.type === 'image' && !!attachment.dataUrl).length
+  }, 0)
+
+  return {
+    messageCount: messages.length,
+    imageCount,
+  }
+}
+
 export async function getAzureGpt54Diagnostics(force = false): Promise<AzureGpt54Diagnostics> {
   const now = Date.now()
   const lastProbeAt = new Date(now).toISOString()
@@ -574,6 +586,7 @@ export async function streamAzureGpt54Response(
   const endpoint = getEndpointMetadata(baseUrl)
 
   const snapshot = getAzureGpt54ConfigSnapshot()
+  const payloadDiagnostics = getVisionPayloadDiagnostics(messages)
 
   if (!apiKey || !baseUrl) {
     console.error('[Azure GPT-5.4] Missing provider configuration', {
@@ -591,13 +604,22 @@ export async function streamAzureGpt54Response(
   const totalTimeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
 
   try {
+    console.info('[Azure GPT-5.4] Stream request started', {
+      model,
+      temperature,
+      maxTokens: Math.min(maxTokens, 8192),
+      endpointHost: endpoint.endpointHost,
+      endpointPath: endpoint.endpointPath,
+      ...payloadDiagnostics,
+    })
+
     const { response, authMode } = await fetchWithAuthFallback(getChatCompletionsUrl(baseUrl), apiKey, {
       method: 'POST',
       body: JSON.stringify({
         model,
         messages: toAzureChatMessages(messages, systemPromptText),
         temperature,
-        max_tokens: Math.min(maxTokens, 8192),
+        ...getCompletionTokenField(model, Math.min(maxTokens, 8192)),
         stream: true,
       }),
       signal: controller.signal,
@@ -679,6 +701,7 @@ export async function streamAzureGpt54Response(
             console.error('[Azure GPT-5.4] Stream closed without content', {
               streamStarted: true,
               timeoutHit: false,
+              ...payloadDiagnostics,
             })
             throw getSafeProviderError()
           }
@@ -689,6 +712,7 @@ export async function streamAzureGpt54Response(
             message: error.message,
             streamStarted: true,
             timeoutHit: firstTokenTimeoutHit,
+            ...payloadDiagnostics,
           })
           streamController.error(firstTokenTimeoutHit ? getSafeTimeoutError() : getSafeProviderError())
         } finally {

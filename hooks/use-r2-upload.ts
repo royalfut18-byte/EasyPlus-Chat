@@ -226,9 +226,9 @@ export function useR2Upload() {
         attachment: {
           ...attachmentBase,
           uploadStatus: 'failed',
-          uploadError: 'Unsupported image type. Please upload PNG, JPEG, or WebP.',
+          uploadError: 'Unsupported image type. Please upload PNG, JPG, or WEBP.',
         },
-        error: 'Unsupported image type. Please upload PNG, JPEG, or WebP.',
+        error: 'Unsupported image type. Please upload PNG, JPG, or WEBP.',
       }
     }
 

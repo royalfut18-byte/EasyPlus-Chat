@@ -7,6 +7,7 @@ import {
   type DocumentExtractionResult,
 } from '@/lib/ai/document-extract'
 import { hydrateImageAttachmentsForModel } from '@/lib/ai/image-attachments'
+import { downloadObjectFromR2, isR2Configured } from '@/lib/storage/r2'
 import {
   CHAT_ATTACHMENT_READ_ERROR,
   CHAT_ATTACHMENT_TOO_MANY_ERROR,
@@ -57,8 +58,12 @@ export interface AttachmentUnderstandingDiagnostics {
   attachmentCount: number
   imageCount: number
   fileTypes: string[]
+  mimeTypes: string[]
+  byteSizes: number[]
   extractionSucceededCount: number
   extractionFailedCount: number
+  storageReadSuccessCount: number
+  preparedDataUrlsCount: number
   providerSelected: string
   visionFallbackUsed: boolean
   azureGpt54Configured: boolean
@@ -78,6 +83,171 @@ export interface HistoricalAttachmentFollowUpResult {
   attachments: ChatAttachment[]
   userMessageAugmented: boolean
   source: 'image' | 'file' | 'none'
+}
+
+export type PreparedImageAttachment = {
+  id: string
+  filename: string
+  mimeType: string
+  sizeBytes: number
+  dataUrl: string
+}
+
+const MAX_MODEL_IMAGE_BYTES = 5 * 1024 * 1024
+
+type AttachmentRow = {
+  id: string
+  conversation_id: string
+  file_name: string | null
+  mime_type: string | null
+  storage_path: string | null
+  important_details?: Record<string, any> | null
+}
+
+function getAttachmentStorageKey(attachment: Partial<ChatAttachment> & Record<string, any>): string | null {
+  return attachment.storageKey ||
+    attachment.storage_key ||
+    attachment.storagePath ||
+    attachment.storage_path ||
+    null
+}
+
+function buildImagePreparationError(message: string): Error {
+  return new Error(message)
+}
+
+function looksLikeImageReference(message: string): boolean {
+  return /\b(the image|the screenshot|the photo|the picture|the attached file|look at the image i sent|look at the screenshot i sent|analyze this|compare these|what does this say|translate the text in it|what should i press|fix this error|what is in this image)\b/i.test(message)
+}
+
+function looksLikeImagePronounFollowUp(message: string): boolean {
+  return /\b(it|this|that)\b/i.test(message) &&
+    /\b(say|says|show|shows|mean|means|press|click|button|error|read|translate|analy[sz]e|look|fix|compare|what)\b/i.test(message)
+}
+
+function getRecentImageAttachmentsFromMessages(currentMessages: ChatMessage[]): ChatAttachment[] {
+  const priorMessages = currentMessages.slice(0, -1).filter((message) => message.role === 'user')
+  const attachments = priorMessages
+    .flatMap((message) => message.attachments || [])
+    .filter((attachment) => attachment.type === 'image')
+    .reverse()
+
+  const deduped: ChatAttachment[] = []
+  const seen = new Set<string>()
+  for (const attachment of attachments) {
+    const key = attachment.attachmentId || getAttachmentStorageKey(attachment) || `${attachment.name}|${attachment.mimeType}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    deduped.push(attachment)
+    if (deduped.length >= MAX_CHAT_IMAGE_ATTACHMENTS) break
+  }
+
+  return deduped
+}
+
+async function findAttachmentRowForImage(params: {
+  db: SupabaseClient
+  userId: string
+  conversationId?: string | null
+  attachment: ChatAttachment
+}): Promise<AttachmentRow | null> {
+  const { db, userId, conversationId, attachment } = params
+  const attachmentId = attachment.attachmentId
+
+  if (attachmentId) {
+    let query = db
+      .from('attachments')
+      .select('id, conversation_id, file_name, mime_type, storage_path, important_details')
+      .eq('id', attachmentId)
+      .eq('user_id', userId)
+      .limit(1)
+
+    if (conversationId) {
+      query = query.eq('conversation_id', conversationId)
+    }
+
+    const { data, error } = await query.maybeSingle()
+    if (error) throw error
+    return (data as AttachmentRow | null) || null
+  }
+
+  const storageKey = getAttachmentStorageKey(attachment)
+  if (!storageKey || !conversationId) return null
+
+  const { data, error } = await db
+    .from('attachments')
+    .select('id, conversation_id, file_name, mime_type, storage_path, important_details')
+    .eq('user_id', userId)
+    .eq('conversation_id', conversationId)
+    .eq('storage_path', storageKey)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (error) throw error
+  return (data as AttachmentRow | null) || null
+}
+
+export async function prepareImageAttachmentsForModel(params: {
+  attachments?: ChatAttachment[]
+  userId: string
+  conversationId?: string | null
+  db?: SupabaseClient
+}): Promise<PreparedImageAttachment[]> {
+  const { attachments = [], userId, conversationId = null, db } = params
+  const imageAttachments = attachments.filter((attachment) => attachment.type === 'image')
+
+  if (imageAttachments.length === 0) return []
+
+  if (!isR2Configured()) {
+    throw buildImagePreparationError('Could not read the uploaded image. Please re-upload it.')
+  }
+
+  return Promise.all(imageAttachments.map(async (attachment, index) => {
+    const attachmentRow = db
+      ? await findAttachmentRowForImage({ db, userId, conversationId, attachment })
+      : null
+
+    if (attachment.attachmentId && !attachmentRow) {
+      throw buildImagePreparationError('Could not find the uploaded image. Please re-upload it.')
+    }
+
+    const mimeType = normalizeChatAttachmentMimeType(attachmentRow?.mime_type || attachment.mimeType)
+    if (!isSupportedChatImageMimeType(mimeType)) {
+      throw buildImagePreparationError('Unsupported image type. Please upload PNG, JPG, or WEBP.')
+    }
+
+    const storageKey = getAttachmentStorageKey(attachmentRow?.important_details || {}) ||
+      attachmentRow?.storage_path ||
+      getAttachmentStorageKey(attachment)
+
+    if (!storageKey) {
+      throw buildImagePreparationError('Image upload was not attached to the message. Please upload it again.')
+    }
+
+    if (!storageKey.startsWith(`uploads/${userId}/`)) {
+      throw buildImagePreparationError('Could not read the uploaded image. Please re-upload it.')
+    }
+
+    let buffer: Buffer
+    try {
+      buffer = await downloadObjectFromR2(storageKey)
+    } catch {
+      throw buildImagePreparationError('Could not read the uploaded image. Please re-upload it.')
+    }
+
+    if (buffer.byteLength > MAX_MODEL_IMAGE_BYTES) {
+      throw buildImagePreparationError('Image is too large. Please upload a smaller image.')
+    }
+
+    return {
+      id: attachmentRow?.id || attachment.attachmentId || storageKey || `image-${index}`,
+      filename: attachmentRow?.file_name || attachment.name || `image-${index + 1}`,
+      mimeType,
+      sizeBytes: attachment.size || buffer.byteLength,
+      dataUrl: `data:${mimeType};base64,${buffer.toString('base64')}`,
+    }
+  }))
 }
 
 function detectPreparedAttachmentKind(attachment: ChatAttachment): PreparedAttachmentKind {
@@ -104,8 +274,11 @@ function trimPreparedDocumentText(text: string): string {
 }
 
 function looksLikeImageFollowUp(message: string): boolean {
-  return /\b(image|photo|picture|screenshot|diagram|graph|chart|ui shot|screen shot)\b/i.test(message) &&
-    /\b(sent|uploaded|shared|attached|earlier|before|previous|last|that|this)\b/i.test(message)
+  return looksLikeImageReference(message) ||
+    (
+      /\b(image|photo|picture|screenshot|diagram|graph|chart|ui shot|screen shot)\b/i.test(message) &&
+      /\b(sent|uploaded|shared|attached|earlier|before|previous|last|that|this)\b/i.test(message)
+    )
 }
 
 function looksLikeFileFollowUp(message: string): boolean {
@@ -154,9 +327,21 @@ export async function reconstructHistoricalAttachmentsForFollowUp(params: {
   }
 
   const wantsImage = looksLikeImageFollowUp(latestMessage)
+    || (looksLikeImagePronounFollowUp(latestMessage) && getRecentImageAttachmentsFromMessages(currentMessages).length > 0)
   const wantsFile = !wantsImage && looksLikeFileFollowUp(latestMessage)
   if (!wantsImage && !wantsFile) {
     return { attachments: [], userMessageAugmented: false, source: 'none' }
+  }
+
+  if (wantsImage) {
+    const recentMessageImages = getRecentImageAttachmentsFromMessages(currentMessages)
+    if (recentMessageImages.length > 0) {
+      return {
+        attachments: recentMessageImages,
+        userMessageAugmented: true,
+        source: 'image',
+      }
+    }
   }
 
   const { data: rows, error } = await db
@@ -288,8 +473,12 @@ export async function prepareCurrentMessageAttachmentsForModel(params: {
       attachmentCount: attachments.length,
       imageCount: attachments.filter((attachment) => attachment.type === 'image').length,
       fileTypes: preparedAttachments.map((attachment) => attachment.kind),
+      mimeTypes: preparedAttachments.map((attachment) => attachment.mimeType),
+      byteSizes: preparedAttachments.map((attachment) => attachment.sizeBytes),
       extractionSucceededCount,
       extractionFailedCount,
+      storageReadSuccessCount: hydratedCurrentMessage?.attachments?.filter((attachment) => attachment.type === 'image' && !!attachment.dataUrl).length || 0,
+      preparedDataUrlsCount: preparedAttachments.filter((attachment) => attachment.kind === 'image' && !!attachment.imageDataUrl).length,
       providerSelected,
       visionFallbackUsed,
       azureGpt54Configured,
@@ -300,14 +489,45 @@ export async function prepareCurrentMessageAttachmentsForModel(params: {
 }
 
 export async function prepareMessagesForAttachmentModel(
-  messages: ChatMessage[],
-  userId: string
+  params: {
+    messages: ChatMessage[]
+    userId: string
+    conversationId?: string | null
+    db?: SupabaseClient
+  }
 ): Promise<ChatMessage[]> {
+  const { messages, userId, conversationId = null, db } = params
   const hydratedMessages = await hydrateImageAttachmentsForModel(messages, userId)
+  const currentMessage = hydratedMessages[hydratedMessages.length - 1]
+  const preparedCurrentImages = currentMessage?.role === 'user'
+    ? await prepareImageAttachmentsForModel({
+        attachments: currentMessage.attachments,
+        userId,
+        conversationId,
+        db,
+      })
+    : []
+  const preparedByKey = new Map(
+    preparedCurrentImages.map((attachment) => [attachment.id, attachment] as const)
+  )
+
   return hydratedMessages.map((message) => {
     if (!message.attachments || message.attachments.length === 0) return message
 
-    const modelAttachments = message.attachments.filter((attachment) => attachment.type === 'image')
+    const modelAttachments = message.attachments
+      .filter((attachment) => attachment.type === 'image')
+      .map((attachment) => {
+        const key = attachment.attachmentId || getAttachmentStorageKey(attachment) || attachment.name
+        const prepared = preparedByKey.get(key)
+        if (!prepared) return attachment
+        return {
+          ...attachment,
+          mimeType: prepared.mimeType,
+          size: prepared.sizeBytes,
+          dataUrl: prepared.dataUrl,
+        }
+      })
+
     return {
       ...message,
       attachments: modelAttachments.length > 0 ? modelAttachments : undefined,

@@ -111,6 +111,47 @@ type ChatProviderAttempt = {
 
 type ChatProviderName = ChatProviderAttempt['provider']
 
+function mapImageUnderstandingProviderError(error: unknown): Error {
+  if (isAzureTextProviderError(error)) {
+    if (error.status === 401 || error.status === 403) {
+      return new Error('Image understanding provider credentials are invalid or unauthorized.')
+    }
+    if (error.status === 404) {
+      return new Error('Image understanding deployment was not found.')
+    }
+    if (error.status === 429) {
+      return new Error('Image understanding provider is busy. Please try again.')
+    }
+    if (error.timeoutHit) {
+      return new Error('Image understanding took too long. Please try again.')
+    }
+  }
+
+  const message = error instanceof Error ? error.message : String(error)
+  if (/not configured/i.test(message)) {
+    return new Error('Image understanding provider is not configured.')
+  }
+  if (/unauthorized|credentials are invalid/i.test(message)) {
+    return new Error('Image understanding provider credentials are invalid or unauthorized.')
+  }
+  if (/deployment was not found/i.test(message)) {
+    return new Error('Image understanding deployment was not found.')
+  }
+  if (/busy/i.test(message) || /\b429\b/.test(message)) {
+    return new Error('Image understanding provider is busy. Please try again.')
+  }
+  if (/timed out|too long|timeout/i.test(message)) {
+    return new Error('Image understanding took too long. Please try again.')
+  }
+  return new Error('Image understanding failed. Please try again.')
+}
+
+function getClientPlatform(request: NextRequest): 'mobile' | 'desktop' | 'unknown' {
+  const userAgent = request.headers.get('user-agent') || ''
+  if (!userAgent) return 'unknown'
+  return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(userAgent) ? 'mobile' : 'desktop'
+}
+
 function buildTextProviderAttemptOrder(provider: string): ChatProviderName[] {
   if (provider === 'google') return ['google']
   if (provider === 'anthropic') return ['anthropic']
@@ -203,6 +244,11 @@ export async function POST(request: NextRequest) {
     const { model, messages, conversationId, artifactMode, webSearchEnabled, reasoningMode: rawReasoningMode, requestId, clientMessageId } = body
     const reasoningMode: ReasoningMode = ['instant', 'thinking', 'extended'].includes(rawReasoningMode) ? rawReasoningMode : 'thinking'
     const reasoningProfile = getReasoningProfile(reasoningMode)
+    const requestPlatform = getClientPlatform(request)
+    const latestIncomingMessage = Array.isArray(messages) ? messages[messages.length - 1] : null
+    const incomingAttachments = Array.isArray(latestIncomingMessage?.attachments) ? latestIncomingMessage.attachments : []
+    const incomingImageAttachments = incomingAttachments.filter((attachment: any) => attachment?.type === 'image')
+    const incomingAttachmentIdsPresent = incomingAttachments.some((attachment: any) => !!attachment?.attachmentId)
 
     if (!model || !messages || !Array.isArray(messages) || messages.length === 0) {
       console.error('[Chat API] Invalid request params:', { model: !!model, messages: Array.isArray(messages), len: messages?.length })
@@ -219,6 +265,10 @@ export async function POST(request: NextRequest) {
       maxTokens: reasoningProfile.maxTokens,
       requestId: requestId || 'none',
       userId: user.id.substring(0, 8) + '...',
+      attachmentCount: incomingAttachments.length,
+      imageAttachmentCount: incomingImageAttachments.length,
+      attachmentIdsPresent: incomingAttachmentIdsPresent,
+      platform: requestPlatform,
     })
 
     // Stage: Validate model
@@ -348,16 +398,35 @@ export async function POST(request: NextRequest) {
       })))
     }
 
-    if (hasCurrentImageAttachments && validationModel.provider !== 'azure-gpt54' && validationModel.provider !== 'google') {
+    if (hasCurrentImageAttachments) {
+      const azureVisionSnapshot = getAzureGpt54ConfigSnapshot()
+      azureGpt54Configured = azureVisionSnapshot.envStatus.apiKey.configured &&
+        azureVisionSnapshot.envStatus.baseUrl.configured &&
+        azureVisionSnapshot.envStatus.model.configured
+
+      if (!azureGpt54Configured) {
+        console.error('[Chat API] Image understanding provider missing configuration', {
+          providerSelected: validationModel.provider,
+          messageHasImages: true,
+          attachmentCount: currentMessageAttachmentsCount,
+          imageCount: currentAttachments.filter((attachment: any) => attachment.type === 'image').length,
+          azureGpt54Configured,
+          endpointHost: azureVisionSnapshot.endpointHost,
+          endpointPath: azureVisionSnapshot.endpointPath,
+          model: azureVisionSnapshot.model,
+        })
+        return NextResponse.json({ error: 'Image understanding provider is not configured.' }, { status: 503 })
+      }
+
       const azureVisionDiagnostics = await getAzureGpt54Diagnostics()
       azureGpt54Configured = azureVisionDiagnostics.configured
       azureVisionStatusCode = azureVisionDiagnostics.status
       azureVisionSafeReason = azureVisionDiagnostics.safeReason
 
       if (!azureVisionDiagnostics.probeOk) {
-        const publicError = azureVisionDiagnostics.configured
-          ? 'Image understanding is temporarily unavailable right now.'
-          : CHAT_IMAGE_UNDERSTANDING_NOT_CONFIGURED_ERROR
+        const publicError = mapImageUnderstandingProviderError(
+          new Error(azureVisionDiagnostics.safeReason || CHAT_IMAGE_UNDERSTANDING_NOT_CONFIGURED_ERROR)
+        ).message
 
         console.error('[Chat API] Image understanding unavailable for current request', {
           providerSelected: validationModel.provider,
@@ -366,6 +435,9 @@ export async function POST(request: NextRequest) {
           attachmentCount: currentMessageAttachmentsCount,
           imageCount: currentAttachments.filter((attachment: any) => attachment.type === 'image').length,
           azureGpt54Configured: azureVisionDiagnostics.configured,
+          endpointHost: azureVisionDiagnostics.endpointHost,
+          endpointPath: azureVisionDiagnostics.endpointPath,
+          model: azureVisionDiagnostics.model,
           azureStatusCode: azureVisionDiagnostics.status,
           safeReason: azureVisionDiagnostics.safeReason,
         })
@@ -374,7 +446,7 @@ export async function POST(request: NextRequest) {
       }
 
       providerForRequest = 'azure-gpt54'
-      visionFallbackUsed = true
+      visionFallbackUsed = validationModel.provider !== 'azure-gpt54'
     }
 
     const isLoadingMarker = (content: string) => {
@@ -537,24 +609,6 @@ RULES FOR USING THESE RESULTS:
       } catch (historicalErr: any) {
         console.warn('[Chat API] Historical attachment reconstruction skipped:', historicalErr.message)
       }
-    }
-
-    if (hasCurrentImageAttachments && providerForRequest !== 'azure-gpt54' && providerForRequest !== 'google') {
-      const azureVisionDiagnostics = await getAzureGpt54Diagnostics()
-      azureGpt54Configured = azureVisionDiagnostics.configured
-      azureVisionStatusCode = azureVisionDiagnostics.status
-      azureVisionSafeReason = azureVisionDiagnostics.safeReason
-
-      if (!azureVisionDiagnostics.probeOk) {
-        const publicError = azureVisionDiagnostics.configured
-          ? 'Image understanding is temporarily unavailable right now.'
-          : CHAT_IMAGE_UNDERSTANDING_NOT_CONFIGURED_ERROR
-
-        return NextResponse.json({ error: publicError }, { status: 503 })
-      }
-
-      providerForRequest = 'azure-gpt54'
-      visionFallbackUsed = true
     }
 
     // Reconstruct context from historical messages that had attachments (skip in instant mode)
@@ -818,8 +872,12 @@ RULES FOR USING THESE RESULTS:
       attachmentCount: currentMessageAttachmentsCount,
       imageCount: currentAttachments.filter((attachment: any) => attachment.type === 'image').length,
       fileTypes: [] as string[],
+      mimeTypes: [] as string[],
+      byteSizes: [] as number[],
       extractionSucceededCount: 0,
       extractionFailedCount: 0,
+      storageReadSuccessCount: 0,
+      preparedDataUrlsCount: 0,
       providerSelected: providerAttemptOrder[0] || providerForRequest,
       visionFallbackUsed,
       azureGpt54Configured,
@@ -828,9 +886,19 @@ RULES FOR USING THESE RESULTS:
     }
 
     try {
-      messagesForModel = await prepareMessagesForAttachmentModel(messagesToSend as ChatMessage[], user.id)
+      messagesForModel = await prepareMessagesForAttachmentModel({
+        messages: messagesToSend as ChatMessage[],
+        userId: user.id,
+        conversationId,
+        db,
+      })
     } catch (imageErr: any) {
-      console.error('[Chat API] Image hydration failed:', imageErr.message)
+      console.error('[Chat API] Image hydration failed:', {
+        message: imageErr.message,
+        messageHasImages: hasCurrentImageAttachments,
+        attachmentIdsCount: currentAttachments.filter((attachment: any) => !!attachment.attachmentId).length,
+        attachmentCount: currentMessageAttachmentsCount,
+      })
       return NextResponse.json(
         { error: imageErr.message || 'Image upload could not be prepared for the model.' },
         { status: 400 }
@@ -852,7 +920,10 @@ RULES FOR USING THESE RESULTS:
       })
       attachmentDiagnostics = preparedAttachmentContext.diagnostics
 
-      console.log('[Chat API] Attachment diagnostics:', attachmentDiagnostics)
+      console.log('[Chat API] Attachment diagnostics:', {
+        ...attachmentDiagnostics,
+        attachmentIdsPresent: currentAttachments.some((attachment: any) => !!attachment.attachmentId),
+      })
     }
 
     // Stage: Save user message BEFORE AI call (idempotent via client_message_id)
@@ -979,6 +1050,20 @@ RULES FOR USING THESE RESULTS:
       visionFallbackUsed,
     })
 
+    if (hasCurrentImageAttachments) {
+      const azureVisionSnapshot = getAzureGpt54ConfigSnapshot()
+      console.log('[Chat API] Vision request diagnostics:', {
+        providerSelected: providerAttemptOrder[0] || providerForRequest,
+        visionFallbackUsed,
+        azureGpt54Configured,
+        endpointHost: azureVisionSnapshot.endpointHost,
+        endpointPath: azureVisionSnapshot.endpointPath,
+        model: azureVisionSnapshot.model,
+        statusCode: azureVisionStatusCode,
+        safeReason: azureVisionSafeReason,
+      })
+    }
+
     // Stage: Pre-create assistant message for recovery
     stage = 'ai-call'
     let assistantMessageId: string | null = null
@@ -1082,7 +1167,13 @@ RULES FOR USING THESE RESULTS:
                 configured,
                 status: isAzureTextProviderError(error) ? error.status : null,
                 safeReason: isAzureTextProviderError(error) ? error.safeReason : lastError.message,
+                imageRequest: hasCurrentImageAttachments,
               })
+
+              if (hasCurrentImageAttachments && attemptedProvider === 'azure-gpt54') {
+                lastError = mapImageUnderstandingProviderError(error)
+                providerAttempts[providerAttempts.length - 1].safeReason = lastError.message
+              }
             }
           }
 

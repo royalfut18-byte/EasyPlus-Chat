@@ -52,6 +52,18 @@ function stripCloudPreviewData(attachment: ChatAttachment): ChatAttachment {
   return safeAttachment
 }
 
+function logChatAttachmentPayload(label: string, attachments?: ChatAttachment[]) {
+  const safeAttachments = attachments || []
+  console.info(`[${label}]`, {
+    attachmentCount: safeAttachments.length,
+    imageAttachmentCount: safeAttachments.filter((attachment) => attachment.type === 'image').length,
+    attachmentIdsPresent: safeAttachments.some((attachment) => !!attachment.attachmentId),
+    platform: typeof navigator !== 'undefined' && /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
+      ? 'mobile'
+      : 'desktop',
+  })
+}
+
 async function dataUrlToFile(dataUrl: string, filename: string, mimeType: string): Promise<File> {
   const response = await fetch(dataUrl)
   const blob = await response.blob()
@@ -1469,6 +1481,8 @@ export default function ChatPage() {
         })
       }
 
+      logChatAttachmentPayload('Chat Submit', userMessage.attachments)
+
       // 8. Send one API request
       const response = await fetch('/api/chat', {
         method: 'POST',
@@ -2268,6 +2282,8 @@ export default function ChatPage() {
           attachments: undefined,
         })
       }
+
+      logChatAttachmentPayload('Chat Retry Submit', userMessage.attachments)
 
       const response = await fetch('/api/chat', {
         method: 'POST',
