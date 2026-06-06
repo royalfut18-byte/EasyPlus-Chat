@@ -7,6 +7,7 @@ import { INLINE_UPLOAD_MAX_BYTES } from '@/lib/upload-limits'
 const MAX_UPLOAD_MB = parseInt(process.env.NEXT_PUBLIC_MAX_UPLOAD_MB || '512', 10)
 const MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024
 const MODEL_IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/jpg', 'image/webp'])
+const HEIC_IMAGE_TYPES = new Set(['image/heic', 'image/heif'])
 
 function parseR2ErrorFromResponse(xml: string): { code?: string; message?: string } | undefined {
   const codeMatch = xml.match(/<Code>(.*?)<\/Code>/)
@@ -71,7 +72,7 @@ async function compressImage(file: File, force = false): Promise<File> {
       URL.revokeObjectURL(url)
 
       let { width, height } = img
-      const maxDim = 2048
+      const maxDim = 1568
       if (width > maxDim || height > maxDim) {
         const ratio = Math.min(maxDim / width, maxDim / height)
         width = Math.round(width * ratio)
@@ -212,10 +213,29 @@ export function useR2Upload() {
 
     const imageNeedsConversion = isImage && !MODEL_IMAGE_TYPES.has(uploadFile.type.toLowerCase())
 
+    if (HEIC_IMAGE_TYPES.has(uploadFile.type.toLowerCase())) {
+      return {
+        attachment: {
+          ...attachmentBase,
+          uploadStatus: 'failed',
+          uploadError: 'HEIC images are not supported yet. Please upload JPG or PNG.',
+        },
+        error: 'HEIC images are not supported yet. Please upload JPG or PNG.',
+      }
+    }
+
     if (isImage && (file.size > INLINE_DATA_URL_THRESHOLD || imageNeedsConversion)) {
       attachmentBase.uploadStatus = 'compressing'
       onProgress?.({ ...attachmentBase })
       uploadFile = await compressImage(file, imageNeedsConversion)
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('[R2 Upload] Image compression result:', {
+          originalMimeType: file.type,
+          detectedMimeType: uploadFile.type,
+          originalByteSize: file.size,
+          compressedByteSize: uploadFile.size,
+        })
+      }
       attachmentBase.size = uploadFile.size
       attachmentBase.mimeType = uploadFile.type
       attachmentBase.name = uploadFile.name

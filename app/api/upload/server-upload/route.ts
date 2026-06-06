@@ -9,6 +9,7 @@ export const runtime = 'nodejs'
 const SERVER_UPLOAD_MAX_BYTES = 20 * 1024 * 1024 // 20MB limit for server uploads
 
 const ALLOWED_MIME_TYPES: Set<string> = new Set(SUPPORTED_CHAT_ATTACHMENT_MIME_TYPES)
+const HEIC_MIME_TYPES: Set<string> = new Set(['image/heic', 'image/heif'])
 
 function sanitizeFileName(name: string): string {
   return name
@@ -67,6 +68,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { error: `File too large for server upload. Maximum is ${maxMB}MB.` },
         { status: 413 }
+      )
+    }
+
+    if (HEIC_MIME_TYPES.has(file.type)) {
+      return NextResponse.json(
+        { error: 'HEIC images are not supported yet. Please upload JPG or PNG.' },
+        { status: 400 }
       )
     }
 

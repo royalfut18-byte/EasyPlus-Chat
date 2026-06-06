@@ -626,6 +626,7 @@ export async function streamAzureGpt54Response(
     })
 
     if (!response.ok || !response.body) {
+      const errorPayload = await readProviderErrorPayload(response)
       console.error('[Azure GPT-5.4] Request failed', {
         status: response.status,
         authMode,
@@ -633,8 +634,18 @@ export async function streamAzureGpt54Response(
         modelConfigured,
         model,
         ...endpoint,
+        providerErrorCode: errorPayload.code,
+        providerErrorMessage: errorPayload.message,
+        ...payloadDiagnostics,
       })
-      throw toProviderError(getSafeProviderError(response.status), snapshot, response.status)
+      throw toProviderError(
+        getProviderErrorFromPayload(response.status, errorPayload),
+        snapshot,
+        response.status,
+        false,
+        errorPayload.code,
+        errorPayload.message
+      )
     }
 
     const reader = response.body.getReader()
@@ -742,6 +753,7 @@ export async function streamAzureGpt54Response(
       message: error.message,
       timeoutHit,
       streamStarted: false,
+      ...payloadDiagnostics,
     })
     throw toProviderError(
       timeoutHit ? getSafeTimeoutError() : new Error('Model provider could not be reached.'),

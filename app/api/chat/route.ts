@@ -113,6 +113,12 @@ type ChatProviderName = ChatProviderAttempt['provider']
 
 function mapImageUnderstandingProviderError(error: unknown): Error {
   if (isAzureTextProviderError(error)) {
+    if (error.status === 400) {
+      return new Error('Image could not be processed by the vision provider. Try a clearer JPG or PNG.')
+    }
+    if (error.status === 413) {
+      return new Error('Image is too large for analysis. Try a smaller image.')
+    }
     if (error.status === 401 || error.status === 403) {
       return new Error('Image understanding provider credentials are invalid or unauthorized.')
     }
@@ -136,6 +142,27 @@ function mapImageUnderstandingProviderError(error: unknown): Error {
   }
   if (/deployment was not found/i.test(message)) {
     return new Error('Image understanding deployment was not found.')
+  }
+  if (/heic/i.test(message) || /heif/i.test(message)) {
+    return new Error('HEIC images are not supported yet. Please upload JPG or PNG.')
+  }
+  if (/unsupported image type/i.test(message)) {
+    return new Error('Unsupported image type. Please upload PNG, JPG, or WEBP.')
+  }
+  if (/could not read the uploaded image|not attached to the message|could not find the uploaded image/i.test(message)) {
+    return new Error('Could not read the uploaded image. Please re-upload it.')
+  }
+  if (/too large for analysis/i.test(message)) {
+    return new Error('Image is too large for analysis. Try a smaller image.')
+  }
+  if (/image is too large/i.test(message)) {
+    return new Error('Image is too large. Please upload a smaller image.')
+  }
+  if (/\b413\b/.test(message)) {
+    return new Error('Image is too large for analysis. Try a smaller image.')
+  }
+  if (/\b400\b/.test(message)) {
+    return new Error('Image could not be processed by the vision provider. Try a clearer JPG or PNG.')
   }
   if (/busy/i.test(message) || /\b429\b/.test(message)) {
     return new Error('Image understanding provider is busy. Please try again.')
@@ -896,13 +923,37 @@ RULES FOR USING THESE RESULTS:
       console.error('[Chat API] Image hydration failed:', {
         message: imageErr.message,
         messageHasImages: hasCurrentImageAttachments,
+        originalMimeTypes: currentAttachments.filter((attachment: any) => attachment.type === 'image').map((attachment: any) => attachment.mimeType),
+        originalByteSizes: currentAttachments.filter((attachment: any) => attachment.type === 'image').map((attachment: any) => attachment.size || 0),
         attachmentIdsCount: currentAttachments.filter((attachment: any) => !!attachment.attachmentId).length,
         attachmentCount: currentMessageAttachmentsCount,
+        platform: requestPlatform,
       })
       return NextResponse.json(
         { error: imageErr.message || 'Image upload could not be prepared for the model.' },
         { status: 400 }
       )
+    }
+
+    if (hasCurrentImageAttachments) {
+      const preparedCurrentImages = (messagesForModel[messagesForModel.length - 1]?.attachments || [])
+        .filter((attachment) => attachment.type === 'image')
+
+      console.log('[Chat API] Prepared current images for model:', preparedCurrentImages.map((attachment: any) => ({
+        attachmentId: attachment.attachmentId || null,
+        originalMimeType: currentAttachments.find((current: any) =>
+          (current.attachmentId && current.attachmentId === attachment.attachmentId) ||
+          (!current.attachmentId && current.name === attachment.name)
+        )?.mimeType || attachment.mimeType,
+        detectedMimeType: attachment.mimeType,
+        originalByteSize: currentAttachments.find((current: any) =>
+          (current.attachmentId && current.attachmentId === attachment.attachmentId) ||
+          (!current.attachmentId && current.name === attachment.name)
+        )?.size || 0,
+        compressedByteSize: attachment.size || 0,
+        dataUrlLength: attachment.dataUrl?.length || 0,
+        platform: requestPlatform,
+      })))
     }
 
     if (hasCurrentAttachments) {

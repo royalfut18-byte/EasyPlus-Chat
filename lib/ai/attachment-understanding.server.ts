@@ -6,8 +6,12 @@ import {
   buildDocumentContext,
   type DocumentExtractionResult,
 } from '@/lib/ai/document-extract'
-import { hydrateImageAttachmentsForModel } from '@/lib/ai/image-attachments'
 import { downloadObjectFromR2, isR2Configured } from '@/lib/storage/r2'
+import {
+  isHeicMimeType,
+  normalizeImageForVision,
+  type NormalizedImageDiagnostics,
+} from '@/lib/ai/image-normalization.server'
 import {
   CHAT_ATTACHMENT_READ_ERROR,
   CHAT_ATTACHMENT_TOO_MANY_ERROR,
@@ -91,6 +95,12 @@ export type PreparedImageAttachment = {
   mimeType: string
   sizeBytes: number
   dataUrl: string
+  originalMimeType: string
+  originalSizeBytes: number
+  normalizedSizeBytes: number
+  dataUrlLength: number
+  resized: boolean
+  orientation: number | null
 }
 
 const MAX_MODEL_IMAGE_BYTES = 5 * 1024 * 1024
@@ -213,6 +223,9 @@ export async function prepareImageAttachmentsForModel(params: {
     }
 
     const mimeType = normalizeChatAttachmentMimeType(attachmentRow?.mime_type || attachment.mimeType)
+    if (isHeicMimeType(mimeType)) {
+      throw buildImagePreparationError('HEIC images are not supported yet. Please upload JPG or PNG.')
+    }
     if (!isSupportedChatImageMimeType(mimeType)) {
       throw buildImagePreparationError('Unsupported image type. Please upload PNG, JPG, or WEBP.')
     }
@@ -236,16 +249,52 @@ export async function prepareImageAttachmentsForModel(params: {
       throw buildImagePreparationError('Could not read the uploaded image. Please re-upload it.')
     }
 
-    if (buffer.byteLength > MAX_MODEL_IMAGE_BYTES) {
+    const originalByteSize = buffer.byteLength
+    const originalMimeType = mimeType
+    if (originalByteSize > MAX_MODEL_IMAGE_BYTES * 6) {
       throw buildImagePreparationError('Image is too large. Please upload a smaller image.')
+    }
+
+    let normalized
+    try {
+      normalized = await normalizeImageForVision({
+        buffer,
+        mimeType,
+        filename: attachmentRow?.file_name || attachment.name || `image-${index + 1}`,
+        attachmentId: attachmentRow?.id || attachment.attachmentId,
+      })
+    } catch (error: any) {
+      throw buildImagePreparationError(error?.message || 'Could not read the uploaded image. Please re-upload it.')
+    }
+
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('[Image Prep] Normalized image for vision', {
+        attachmentId: normalized.diagnostics.attachmentId || attachment.attachmentId || null,
+        filename: normalized.diagnostics.filename,
+        originalMimeType: normalized.diagnostics.originalMimeType,
+        normalizedMimeType: normalized.diagnostics.normalizedMimeType,
+        originalByteSize: normalized.diagnostics.originalByteSize,
+        normalizedByteSize: normalized.diagnostics.normalizedByteSize,
+        width: normalized.diagnostics.width,
+        height: normalized.diagnostics.height,
+        orientation: normalized.diagnostics.orientation,
+        resized: normalized.diagnostics.resized,
+        dataUrlLength: normalized.diagnostics.finalDataUrlLength,
+      })
     }
 
     return {
       id: attachmentRow?.id || attachment.attachmentId || storageKey || `image-${index}`,
       filename: attachmentRow?.file_name || attachment.name || `image-${index + 1}`,
-      mimeType,
-      sizeBytes: attachment.size || buffer.byteLength,
-      dataUrl: `data:${mimeType};base64,${buffer.toString('base64')}`,
+      mimeType: normalized.mimeType,
+      sizeBytes: normalized.diagnostics.normalizedByteSize,
+      dataUrl: normalized.dataUrl,
+      originalMimeType,
+      originalSizeBytes: originalByteSize,
+      normalizedSizeBytes: normalized.diagnostics.normalizedByteSize,
+      dataUrlLength: normalized.diagnostics.finalDataUrlLength,
+      resized: normalized.diagnostics.resized,
+      orientation: normalized.diagnostics.orientation,
     }
   }))
 }
@@ -497,23 +546,35 @@ export async function prepareMessagesForAttachmentModel(
   }
 ): Promise<ChatMessage[]> {
   const { messages, userId, conversationId = null, db } = params
-  const hydratedMessages = await hydrateImageAttachmentsForModel(messages, userId)
-  const currentMessage = hydratedMessages[hydratedMessages.length - 1]
-  const preparedCurrentImages = currentMessage?.role === 'user'
-    ? await prepareImageAttachmentsForModel({
-        attachments: currentMessage.attachments,
+  const preparedByMessageIndex = new Map<number, PreparedImageAttachment[]>()
+
+  for (let index = 0; index < messages.length; index++) {
+    const message = messages[index]
+    if (message.role !== 'user' || !message.attachments?.some((attachment) => attachment.type === 'image')) continue
+
+    try {
+      const preparedImages = await prepareImageAttachmentsForModel({
+        attachments: message.attachments,
         userId,
         conversationId,
         db,
       })
-    : []
-  const preparedByKey = new Map(
-    preparedCurrentImages.map((attachment) => [attachment.id, attachment] as const)
-  )
+      preparedByMessageIndex.set(index, preparedImages)
+    } catch (error: any) {
+      const isCurrentUserMessage = index === messages.length - 1
+      if (isCurrentUserMessage) throw error
+      console.warn('[Image Prep] Skipping historical image attachments:', error?.message || 'unknown error')
+      preparedByMessageIndex.set(index, [])
+    }
+  }
 
-  return hydratedMessages.map((message) => {
+  return messages.map((message, index) => {
     if (!message.attachments || message.attachments.length === 0) return message
 
+    const preparedForMessage = preparedByMessageIndex.get(index) || []
+    const preparedByKey = new Map(
+      preparedForMessage.map((attachment) => [attachment.id, attachment] as const)
+    )
     const modelAttachments = message.attachments
       .filter((attachment) => attachment.type === 'image')
       .map((attachment) => {
@@ -527,6 +588,7 @@ export async function prepareMessagesForAttachmentModel(
           dataUrl: prepared.dataUrl,
         }
       })
+      .filter((attachment) => !!attachment.dataUrl)
 
     return {
       ...message,
