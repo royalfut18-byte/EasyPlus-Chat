@@ -2,35 +2,26 @@
 
 import { motion } from 'framer-motion'
 import {
-  Brain,
+  Box,
   Code2,
-  FileText,
-  FolderKanban,
-  Globe2,
+  FolderOpen,
+  Globe,
   MessageSquare,
   Paperclip,
   Plus,
   Search,
   Send,
-  Sparkles,
-  Upload,
 } from 'lucide-react'
 import { Logo } from '@/components/brand/logo'
 import { UI_MODELS } from '@/types/models'
+
+const projects = ['HSC Economics', 'Client Website', 'Startup Research']
 
 const chats = [
   { title: 'Research synthesis', date: 'Today', active: true },
   { title: 'Website artifact', date: 'Today', active: false },
   { title: 'Essay feedback', date: 'Yesterday', active: false },
 ]
-
-const projects = ['HSC Economics', 'Client Website', 'Startup Research']
-
-const previewModels = UI_MODELS.map((model) => ({
-  id: model.id,
-  name: model.name,
-  color: model.color,
-}))
 
 export function WorkspacePreview() {
   return (
@@ -40,205 +31,160 @@ export function WorkspacePreview() {
       transition={{ duration: 0.7, delay: 0.32 }}
       className="relative mx-auto mt-16 max-w-7xl md:mt-20"
     >
-      <div className="absolute -inset-x-8 -inset-y-6 rounded-[2.5rem] bg-[linear-gradient(110deg,rgba(139,92,246,0.14),rgba(255,255,255,0.04),rgba(34,211,238,0.10))] blur-3xl" />
-      <div className="relative overflow-hidden rounded-[1.75rem] border border-white/[0.10] bg-[#0c0c10] shadow-2xl shadow-black/50 md:rounded-[2rem]">
-        <div className="flex items-center justify-between border-b border-white/[0.07] bg-white/[0.035] px-4 py-3">
-          <div className="flex items-center gap-2">
-            <span className="h-3 w-3 rounded-full bg-red-400/50" />
-            <span className="h-3 w-3 rounded-full bg-yellow-400/50" />
-            <span className="h-3 w-3 rounded-full bg-emerald-400/50" />
-          </div>
-          <div className="flex items-center gap-2 text-xs text-gray-400">
-            <Logo size="sm" />
-            <span className="hidden sm:inline">EasyPlus AI Workspace</span>
-          </div>
-          <div className="hidden rounded-full border border-emerald-300/20 bg-emerald-400/10 px-3 py-1 text-xs text-emerald-200 sm:block">
-            Workspace ready
-          </div>
-        </div>
-
-        <div className="grid min-h-[660px] lg:grid-cols-[280px_1fr_340px]">
-          <aside className="hidden border-r border-white/[0.07] bg-[#111115] p-4 lg:block">
-            <button className="flex h-10 w-full items-center justify-center rounded-xl bg-white text-sm font-semibold text-black">
-              <Plus className="h-4 w-4" />
-              New chat
-            </button>
-
-            <div className="mt-6">
-              <p className="px-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-600">Projects</p>
-              <div className="mt-3 space-y-1">
-                {projects.map((project, index) => (
-                  <div key={project} className={`flex items-center gap-2 rounded-xl px-3 py-2 text-sm ${index === 0 ? 'bg-violet-500/12 text-violet-100' : 'text-gray-400'}`}>
-                    <FolderKanban className="h-4 w-4" />
-                    {project}
-                  </div>
-                ))}
+      <div className="absolute -inset-x-8 -inset-y-6 rounded-[2.5rem] bg-[linear-gradient(110deg,rgba(139,92,246,0.14),rgba(255,255,255,0.04),rgba(34,211,238,0.08))] blur-3xl" />
+      <div className="relative overflow-hidden rounded-[2rem] border border-white/[0.08] bg-[#0f0f0f] shadow-2xl shadow-black/50">
+        <div className="grid min-h-[700px] lg:grid-cols-[288px_minmax(0,1fr)]">
+          <aside className="hidden border-r border-white/[0.05] bg-[#171717] lg:flex lg:flex-col">
+            <div className="px-3 pb-2 pt-3">
+              <div className="px-2 py-1">
+                <Logo size="sm" showText />
               </div>
+              <button className="mt-3 flex h-9 w-full items-center justify-start rounded-lg border border-white/[0.07] bg-white/[0.02] px-3 text-sm text-gray-200">
+                <Plus className="mr-2 h-4 w-4 text-violet-400" />
+                New Chat
+              </button>
+              <button className="mt-2 flex h-9 w-full items-center justify-start rounded-lg border border-violet-300/[0.12] bg-violet-500/[0.06] px-3 text-sm text-violet-100">
+                <Code2 className="mr-2 h-4 w-4 text-violet-300" />
+                Easy Code
+              </button>
             </div>
 
-            <div className="mt-7">
-              <p className="px-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-600">Recent chats</p>
-              <div className="mt-3 space-y-1">
-                {chats.map((chat) => (
-                  <div key={chat.title} className={`rounded-xl px-3 py-2 ${chat.active ? 'bg-white/[0.07]' : ''}`}>
-                    <div className="flex items-start gap-2">
-                      <MessageSquare className={`mt-0.5 h-4 w-4 ${chat.active ? 'text-violet-300' : 'text-gray-600'}`} />
-                      <div className="min-w-0">
-                        <p className={`truncate text-sm ${chat.active ? 'text-white' : 'text-gray-400'}`}>{chat.title}</p>
-                        <p className="mt-0.5 text-xs text-gray-600">{chat.date}</p>
-                      </div>
+            <div className="flex items-center justify-between px-4 pb-1 pt-2 text-[10px] font-medium uppercase tracking-[0.14em] text-gray-500">
+              <span>Projects</span>
+              <span className="rounded px-1.5 py-0.5 text-violet-300">View all</span>
+            </div>
+            <div className="space-y-px px-2 pb-3">
+              {projects.map((project, index) => (
+                <div
+                  key={project}
+                  className={`group flex items-center rounded-lg transition-colors ${
+                    index === 0 ? 'bg-violet-500/[0.08]' : 'hover:bg-white/[0.045]'
+                  }`}
+                >
+                  <div className="flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-left">
+                    <FolderOpen className={`h-3.5 w-3.5 shrink-0 ${index === 0 ? 'text-violet-300' : 'text-gray-500'}`} />
+                    <span className={`truncate text-sm ${index === 0 ? 'text-white' : 'text-gray-300'}`}>{project}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="px-4 pb-1 pt-2 text-[10px] font-medium uppercase tracking-[0.14em] text-gray-500">
+              Recent
+            </div>
+            <div className="flex-1 space-y-px overflow-y-auto px-2 pb-3">
+              {chats.map((chat) => (
+                <div
+                  key={chat.title}
+                  className={`relative w-full rounded-lg px-2.5 py-1.5 text-left ${
+                    chat.active ? 'bg-white/[0.07]' : ''
+                  }`}
+                >
+                  <div className="flex items-start gap-2.5 pr-7">
+                    <MessageSquare className={`mt-0.5 h-3.5 w-3.5 shrink-0 ${chat.active ? 'text-violet-400' : 'text-gray-500'}`} />
+                    <div className="min-w-0 flex-1">
+                      <p className={`truncate text-sm leading-snug ${chat.active ? 'text-white' : 'text-gray-200'}`}>{chat.title}</p>
+                      <p className="mt-0.5 text-[11px] text-gray-500">{chat.date}</p>
                     </div>
                   </div>
-                ))}
-              </div>
+                </div>
+              ))}
             </div>
 
-            <div className="mt-7 rounded-2xl border border-white/[0.07] bg-white/[0.035] p-4">
-              <div className="flex items-center gap-2 text-sm font-medium text-white">
-                <Brain className="h-4 w-4 text-violet-300" />
-                Project memory
+            <div className="border-t border-white/[0.05] p-3">
+              <div className="rounded-xl border border-white/[0.07] bg-white/[0.03] p-3">
+                <p className="text-sm font-medium text-white">EasyPlus workspace</p>
+                <p className="mt-1 text-xs leading-5 text-gray-500">
+                  Models, files, search, artifacts, and Easy Code in one chat interface.
+                </p>
               </div>
-              <p className="mt-3 text-xs leading-5 text-gray-500">Remembers writing style, uploaded context, and project instructions.</p>
             </div>
           </aside>
 
-          <section className="flex min-w-0 flex-col bg-[#0b0b0e]">
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/[0.07] px-4 py-3 md:px-6">
-              <div>
-                <p className="text-xs text-gray-600">Project</p>
-                <h3 className="text-sm font-semibold text-white md:text-base">HSC Economics</h3>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {previewModels.map((model, index) => (
+          <section className="flex min-w-0 flex-col bg-[#0f0f0f]">
+            <div className="border-b border-white/[0.06] bg-[#0f0f0f]/95 px-3 py-3 backdrop-blur-md md:px-4">
+              <div className="flex flex-wrap items-center gap-2">
+                {UI_MODELS.map((model, index) => (
                   <span
                     key={model.id}
-                    className={`rounded-full border px-3 py-1 text-xs ${
-                      index === 1
-                        ? 'border-white/[0.14] bg-white/[0.08] text-white'
-                        : 'border-white/[0.08] bg-white/[0.03] text-gray-400'
+                    className={`flex h-8 items-center gap-1.5 rounded-full border px-2.5 text-xs font-medium md:px-3 ${
+                      index === 0
+                        ? 'border-white/[0.10] bg-white/[0.06] text-white'
+                        : 'border-transparent bg-transparent text-gray-300'
                     }`}
                   >
-                    <span className="mr-2 inline-block h-2 w-2 rounded-full align-middle" style={{ backgroundColor: model.color }} />
-                    {model.name}
+                    <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: model.color }} />
+                    <span>{model.name}</span>
                   </span>
                 ))}
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {['Fast chat', 'Research', 'Artifacts'].map((item, index) => (
-                  <span key={item} className={`rounded-full border px-3 py-1 text-xs ${index === 0 ? 'border-violet-300/20 bg-violet-500/10 text-violet-100' : 'border-white/[0.08] bg-white/[0.03] text-gray-400'}`}>
-                    {item}
-                  </span>
-                ))}
+                <span className="ml-auto flex h-8 items-center gap-1.5 rounded-full border border-emerald-400/20 bg-emerald-500/10 px-2.5 text-xs font-medium text-emerald-200 md:px-3">
+                  <Globe className="h-3.5 w-3.5" />
+                  Search
+                </span>
+                <span className="flex h-8 items-center gap-1.5 rounded-full border border-white/[0.07] bg-white/[0.02] px-2.5 text-xs font-medium text-gray-300 md:px-3">
+                  <Box className="h-3.5 w-3.5" />
+                  Artifacts
+                </span>
               </div>
             </div>
 
-            <div className="flex-1 space-y-6 overflow-hidden px-4 py-6 md:px-8">
-              <div className="mb-4 ml-auto max-w-[85%] rounded-2xl border border-violet-300/[0.08] bg-[#312b3b] px-3 py-2.5 text-gray-100 md:max-w-[72%] md:px-3.5 md:py-3">
-                <p className="mb-0 whitespace-pre-wrap break-words text-sm leading-6 md:text-base">
-                  Use my economics project context and explain the latest inflation data in essay form.
-                </p>
-              </div>
+            <div className="flex-1 px-3 py-4 md:px-4 md:py-5 lg:px-6">
+              <div className="mx-auto flex min-h-[560px] max-w-[820px] flex-col justify-center px-1 py-4 sm:px-2 sm:py-6">
+                <div className="mx-auto flex w-full max-w-[760px] flex-col items-center gap-4 text-center sm:gap-5">
+                  <div className="space-y-2">
+                    <h3 className="text-2xl font-semibold tracking-tight text-white sm:text-[2rem]">How can I help?</h3>
+                  </div>
 
-              <div className="max-w-3xl">
-                <div className="mb-3 flex items-center gap-2 text-xs text-gray-500">
-                  <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-white/[0.06] text-violet-200">
-                    <Sparkles className="h-4 w-4" />
-                  </span>
-                  AI response
-                </div>
-                <div className="space-y-4 rounded-[1.4rem] border border-white/[0.07] bg-white/[0.035] p-5 text-sm leading-7 text-gray-300">
-                  <p>
-                    Using your project memory, I will structure this with a clear thesis, Australian examples, and a judgement in each body paragraph.
-                  </p>
-                  <div className="grid gap-3 sm:grid-cols-3">
-                    <Insight icon={<Search className="h-4 w-4" />} label="Research" value="Current context" />
-                    <Insight icon={<FileText className="h-4 w-4" />} label="Files" value="3 attached" />
-                    <Insight icon={<Brain className="h-4 w-4" />} label="Memory" value="Band 6 style" />
-                  </div>
-                </div>
-              </div>
+                  <div className="w-full">
+                    <div className="relative overflow-hidden rounded-[26px] border border-white/[0.08] bg-[radial-gradient(circle_at_top,rgba(139,92,246,0.10),transparent_42%),rgba(24,24,24,0.9)] p-3 shadow-[0_18px_60px_rgba(0,0,0,0.32)] backdrop-blur-xl sm:p-4">
+                      <div className="flex items-end gap-2">
+                        <button
+                          type="button"
+                          className="mb-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/[0.07] bg-white/[0.03] text-gray-400"
+                          aria-label="Attach files"
+                        >
+                          <Paperclip className="h-[18px] w-[18px] md:h-5 md:w-5" />
+                        </button>
+                        <textarea
+                          value=""
+                          readOnly
+                          placeholder="Start with a prompt, file, search, or artifact."
+                          className="min-h-[38px] flex-1 resize-none border-none bg-transparent py-1.5 text-base text-white outline-none placeholder:text-gray-500"
+                          rows={1}
+                        />
+                        <button
+                          type="button"
+                          className="mb-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-violet-600/90 text-white"
+                          aria-label="Send message"
+                        >
+                          <Send className="h-4 w-4" />
+                        </button>
+                      </div>
 
-              <div className="grid gap-3 md:grid-cols-2">
-                <div className="rounded-2xl border border-white/[0.07] bg-white/[0.035] p-4">
-                  <div className="flex items-center gap-2 text-sm font-medium text-white">
-                    <Upload className="h-4 w-4 text-violet-300" />
-                    File upload
+                      <div className="mt-3 flex flex-col gap-3 border-t border-white/[0.05] pt-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div className="flex flex-wrap gap-2">
+                          {['Instant', 'Thinking', 'Extended'].map((mode, index) => (
+                            <span
+                              key={mode}
+                              className={`rounded-full border px-3 py-1 text-[11px] ${
+                                index === 0
+                                  ? 'border-violet-300/20 bg-violet-500/10 text-violet-100'
+                                  : 'border-white/[0.08] bg-white/[0.03] text-gray-400'
+                              }`}
+                            >
+                              {mode}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
                   </div>
-                  <div className="mt-3 rounded-xl border border-white/[0.07] bg-black/20 p-3 text-xs text-gray-400">
-                    stimulus.pdf uploaded and ready for analysis
-                  </div>
-                </div>
-                <div className="rounded-2xl border border-white/[0.07] bg-white/[0.035] p-4">
-                  <div className="flex items-center gap-2 text-sm font-medium text-white">
-                    <Globe2 className="h-4 w-4 text-cyan-300" />
-                    Search tools
-                  </div>
-                  <div className="mt-3 rounded-xl border border-white/[0.07] bg-black/20 p-3 text-xs text-gray-400">
-                    Recent information can be researched when needed
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="border-t border-white/[0.07] bg-[#0b0b0e] p-4 md:p-6">
-              <div className="rounded-[1.5rem] border border-white/[0.10] bg-[#1c1c22] p-2">
-                <div className="flex items-end gap-2">
-                  <button className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-gray-400" aria-label="Attach file">
-                    <Paperclip className="h-4 w-4" />
-                  </button>
-                  <input disabled placeholder="Ask anything about this project..." className="min-h-10 flex-1 bg-transparent text-sm text-white outline-none placeholder:text-gray-500" />
-                  <button className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-violet-500 text-white" aria-label="Send message">
-                    <Send className="h-4 w-4" />
-                  </button>
                 </div>
               </div>
             </div>
           </section>
-
-          <aside className="hidden border-l border-white/[0.07] bg-[#111115] p-4 xl:block">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-white">Artifact</h3>
-              <div className="rounded-full border border-white/[0.08] px-2 py-1 text-[11px] text-gray-500">Preview</div>
-            </div>
-
-            <div className="mt-4 rounded-2xl border border-white/[0.07] bg-black/20 p-3">
-              <div className="flex rounded-full border border-white/[0.08] bg-white/[0.03] p-1 text-xs">
-                <span className="rounded-full bg-violet-500 px-3 py-1 text-white">Preview</span>
-                <span className="px-3 py-1 text-gray-500">Code</span>
-              </div>
-              <div className="mt-4 rounded-2xl bg-gradient-to-br from-violet-500/20 via-white/[0.05] to-cyan-500/10 p-4">
-                <div className="rounded-xl border border-white/[0.10] bg-black/30 p-4">
-                  <Code2 className="h-5 w-5 text-violet-200" />
-                  <p className="mt-3 text-sm font-semibold text-white">Essay planner</p>
-                  <p className="mt-2 text-xs leading-5 text-gray-500">Generated component with sections, examples, and evaluation prompts.</p>
-                  <div className="mt-4 space-y-2">
-                    <div className="h-2 rounded-full bg-white/[0.14]" />
-                    <div className="h-2 w-4/5 rounded-full bg-white/[0.10]" />
-                    <div className="h-2 w-2/3 rounded-full bg-violet-300/30" />
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-4 rounded-2xl border border-white/[0.07] bg-white/[0.035] p-4">
-              <p className="text-sm font-medium text-white">Project instructions</p>
-              <p className="mt-2 text-xs leading-5 text-gray-500">Use concise explanations, Australian examples, and clear judgement.</p>
-            </div>
-          </aside>
         </div>
       </div>
     </motion.div>
-  )
-}
-
-function Insight({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
-  return (
-    <div className="rounded-2xl border border-white/[0.07] bg-black/20 p-3">
-      <div className="flex items-center gap-2 text-xs text-gray-500">
-        <span className="text-violet-300">{icon}</span>
-        {label}
-      </div>
-      <p className="mt-2 text-sm font-medium text-gray-200">{value}</p>
-    </div>
   )
 }
