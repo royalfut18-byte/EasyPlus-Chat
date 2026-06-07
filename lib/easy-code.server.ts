@@ -471,6 +471,19 @@ function getEasyCodeValidationSummary(
     reasons.push(`missing_starter_files:${outputDiagnostics.missingStarterFiles.join(',')}`)
   }
   if (outputDiagnostics.readmeOnly) reasons.push('readme_only')
+  if (requiresStaticStarterFiles && !outputDiagnostics.previewIntegrity.previewSafe) {
+    const previewReasons = [
+      !outputDiagnostics.previewIntegrity.validHtmlDocument ? 'invalid_html_document' : null,
+      outputDiagnostics.previewIntegrity.hasLiteralEscapedNewlines ? 'literal_escaped_newlines' : null,
+      outputDiagnostics.previewIntegrity.hasEntityEscapedHtml ? 'entity_escaped_html' : null,
+      !outputDiagnostics.previewIntegrity.hasCssLink ? 'missing_css_link' : null,
+      !outputDiagnostics.previewIntegrity.hasScriptLink ? 'missing_script_link' : null,
+      !outputDiagnostics.previewIntegrity.cssNonEmpty ? 'empty_css' : null,
+      !outputDiagnostics.previewIntegrity.jsNonEmpty ? 'empty_js' : null,
+      outputDiagnostics.previewIntegrity.looksLikePlainTextDump ? 'plain_text_dump' : null,
+    ].filter(Boolean)
+    reasons.push(`preview_unsafe:${previewReasons.join(',')}`)
+  }
   if (!outputDiagnostics.readiness.ready) {
     reasons.push(
       `readiness_failed:meaningful=${outputDiagnostics.readiness.meaningfulFileCount},index=${outputDiagnostics.readiness.hasIndexHtml}`
@@ -1117,6 +1130,7 @@ function normalizeMeaningfulStaticAiOutput(input: {
     }
   }
 
+  indexFile.content = cleanRecoveredStaticFileContent(indexFile.content || '', 'html')
   const html = indexFile.content
   const meaningfulAiOutput = html.length >= 220 && /<(html|body|main|section|header|footer)\b/i.test(html)
   if (!meaningfulAiOutput) {
@@ -1125,6 +1139,12 @@ function normalizeMeaningfulStaticAiOutput(input: {
       meaningfulAiOutput: false,
       normalizedSingleFileHtml: false,
       missingStarterFiles: getMissingStaticStarterFiles(input.aiResult.files),
+      recoveredFromAiOutput: false,
+      localMissingFilesSynthesized: false,
+      previewIntegrity: getStaticPreviewIntegrity(input.aiResult.files.map((file) => ({
+        path: file.newPath || file.path,
+        content: file.content || '',
+      }))),
     }
   }
 
@@ -1134,7 +1154,7 @@ function normalizeMeaningfulStaticAiOutput(input: {
   const extractedJs: string[] = []
 
   normalizedHtml = normalizedHtml.replace(/<style\b[^>]*>([\s\S]*?)<\/style>/gi, (_match, css) => {
-    const content = typeof css === 'string' ? css.trim() : ''
+    const content = typeof css === 'string' ? cleanRecoveredStaticFileContent(css, 'css') : ''
     if (content) extractedCss.push(content)
     return ''
   })
@@ -1144,7 +1164,7 @@ function normalizeMeaningfulStaticAiOutput(input: {
     if (/\bsrc\s*=/.test(attrText) || /\btype\s*=\s*["']application\/ld\+json["']/i.test(attrText)) {
       return match
     }
-    const content = typeof scriptContent === 'string' ? scriptContent.trim() : ''
+    const content = typeof scriptContent === 'string' ? cleanRecoveredStaticFileContent(scriptContent, 'js') : ''
     if (content) extractedJs.push(content)
     return ''
   })
@@ -1184,6 +1204,15 @@ function normalizeMeaningfulStaticAiOutput(input: {
       content: extractedCss.length > 0 ? extractedCss.join('\n\n') : buildSynthesizedStaticStyles(title),
       operation: 'create',
     })
+  } else {
+    const stylesFile = fileMap.get('styles.css')
+    if (stylesFile) {
+      stylesFile.content = cleanRecoveredStaticFileContent(stylesFile.content || '', 'css')
+      if (!stylesFile.content.trim()) {
+        stylesFile.content = buildSynthesizedStaticStyles(title)
+      }
+      fileMap.set('styles.css', stylesFile)
+    }
   }
   if (needsScriptFile) {
     fileMap.set('script.js', {
@@ -1192,6 +1221,15 @@ function normalizeMeaningfulStaticAiOutput(input: {
       content: extractedJs.length > 0 ? extractedJs.join('\n\n') : buildSynthesizedStaticScript(title),
       operation: 'create',
     })
+  } else {
+    const scriptFile = fileMap.get('script.js')
+    if (scriptFile) {
+      scriptFile.content = cleanRecoveredStaticFileContent(scriptFile.content || '', 'js')
+      if (!scriptFile.content.trim()) {
+        scriptFile.content = buildSynthesizedStaticScript(title)
+      }
+      fileMap.set('script.js', scriptFile)
+    }
   }
   if (!hasReadmeFile) {
     fileMap.set('readme.md', {
@@ -1200,10 +1238,20 @@ function normalizeMeaningfulStaticAiOutput(input: {
       content: buildStaticAiReadme(title, buildStaticAiSuccessSummary(title, localMissingFilesSynthesized ? 'supported' : 'created')),
       operation: 'create',
     })
+  } else {
+    const readmeFile = fileMap.get('readme.md')
+    if (readmeFile) {
+      readmeFile.content = cleanRecoveredStaticFileContent(readmeFile.content || '', 'markdown')
+      fileMap.set('readme.md', readmeFile)
+    }
   }
 
   const normalizedFiles = Array.from(fileMap.values())
   const normalizedSingleFileHtml = originalFileCount === 1 && normalizedFiles.length > 1
+  const previewIntegrity = getStaticPreviewIntegrity(normalizedFiles.map((file) => ({
+    path: file.newPath || file.path,
+    content: file.content || '',
+  })))
   const variant = normalizedSingleFileHtml
     ? 'recovered'
     : localMissingFilesSynthesized
@@ -1223,6 +1271,7 @@ function normalizeMeaningfulStaticAiOutput(input: {
     missingStarterFiles: getMissingStaticStarterFiles(normalizedFiles),
     recoveredFromAiOutput: normalizedSingleFileHtml,
     localMissingFilesSynthesized,
+    previewIntegrity,
   }
 }
 
@@ -2765,6 +2814,7 @@ function getEasyCodeAiResultDiagnostics(
   const meaningfulFiles = projectedFiles.filter((file) => file.path.toLowerCase() !== 'readme.md' && file.content.trim().length > 0)
   const readmeOnly = meaningfulFiles.length === 0 && projectedFiles.some((file) => file.path.toLowerCase() === 'readme.md')
   const missingStarterFiles = getMissingStaticStarterFiles(projectedFiles)
+  const previewIntegrity = getStaticPreviewIntegrity(projectedFiles)
 
   return {
     readiness,
@@ -2772,6 +2822,7 @@ function getEasyCodeAiResultDiagnostics(
     meaningfulFiles,
     readmeOnly,
     missingStarterFiles,
+    previewIntegrity,
   }
 }
 
@@ -2784,8 +2835,141 @@ function decodeEscapedEasyCodeText(text: string): string {
     .replace(/\\\\/g, '\\')
 }
 
+function stripEasyCodeMarkdownFences(text: string): string {
+  const trimmed = text.trim()
+  const fenced = trimmed.match(/^```(?:html|json|css|js|javascript|markdown|md|txt|text)?\s*([\s\S]*?)```$/i)
+  return fenced?.[1]?.trim() || trimmed
+}
+
+function decodeEasyCodeHtmlEntities(text: string): string {
+  return text
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/&amp;/gi, '&')
+}
+
+function unwrapEasyCodeQuotedContent(text: string): string {
+  let unwrapped = text.trim()
+  for (let i = 0; i < 2; i += 1) {
+    if (
+      (unwrapped.startsWith('"') && unwrapped.endsWith('"')) ||
+      (unwrapped.startsWith("'") && unwrapped.endsWith("'"))
+    ) {
+      unwrapped = unwrapped.slice(1, -1).trim()
+      continue
+    }
+    break
+  }
+  return unwrapped
+}
+
+function decodeLikelyEscapedEasyCodeContent(text: string): string {
+  let working = stripEasyCodeMarkdownFences(text)
+  let previous = ''
+
+  for (let i = 0; i < 3 && working !== previous; i += 1) {
+    previous = working
+    working = unwrapEasyCodeQuotedContent(working)
+
+    try {
+      if (
+        (working.startsWith('"') && working.endsWith('"')) ||
+        (working.startsWith("'") && working.endsWith("'"))
+      ) {
+        const normalizedQuotes = working.startsWith("'")
+          ? `"${working.slice(1, -1).replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`
+          : working
+        const parsed = JSON.parse(normalizedQuotes)
+        if (typeof parsed === 'string' && parsed.trim()) {
+          working = parsed.trim()
+          continue
+        }
+      }
+    } catch {}
+
+    if ((working.match(/\\(?:r|n|t|"|'|\\|u[0-9a-fA-F]{4})/g) || []).length >= 2) {
+      const wrapped = `"${working
+        .replace(/\\/g, '\\\\')
+        .replace(/"/g, '\\"')
+        .replace(/\r/g, '\\r')
+        .replace(/\n/g, '\\n')}"`
+      try {
+        const parsed = JSON.parse(wrapped)
+        if (typeof parsed === 'string' && parsed.trim()) {
+          working = parsed.trim()
+          continue
+        }
+      } catch {}
+    }
+
+    const decodedEscapes = decodeEscapedEasyCodeText(working)
+    if (decodedEscapes !== working) {
+      working = decodedEscapes
+      continue
+    }
+
+    const decodedEntities = decodeEasyCodeHtmlEntities(working)
+    if (decodedEntities !== working) {
+      working = decodedEntities
+    }
+  }
+
+  return unwrapEasyCodeQuotedContent(working).trim()
+}
+
+function cleanRecoveredStaticFileContent(content: string, kind: 'html' | 'css' | 'js' | 'markdown'): string {
+  let cleaned = decodeLikelyEscapedEasyCodeContent(content)
+  if (kind === 'html') {
+    cleaned = cleaned
+      .replace(/^[\s"']+(?=<!doctype html|<html\b|<body\b|<main\b|<section\b|<header\b|<div\b)/i, '')
+      .replace(/^[^{<]*(<!doctype html|<html\b|<body\b|<main\b|<section\b|<header\b|<div\b)/i, '$1')
+      .trim()
+  }
+  return cleaned
+}
+
+function getStaticPreviewIntegrity(files: Array<Pick<EasyCodeAiFile, 'path' | 'content'>>) {
+  const fileMap = new Map(files.map((file) => [file.path.toLowerCase(), file.content || '']))
+  const html = fileMap.get('index.html') || ''
+  const css = fileMap.get('styles.css') || ''
+  const js = fileMap.get('script.js') || ''
+  const hasLiteralEscapedNewlines = /\\n/.test(html.slice(0, 800))
+  const hasEntityEscapedHtml = /&lt;(?:!doctype html|html|body|main|section|header|div)\b/i.test(html)
+  const validHtmlDocument = /<(?:!doctype html|html)\b/i.test(html) && /<body\b/i.test(html)
+  const hasCssLink = /<link\b[^>]+href=["'][^"']*styles\.css["']/i.test(html)
+  const hasScriptLink = /<script\b[^>]+src=["'][^"']*script\.js["'][^>]*>\s*<\/script>/i.test(html)
+  const cssNonEmpty = css.trim().length > 0 && /[{:;]/.test(css)
+  const jsNonEmpty = js.trim().length > 0 && /[;{}()=]/.test(js)
+  const looksLikePlainTextDump =
+    !/<(html|body|main|section|header|div|nav|footer)\b/i.test(html) &&
+    /\b(services|benefits|pricing|testimonials|contact|booking|faq)\b/i.test(html)
+  const previewSafe =
+    validHtmlDocument &&
+    !hasLiteralEscapedNewlines &&
+    !hasEntityEscapedHtml &&
+    !looksLikePlainTextDump &&
+    hasCssLink &&
+    hasScriptLink &&
+    cssNonEmpty &&
+    jsNonEmpty
+
+  return {
+    validHtmlDocument,
+    hasLiteralEscapedNewlines,
+    hasEntityEscapedHtml,
+    hasCssLink,
+    hasScriptLink,
+    cssNonEmpty,
+    jsNonEmpty,
+    looksLikePlainTextDump,
+    previewSafe,
+  }
+}
+
 function normalizeRecoveredHtmlDocument(html: string, title: string) {
-  let normalized = html.trim()
+  let normalized = cleanRecoveredStaticFileContent(html, 'html')
   if (!/^<!doctype/i.test(normalized)) {
     normalized = `<!doctype html>\n${normalized}`
   }
@@ -2825,21 +3009,22 @@ ${normalized}
 }
 
 function extractMeaningfulHtmlFromText(text: string, title: string): string | null {
-  const candidates = [text.trim()]
+  const candidates = [text.trim(), decodeLikelyEscapedEasyCodeContent(text)]
   const fenced = text.match(/```(?:html)?\s*([\s\S]*?)```/i)?.[1]?.trim()
   if (fenced) candidates.push(fenced)
   const decoded = decodeEscapedEasyCodeText(text)
   if (decoded.trim() && decoded.trim() !== text.trim()) candidates.push(decoded.trim())
 
   for (const candidate of candidates) {
+    const cleanedCandidate = cleanRecoveredStaticFileContent(candidate, 'html')
     const htmlMatch =
-      candidate.match(/<!doctype html[\s\S]*?(?:<\/html>|$)/i) ||
-      candidate.match(/<html\b[\s\S]*?(?:<\/html>|$)/i)
+      cleanedCandidate.match(/<!doctype html[\s\S]*?(?:<\/html>|$)/i) ||
+      cleanedCandidate.match(/<html\b[\s\S]*?(?:<\/html>|$)/i)
     if (htmlMatch?.[0]) {
       return normalizeRecoveredHtmlDocument(htmlMatch[0], title)
     }
 
-    const fragmentMatch = candidate.match(/<(main|section|header|div)\b[\s\S]{320,}$/i)
+    const fragmentMatch = cleanedCandidate.match(/<(main|section|header|div)\b[\s\S]{320,}$/i)
     if (fragmentMatch?.[0]) {
       return normalizeRecoveredHtmlDocument(fragmentMatch[0], title)
     }
@@ -3562,10 +3747,17 @@ export async function runEasyCodeInitialGeneration(userId: string, projectId: st
       hasIndexHtml: proposedReadiness.hasIndexHtml,
       missingStarterFiles,
       readmeOnly: outputDiagnostics.readmeOnly,
+      validHtmlDocument: outputDiagnostics.previewIntegrity.validHtmlDocument,
+      hasLiteralEscapedNewlines: outputDiagnostics.previewIntegrity.hasLiteralEscapedNewlines,
+      hasCssLink: outputDiagnostics.previewIntegrity.hasCssLink,
+      hasScriptLink: outputDiagnostics.previewIntegrity.hasScriptLink,
+      cssNonEmpty: outputDiagnostics.previewIntegrity.cssNonEmpty,
+      jsNonEmpty: outputDiagnostics.previewIntegrity.jsNonEmpty,
+      previewSafe: outputDiagnostics.previewIntegrity.previewSafe,
       providerUsed,
     })
 
-    if (staticLandingPage && (missingStarterFiles.length > 0 || outputDiagnostics.readmeOnly || !proposedReadiness.ready)) {
+    if (staticLandingPage && (missingStarterFiles.length > 0 || outputDiagnostics.readmeOnly || !proposedReadiness.ready || !outputDiagnostics.previewIntegrity.previewSafe)) {
       const correctedGeneration = await repairIncompleteStaticLandingPageGeneration({
         project,
         instruction: cleanPrompt,
@@ -3600,12 +3792,22 @@ export async function runEasyCodeInitialGeneration(userId: string, projectId: st
         hasIndexHtml: proposedReadiness.hasIndexHtml,
         missingStarterFiles,
         readmeOnly: outputDiagnostics.readmeOnly,
+        validHtmlDocument: outputDiagnostics.previewIntegrity.validHtmlDocument,
+        hasLiteralEscapedNewlines: outputDiagnostics.previewIntegrity.hasLiteralEscapedNewlines,
+        hasCssLink: outputDiagnostics.previewIntegrity.hasCssLink,
+        hasScriptLink: outputDiagnostics.previewIntegrity.hasScriptLink,
+        cssNonEmpty: outputDiagnostics.previewIntegrity.cssNonEmpty,
+        jsNonEmpty: outputDiagnostics.previewIntegrity.jsNonEmpty,
+        previewSafe: outputDiagnostics.previewIntegrity.previewSafe,
         providerUsed,
       })
     }
 
     if (missingStarterFiles.length > 0) throw attachEasyCodeDiagnostics(new Error('Generation incomplete. Retry.'), aiDiagnostics)
     if (outputDiagnostics.readmeOnly) throw attachEasyCodeDiagnostics(new Error('Generation incomplete. Retry.'), aiDiagnostics)
+    if (staticLandingPage && !outputDiagnostics.previewIntegrity.previewSafe) {
+      throw attachEasyCodeDiagnostics(new Error('AI returned no usable project content. Retry.'), aiDiagnostics)
+    }
     if (!proposedReadiness.ready) throw attachEasyCodeDiagnostics(new Error('Generation incomplete. Retry.'), aiDiagnostics)
     await updateEasyCodeGenerationState(userId, projectId, {
       status: 'generating',
@@ -3634,8 +3836,15 @@ export async function runEasyCodeInitialGeneration(userId: string, projectId: st
       meaningfulFiles: savedReadiness.meaningfulFileCount,
       hasIndexHtml: savedReadiness.hasIndexHtml,
       missingStarterFiles: missingSavedStarterFiles,
+      previewSafe: getStaticPreviewIntegrity(savedFiles.map((file) => ({ path: file.path, content: file.content }))).previewSafe,
     })
+    const savedPreviewIntegrity = staticLandingPage
+      ? getStaticPreviewIntegrity(savedFiles.map((file) => ({ path: file.path, content: file.content })))
+      : null
     if (missingSavedStarterFiles.length > 0) throw attachEasyCodeDiagnostics(new Error('Generation incomplete. Retry.'), aiDiagnostics)
+    if (savedPreviewIntegrity && !savedPreviewIntegrity.previewSafe) {
+      throw attachEasyCodeDiagnostics(new Error('AI returned no usable project content. Retry.'), aiDiagnostics)
+    }
     if (!savedReadiness.ready) throw attachEasyCodeDiagnostics(new Error('Generation incomplete. Retry.'), aiDiagnostics)
     await db.from('easy_code_projects')
       .update({
@@ -4295,8 +4504,21 @@ export async function runEasyCodeEdit(userId: string, projectId: string, instruc
 export function buildStaticPreviewHtml(files: EasyCodeFile[]): string | null {
   const index = files.find(file => file.path.toLowerCase() === 'index.html')
   if (!index) return null
-  const fileMap = new Map(files.map(file => [file.path.toLowerCase(), file.content]))
-  let html = index.content
+  const fileMap = new Map(files.map(file => {
+    const path = file.path.toLowerCase()
+    const kind = path.endsWith('.css')
+      ? 'css'
+      : path.endsWith('.js')
+        ? 'js'
+        : path.endsWith('.md')
+          ? 'markdown'
+          : 'html'
+    return [path, cleanRecoveredStaticFileContent(file.content, kind)]
+  }))
+  let html = cleanRecoveredStaticFileContent(index.content, 'html')
+  if (!/<(?:!doctype html|html)\b/i.test(html) || !/<body\b/i.test(html)) {
+    return null
+  }
   html = html.replace(/<link\s+[^>]*href=["']([^"']+)["'][^>]*>/gi, (match, href) => {
     const clean = href.replace(/^\.\//, '').toLowerCase()
     const css = fileMap.get(clean)
