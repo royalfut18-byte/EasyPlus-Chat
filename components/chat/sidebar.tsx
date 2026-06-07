@@ -151,9 +151,19 @@ export function Sidebar({
             </div>
             <div className="space-y-px px-2 pb-2">
               {projects.length === 0 ? (
-                <button onClick={() => navigateFromDrawer('/projects')} className="w-full rounded-lg px-2.5 py-2 text-left text-xs text-gray-500 transition-colors hover:bg-white/[0.045] hover:text-gray-300">
-                  Create your first project
-                </button>
+                <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-2">
+                  <button onClick={() => navigateFromDrawer('/projects')} className="w-full rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-white/[0.045]">
+                    <p className="text-sm font-medium text-gray-200">Create your first project</p>
+                    <p className="mt-1 text-[11px] text-gray-500">Start a project to group chats, files, and artifacts.</p>
+                  </button>
+                  <button
+                    onClick={() => navigateFromDrawer('/projects')}
+                    className="mt-1 flex w-full items-center gap-2 rounded-lg border border-violet-300/[0.12] bg-violet-500/[0.06] px-2.5 py-2 text-xs font-medium text-violet-100 transition-colors hover:bg-violet-500/[0.12] hover:text-white"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    New project
+                  </button>
+                </div>
               ) : projects.map(project => {
                 const expanded = !!expandedProjects[project.id]
                 const isActive = activeProjectId === project.id

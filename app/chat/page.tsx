@@ -3,7 +3,24 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Sparkles, Box, PanelRightOpen, Globe, Paperclip, Send, Loader2, X, FileText, FolderOpen, ArrowLeft } from 'lucide-react'
+import {
+  Sparkles,
+  Box,
+  PanelRightOpen,
+  Globe,
+  Paperclip,
+  Send,
+  Loader2,
+  X,
+  FileText,
+  FolderOpen,
+  ArrowLeft,
+  Code2,
+  Search,
+  GraduationCap,
+  LayoutPanelTop,
+  Files,
+} from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { ensureProfile } from '@/lib/supabase/ensure-profile'
 import { ModelSelector } from '@/components/chat/model-selector'
@@ -2834,6 +2851,102 @@ export default function ChatPage() {
   const displayedMessages = processMessages(messages, activeConversationId)
 
   const isEmptyDraft = !currentConversation && displayedMessages.length === 0 && !isImageGenerationMode
+  const heroHasActiveUpload = heroAttachments.some((attachment) =>
+    attachment.uploadStatus === 'pending' ||
+    attachment.uploadStatus === 'uploading' ||
+    attachment.uploadStatus === 'processing' ||
+    attachment.uploadStatus === 'compressing'
+  )
+  const heroReadyAttachmentCount = heroAttachments.filter((attachment) => attachment.uploadStatus === 'uploaded').length
+
+  const syncHeroTextareaHeight = () => {
+    requestAnimationFrame(() => {
+      const textarea = heroTextareaRef.current
+      if (!textarea) return
+      textarea.style.height = 'auto'
+      textarea.style.height = `${Math.min(textarea.scrollHeight, 160)}px`
+    })
+  }
+
+  const focusHeroComposer = () => {
+    requestAnimationFrame(() => {
+      heroTextareaRef.current?.focus()
+      syncHeroTextareaHeight()
+    })
+  }
+
+  const populateHeroComposer = (
+    prompt: string,
+    options: {
+      artifactMode?: boolean
+      webSearchEnabled?: boolean
+      openUploader?: boolean
+    } = {}
+  ) => {
+    setHeroInput(prompt)
+    if (typeof options.artifactMode === 'boolean') {
+      setArtifactMode(options.artifactMode)
+    }
+    if (typeof options.webSearchEnabled === 'boolean') {
+      setWebSearchEnabled(options.webSearchEnabled)
+    }
+    focusHeroComposer()
+    if (options.openUploader) {
+      requestAnimationFrame(() => heroFileInputRef.current?.click())
+    }
+  }
+
+  const submitHeroComposer = () => {
+    if ((!heroInput.trim() && heroAttachments.length === 0) || isRequestInProgress || heroHasActiveUpload) return
+    const content = heroInput.trim() || (heroReadyAttachmentCount > 0 ? 'Please analyze the attached file.' : '')
+    const readyAttachments = heroAttachments.filter((attachment) => attachment.uploadStatus !== 'failed')
+    handleSendMessage(content, readyAttachments.length > 0 ? readyAttachments : undefined)
+    setHeroInput('')
+    setHeroAttachments([])
+    requestAnimationFrame(() => {
+      if (heroTextareaRef.current) heroTextareaRef.current.style.height = 'auto'
+    })
+  }
+
+  const quickActions = [
+    {
+      title: 'Analyze a file',
+      subtitle: 'Upload PDFs, images, docs, or screenshots',
+      icon: FileText,
+      onClick: () => populateHeroComposer('Analyze the uploaded file and walk me through the key points, risks, and next steps.', { openUploader: true }),
+    },
+    {
+      title: 'Build with Easy Code',
+      subtitle: 'Generate, preview, edit, and download projects',
+      icon: Code2,
+      onClick: () => router.push('/easy-code'),
+    },
+    {
+      title: 'Create an artifact',
+      subtitle: 'Interactive quizzes, calculators, flashcards, tools',
+      icon: LayoutPanelTop,
+      onClick: () => populateHeroComposer('Make me an interactive quiz about...', { artifactMode: true, webSearchEnabled: false }),
+    },
+    {
+      title: 'Search the web',
+      subtitle: 'Research current information',
+      icon: Search,
+      onClick: () => populateHeroComposer('Search the web for...', { webSearchEnabled: true, artifactMode: false }),
+    },
+    {
+      title: 'Write or study',
+      subtitle: 'Essays, notes, summaries, exam prep',
+      icon: GraduationCap,
+      onClick: () => populateHeroComposer('Review this essay and give me feedback on structure, clarity, and how to improve it.'),
+    },
+  ] as const
+
+  const artifactStarterChips = [
+    { label: 'Quiz', prompt: 'Make me an interactive quiz about...', artifactMode: true as const },
+    { label: 'Calculator', prompt: 'Build me a calculator that...', artifactMode: true as const },
+    { label: 'Flashcards', prompt: 'Create interactive flashcards for...', artifactMode: true as const },
+    { label: 'Timeline', prompt: 'Make me an interactive timeline for...', artifactMode: true as const },
+  ]
 
   return (
     <div className="flex h-[100dvh] overflow-hidden bg-[#0f0f0f] md:h-screen">
@@ -2934,7 +3047,7 @@ export default function ChatPage() {
         </div>
 
         <div className="flex-1 overflow-y-auto px-3 py-4 scrollbar-thin md:px-4 md:py-5 lg:px-6">
-              <div className={cn('mx-auto', isImageGenerationMode ? 'max-w-5xl' : 'max-w-[820px]')}>
+              <div className={cn('mx-auto', isImageGenerationMode ? 'max-w-5xl' : isEmptyDraft ? 'max-w-[1380px]' : 'max-w-[820px]')}>
                 {isImageGenerationMode ? (
                   <ImageGenerationPanel
                     generatedImages={generatedImages}
@@ -2951,235 +3064,335 @@ export default function ChatPage() {
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: -10 }}
                       transition={{ duration: 0.4 }}
-                      className="relative mx-auto flex min-h-[54svh] max-w-3xl flex-col items-center justify-center gap-3 px-1 py-3 text-center sm:min-h-[60vh] sm:gap-5 md:min-h-[66vh] md:gap-6 md:px-4"
+                      className="relative mx-auto flex min-h-[calc(100svh-11rem)] w-full max-w-[1380px] flex-col gap-4 px-1 py-2 sm:gap-5 md:px-2 lg:gap-6"
                       onDragEnter={handleHeroDragEnter}
                       onDragOver={handleHeroDragOver}
                       onDragLeave={handleHeroDragLeave}
                       onDrop={handleHeroDrop}
                     >
-                  {heroIsDragging && (
-                    <div className="pointer-events-none fixed inset-0 z-[80] flex items-center justify-center bg-black/55 p-4 backdrop-blur-md">
-                      <div className="w-full max-w-lg rounded-2xl border border-dashed border-white/[0.18] bg-[#1b1b1b]/95 p-8 text-center shadow-2xl shadow-black/40">
-                        <Paperclip className="h-12 w-12 text-gray-400 mx-auto mb-3" />
-                        <p className="text-lg font-semibold text-white">Drop files to attach</p>
-                        <p className="text-gray-400 text-sm mt-1">
-                          PDFs, images, Word, Excel, PowerPoint, text, CSV, JSON, ZIP, audio, and video
-                        </p>
-                        <p className="text-xs text-gray-500 mt-3">
-                          Up to {HERO_MAX_FILES} files, {heroMaxUploadMB}MB each
-                        </p>
-                      </div>
-                    </div>
-                  )}
-                  {/* Badge */}
-                  <motion.div
-                    initial={{ opacity: 0, y: 5 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.1 }}
-                    className="relative text-xs font-medium text-gray-600"
-                  >
-                    Private AI Workspace
-                  </motion.div>
-
-                  {/* Heading */}
-                  <motion.div
-                    initial={{ opacity: 0, y: 8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.15 }}
-                    className="relative space-y-2 sm:space-y-2.5"
-                  >
-                    <h1 className="text-2xl font-semibold tracking-tight text-white/95 sm:text-4xl md:text-[2.75rem]">
-                      Ask anything. Build anything.
-                    </h1>
-                    <p className="mx-auto max-w-xl text-sm leading-relaxed text-gray-400 md:text-base">
-                      Chat, search, upload files, and create interactive artifacts from one focused workspace.
-                    </p>
-                  </motion.div>
-
-                  {/* Interactive prompt input */}
-                  <motion.div
-                    initial={{ opacity: 0, y: 8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.25 }}
-                    className="relative w-full max-w-3xl"
-                  >
-                    <div className="relative rounded-[24px] border border-white/[0.11] bg-[#262626] px-2.5 py-2.5 transition-colors focus-within:border-white/[0.20] md:px-3">
-                      <input
-                        ref={heroFileInputRef}
-                        type="file"
-                        accept=".pdf,.txt,.md,.csv,.json,.docx,.xlsx,.pptx,.png,.jpg,.jpeg,.webp,.gif,.mp4,.webm,.mp3,.wav,.zip,.tar,.gz"
-                        multiple
-                        onChange={(e) => {
-                          handleHeroFileSelect(e.target.files)
-                          e.target.value = ''
-                        }}
-                        className="hidden"
-                      />
-                      {heroAttachments.length > 0 && (
-                        <div className="text-xs text-gray-400 mb-2 px-1">
-                          {heroAttachments.length} / {HERO_MAX_FILES} attachments
+                      {heroIsDragging && (
+                        <div className="pointer-events-none fixed inset-0 z-[80] flex items-center justify-center bg-black/55 p-4 backdrop-blur-md">
+                          <div className="w-full max-w-lg rounded-2xl border border-dashed border-white/[0.18] bg-[#1b1b1b]/95 p-8 text-center shadow-2xl shadow-black/40">
+                            <Paperclip className="mx-auto mb-3 h-12 w-12 text-gray-400" />
+                            <p className="text-lg font-semibold text-white">Drop files to attach</p>
+                            <p className="mt-1 text-sm text-gray-400">
+                              PDFs, images, Word, Excel, PowerPoint, text, CSV, JSON, ZIP, audio, and video
+                            </p>
+                            <p className="mt-3 text-xs text-gray-500">
+                              Up to {HERO_MAX_FILES} files, {heroMaxUploadMB}MB each
+                            </p>
+                          </div>
                         </div>
                       )}
-                      {heroAttachments.length > 0 && (
-                        <div className="flex gap-2 mb-3 pb-3 border-b border-white/10 overflow-x-auto">
-                          {heroAttachments.map((att, idx) => (
-                            <div key={idx} className="relative group shrink-0">
-                              {att.type === 'image' && att.dataUrl ? (
-                                <div className="h-14 w-14 overflow-hidden rounded-lg border border-white/[0.12] bg-black/20 md:h-16 md:w-16">
-                                  <img src={att.dataUrl} alt={att.name} className="h-full w-full object-cover" />
-                                </div>
-                              ) : (
-                                <div className="flex h-14 w-40 items-center gap-2 rounded-lg border border-white/[0.10] bg-[#202020] p-2 md:h-16 md:w-48">
-                                  <FileText className="h-5 w-5 text-gray-400 shrink-0" />
-                                  <div className="min-w-0">
-                                    <p className="text-xs font-medium text-white truncate">{att.name}</p>
-                                    <p className="text-[10px] text-gray-400">
-                                      {att.uploadStatus === 'pending' ? 'Preparing...' :
-                                       att.uploadStatus === 'uploading' ? `Uploading ${att.uploadProgress || 0}%` :
-                                       att.uploadStatus === 'processing' ? 'Processing in cloud...' :
-                                       att.uploadStatus === 'compressing' ? 'Compressing...' :
-                                       att.uploadStatus === 'uploaded' ? 'Uploaded' :
-                                       att.uploadStatus === 'failed' ? `Failed${att.uploadError ? `: ${att.uploadError}` : ''}` :
-                                       att.size ? (att.size >= 1024 * 1024 ? `${(att.size / 1024 / 1024).toFixed(1)} MB` : `${(att.size / 1024).toFixed(0)} KB`) : ''}
-                                    </p>
-                                  </div>
-                                </div>
-                              )}
-                              {(att.uploadStatus === 'uploading' || att.uploadStatus === 'processing') && (
-                                <div className="absolute bottom-0 left-0 right-0 h-1 bg-white/10 rounded-b-xl overflow-hidden">
-                                  <div className={cn('h-full transition-all', att.uploadStatus === 'processing' ? 'bg-amber-400' : 'bg-violet-500')} style={{ width: `${att.uploadProgress || 0}%` }} />
-                                </div>
-                              )}
-                              <button
-                                type="button"
-                                onClick={() => setHeroAttachments(prev => prev.filter((_, i) => i !== idx))}
-                                className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full border border-white/[0.12] bg-[#3a3a3a] transition-colors hover:bg-red-500"
-                              >
-                                <X className="h-3 w-3 text-white" />
-                              </button>
+
+                      <div className="grid gap-4 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,0.95fr)_minmax(280px,0.78fr)]">
+                        <motion.div
+                          initial={{ opacity: 0, y: 8 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ delay: 0.1 }}
+                          className="space-y-4 rounded-[28px] border border-white/[0.08] bg-[radial-gradient(circle_at_top_left,rgba(139,92,246,0.18),transparent_34%),linear-gradient(180deg,rgba(255,255,255,0.04),rgba(255,255,255,0.02))] p-4 shadow-[0_24px_90px_rgba(0,0,0,0.34)] backdrop-blur-xl sm:p-5 lg:p-6"
+                        >
+                          <div className="space-y-3">
+                            <div className="inline-flex items-center gap-2 rounded-full border border-violet-300/[0.14] bg-violet-500/[0.08] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-violet-100/90">
+                              <Sparkles className="h-3.5 w-3.5" />
+                              Start your workspace
                             </div>
-                          ))}
-                        </div>
-                      )}
-                      <div className="flex items-end gap-2">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (process.env.NODE_ENV !== 'production') {
-                              console.log('[Hero Upload] Paperclip clicked, fileInput exists:', !!heroFileInputRef.current)
-                            }
-                            heroFileInputRef.current?.click()
-                          }}
-                          disabled={isRequestInProgress}
-                          className="mb-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-gray-500 transition-colors hover:bg-white/[0.06] hover:text-gray-300 disabled:cursor-not-allowed disabled:opacity-50"
-                          title="Attach files"
-                        >
-                          <Paperclip className="h-[18px] w-[18px] md:h-5 md:w-5" />
-                        </button>
-                        <textarea
-                          ref={heroTextareaRef}
-                          value={heroInput}
-                          onChange={(e) => {
-                            setHeroInput(e.target.value)
-                            e.target.style.height = 'auto'
-                            e.target.style.height = `${Math.min(e.target.scrollHeight, 160)}px`
-                          }}
-                          onPaste={async (e) => {
-                            const items = e.clipboardData?.items
-                            if (!items) return
-                            const imageFiles: File[] = []
-                            for (const item of Array.from(items)) {
-                              if (item.type.startsWith('image/')) {
-                                const file = item.getAsFile()
-                                if (file) imageFiles.push(file)
-                              }
-                            }
-                            if (imageFiles.length > 0) {
-                              e.preventDefault()
-                              const remaining = HERO_MAX_FILES - heroAttachments.length
-                              const filesToProcess = imageFiles.slice(0, remaining)
-                              await Promise.all(filesToProcess.map(file => heroProcessFile(file)))
-                            }
-                          }}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter' && !e.shiftKey) {
-                              e.preventDefault()
-                              const hasActiveHeroUpload = heroAttachments.some(a => a.uploadStatus === 'pending' || a.uploadStatus === 'uploading' || a.uploadStatus === 'processing' || a.uploadStatus === 'compressing')
-                              if ((heroInput.trim() || heroAttachments.length > 0) && !isRequestInProgress && !hasActiveHeroUpload) {
-                                const readyAttachments = heroAttachments.filter(a => a.uploadStatus !== 'failed')
-                                const content = heroInput.trim() || (readyAttachments.length > 0 ? 'Please analyze the attached file.' : '')
-                                handleSendMessage(content, readyAttachments.length > 0 ? readyAttachments : undefined)
-                                setHeroInput('')
-                                setHeroAttachments([])
-                                if (heroTextareaRef.current) heroTextareaRef.current.style.height = 'auto'
-                              }
-                            }
-                          }}
-                          placeholder="Ask anything..."
-                          disabled={isRequestInProgress}
-                          className="min-h-[30px] flex-1 resize-none border-none bg-transparent py-1.5 text-base text-white outline-none scrollbar-thin placeholder:text-gray-500 disabled:opacity-50"
-                          rows={1}
-                          autoFocus
-                        />
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const hasActiveHeroUpload = heroAttachments.some(a => a.uploadStatus === 'pending' || a.uploadStatus === 'uploading' || a.uploadStatus === 'processing' || a.uploadStatus === 'compressing')
-                            if ((heroInput.trim() || heroAttachments.length > 0) && !isRequestInProgress && !hasActiveHeroUpload) {
-                              const readyAttachments = heroAttachments.filter(a => a.uploadStatus !== 'failed')
-                              const content = heroInput.trim() || (readyAttachments.length > 0 ? 'Please analyze the attached file.' : '')
-                              handleSendMessage(content, readyAttachments.length > 0 ? readyAttachments : undefined)
-                              setHeroInput('')
-                              setHeroAttachments([])
-                              if (heroTextareaRef.current) heroTextareaRef.current.style.height = 'auto'
-                            }
-                          }}
-                          disabled={(!heroInput.trim() && heroAttachments.length === 0) || isRequestInProgress || heroAttachments.some(a => a.uploadStatus === 'pending' || a.uploadStatus === 'uploading' || a.uploadStatus === 'processing' || a.uploadStatus === 'compressing')}
-                          className="mb-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-violet-600/90 transition-colors hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-30"
-                        >
-                          {isRequestInProgress || heroAttachments.some(a => a.uploadStatus === 'pending' || a.uploadStatus === 'uploading' || a.uploadStatus === 'processing') ? (
-                            <Loader2 className="h-3.5 w-3.5 md:h-4 md:w-4 text-white animate-spin" />
-                          ) : (
-                            <Send className="h-3.5 w-3.5 md:h-4 md:w-4 text-white" />
-                          )}
-                        </button>
-                      </div>
-                      {/* Reasoning selector in hero input */}
-                      <div className="mt-2 flex items-center border-t border-white/[0.05] pt-2">
-                        <ReasoningSelector
-                          selectedMode={reasoningMode}
-                          onSelectMode={setReasoningMode}
-                          disabled={isRequestInProgress}
-                        />
-                      </div>
-                    </div>
-                  </motion.div>
+                            <div className="space-y-2">
+                              <h1 className="max-w-2xl text-3xl font-semibold tracking-tight text-white sm:text-4xl xl:text-[2.9rem]">
+                                What do you want to work on?
+                              </h1>
+                              <p className="max-w-2xl text-sm leading-relaxed text-gray-300 sm:text-base">
+                                Ask, build, research, or upload anything. Use models, files, search, artifacts, and Easy Code from one place.
+                              </p>
+                            </div>
+                          </div>
 
-                  {/* Suggestion chips */}
-                  <motion.div
-                    initial={{ opacity: 0, y: 8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.35 }}
-                    className="relative flex flex-wrap justify-center gap-2"
-                  >
-                    {[
-                      'Explain a maths question',
-                      'Review my essay',
-                      'Search current news',
-                      'Build an artifact',
-                      'Analyse a document',
-                    ].map((text, i) => (
-                      <button
-                        key={i}
-                        onClick={() => handleSendMessage(text)}
-                        disabled={isRequestInProgress}
-                        className="rounded-full border border-white/[0.07] bg-white/[0.02] px-3 py-1.5 text-xs text-gray-400 transition-colors hover:border-violet-300/[0.18] hover:bg-white/[0.05] hover:text-gray-200 disabled:cursor-not-allowed disabled:opacity-50 md:text-sm"
-                      >
-                        {text}
-                      </button>
-                    ))}
-                  </motion.div>
-                </motion.div>
+                          <div className="grid gap-2.5 sm:grid-cols-3">
+                            <div className="rounded-2xl border border-white/[0.07] bg-black/20 p-3">
+                              <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-gray-500">Project</p>
+                              <p className="mt-2 text-sm font-medium text-white">{activeProject ? activeProject.name : 'No project selected'}</p>
+                              <p className="mt-1 text-xs text-gray-400">{activeProject ? 'Use this chat to build inside the active project.' : 'Start a project to save context and artifacts.'}</p>
+                            </div>
+                            <div className="rounded-2xl border border-white/[0.07] bg-black/20 p-3">
+                              <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-gray-500">Files</p>
+                              <p className="mt-2 text-sm font-medium text-white">{heroReadyAttachmentCount > 0 ? `${heroReadyAttachmentCount} ready to use` : 'No file uploaded yet'}</p>
+                              <p className="mt-1 text-xs text-gray-400">{heroReadyAttachmentCount > 0 ? 'Attachments will be sent with your next message.' : 'Drop files here or attach them from the composer.'}</p>
+                            </div>
+                            <div className="rounded-2xl border border-white/[0.07] bg-black/20 p-3">
+                              <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-gray-500">Modes</p>
+                              <div className="mt-2 flex flex-wrap gap-2">
+                                <span className={cn('rounded-full border px-2.5 py-1 text-[11px]', webSearchEnabled ? 'border-emerald-400/20 bg-emerald-500/10 text-emerald-200' : 'border-white/[0.08] bg-white/[0.04] text-gray-300')}>Search {webSearchEnabled ? 'on' : 'off'}</span>
+                                <span className={cn('rounded-full border px-2.5 py-1 text-[11px]', artifactMode ? 'border-violet-400/20 bg-violet-500/10 text-violet-200' : 'border-white/[0.08] bg-white/[0.04] text-gray-300')}>Artifacts {artifactMode ? 'on' : 'off'}</span>
+                              </div>
+                              <p className="mt-2 text-xs text-gray-400">Toggle them from the top bar or use the quick actions below.</p>
+                            </div>
+                          </div>
+
+                          <div className="relative overflow-hidden rounded-[26px] border border-white/[0.1] bg-[#1a1a1a]/90 p-2.5 shadow-[0_12px_50px_rgba(0,0,0,0.38)] sm:p-3">
+                            <div className="pointer-events-none absolute inset-x-0 top-0 h-24 bg-[radial-gradient(circle_at_top,rgba(168,85,247,0.16),transparent_58%)]" />
+                            <input
+                              ref={heroFileInputRef}
+                              type="file"
+                              accept=".pdf,.txt,.md,.csv,.json,.docx,.xlsx,.pptx,.png,.jpg,.jpeg,.webp,.gif,.mp4,.webm,.mp3,.wav,.zip,.tar,.gz"
+                              multiple
+                              onChange={(e) => {
+                                handleHeroFileSelect(e.target.files)
+                                e.target.value = ''
+                              }}
+                              className="hidden"
+                            />
+
+                            <div className="relative">
+                              {heroAttachments.length > 0 && (
+                                <div className="mb-2 px-1 text-xs text-gray-400">
+                                  {heroAttachments.length} / {HERO_MAX_FILES} attachments
+                                </div>
+                              )}
+
+                              {heroAttachments.length > 0 && (
+                                <div className="mb-3 flex gap-2 overflow-x-auto border-b border-white/10 pb-3">
+                                  {heroAttachments.map((att, idx) => (
+                                    <div key={idx} className="group relative shrink-0">
+                                      {att.type === 'image' && att.dataUrl ? (
+                                        <div className="h-14 w-14 overflow-hidden rounded-lg border border-white/[0.12] bg-black/20 md:h-16 md:w-16">
+                                          <img src={att.dataUrl} alt={att.name} className="h-full w-full object-cover" />
+                                        </div>
+                                      ) : (
+                                        <div className="flex h-14 w-40 items-center gap-2 rounded-lg border border-white/[0.1] bg-[#202020] p-2 md:h-16 md:w-48">
+                                          <FileText className="h-5 w-5 shrink-0 text-gray-400" />
+                                          <div className="min-w-0">
+                                            <p className="truncate text-xs font-medium text-white">{att.name}</p>
+                                            <p className="text-[10px] text-gray-400">
+                                              {att.uploadStatus === 'pending' ? 'Preparing...' :
+                                               att.uploadStatus === 'uploading' ? `Uploading ${att.uploadProgress || 0}%` :
+                                               att.uploadStatus === 'processing' ? 'Processing in cloud...' :
+                                               att.uploadStatus === 'compressing' ? 'Compressing...' :
+                                               att.uploadStatus === 'uploaded' ? 'Uploaded' :
+                                               att.uploadStatus === 'failed' ? `Failed${att.uploadError ? `: ${att.uploadError}` : ''}` :
+                                               att.size ? (att.size >= 1024 * 1024 ? `${(att.size / 1024 / 1024).toFixed(1)} MB` : `${(att.size / 1024).toFixed(0)} KB`) : ''}
+                                            </p>
+                                          </div>
+                                        </div>
+                                      )}
+                                      {(att.uploadStatus === 'uploading' || att.uploadStatus === 'processing') && (
+                                        <div className="absolute bottom-0 left-0 right-0 h-1 overflow-hidden rounded-b-xl bg-white/10">
+                                          <div className={cn('h-full transition-all', att.uploadStatus === 'processing' ? 'bg-amber-400' : 'bg-violet-500')} style={{ width: `${att.uploadProgress || 0}%` }} />
+                                        </div>
+                                      )}
+                                      <button
+                                        type="button"
+                                        onClick={() => setHeroAttachments((prev) => prev.filter((_, i) => i !== idx))}
+                                        className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full border border-white/[0.12] bg-[#3a3a3a] transition-colors hover:bg-red-500"
+                                      >
+                                        <X className="h-3 w-3 text-white" />
+                                      </button>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+
+                              <div className="flex items-end gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => heroFileInputRef.current?.click()}
+                                  disabled={isRequestInProgress}
+                                  className="mb-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/[0.07] bg-white/[0.03] text-gray-400 transition-colors hover:bg-white/[0.08] hover:text-gray-200 disabled:cursor-not-allowed disabled:opacity-50"
+                                  title="Attach files"
+                                >
+                                  <Paperclip className="h-[18px] w-[18px] md:h-5 md:w-5" />
+                                </button>
+                                <textarea
+                                  ref={heroTextareaRef}
+                                  value={heroInput}
+                                  onChange={(e) => {
+                                    setHeroInput(e.target.value)
+                                    e.target.style.height = 'auto'
+                                    e.target.style.height = `${Math.min(e.target.scrollHeight, 160)}px`
+                                  }}
+                                  onPaste={async (e) => {
+                                    const items = e.clipboardData?.items
+                                    if (!items) return
+                                    const imageFiles: File[] = []
+                                    for (const item of Array.from(items)) {
+                                      if (item.type.startsWith('image/')) {
+                                        const file = item.getAsFile()
+                                        if (file) imageFiles.push(file)
+                                      }
+                                    }
+                                    if (imageFiles.length > 0) {
+                                      e.preventDefault()
+                                      const remaining = HERO_MAX_FILES - heroAttachments.length
+                                      const filesToProcess = imageFiles.slice(0, remaining)
+                                      await Promise.all(filesToProcess.map((file) => heroProcessFile(file)))
+                                    }
+                                  }}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter' && !e.shiftKey) {
+                                      e.preventDefault()
+                                      submitHeroComposer()
+                                    }
+                                  }}
+                                  placeholder="Start with a prompt, file, search, or artifact."
+                                  disabled={isRequestInProgress}
+                                  className="min-h-[38px] flex-1 resize-none border-none bg-transparent py-1.5 text-base text-white outline-none scrollbar-thin placeholder:text-gray-500 disabled:opacity-50"
+                                  rows={1}
+                                  autoFocus
+                                />
+                                <button
+                                  type="button"
+                                  onClick={submitHeroComposer}
+                                  disabled={(!heroInput.trim() && heroAttachments.length === 0) || isRequestInProgress || heroHasActiveUpload}
+                                  className="mb-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-violet-600/90 transition-colors hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-30"
+                                >
+                                  {isRequestInProgress || heroHasActiveUpload ? (
+                                    <Loader2 className="h-4 w-4 animate-spin text-white" />
+                                  ) : (
+                                    <Send className="h-4 w-4 text-white" />
+                                  )}
+                                </button>
+                              </div>
+
+                              <div className="mt-3 flex flex-col gap-3 border-t border-white/[0.05] pt-3 sm:flex-row sm:items-center sm:justify-between">
+                                <ReasoningSelector
+                                  selectedMode={reasoningMode}
+                                  onSelectMode={setReasoningMode}
+                                  disabled={isRequestInProgress}
+                                />
+                                <div className="flex flex-wrap gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => populateHeroComposer('Search the web for...', { webSearchEnabled: true })}
+                                    className="rounded-full border border-white/[0.08] bg-white/[0.03] px-3 py-1 text-[11px] text-gray-300 transition-colors hover:border-emerald-400/20 hover:bg-emerald-500/[0.07] hover:text-emerald-100"
+                                  >
+                                    Search
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => populateHeroComposer('Make me an interactive artifact for...', { artifactMode: true })}
+                                    className="rounded-full border border-white/[0.08] bg-white/[0.03] px-3 py-1 text-[11px] text-gray-300 transition-colors hover:border-violet-400/20 hover:bg-violet-500/[0.08] hover:text-violet-100"
+                                  >
+                                    Artifact
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </motion.div>
+
+                        <motion.div
+                          initial={{ opacity: 0, y: 8 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ delay: 0.18 }}
+                          className="rounded-[28px] border border-white/[0.08] bg-[linear-gradient(180deg,rgba(255,255,255,0.035),rgba(255,255,255,0.02))] p-4 backdrop-blur-xl sm:p-5"
+                        >
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-violet-200/75">Quick actions</p>
+                              <h2 className="mt-2 text-lg font-semibold text-white">Use the workspace like the rest of the app</h2>
+                            </div>
+                            <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-violet-300/[0.14] bg-violet-500/[0.08]">
+                              <Sparkles className="h-4.5 w-4.5 text-violet-200" />
+                            </div>
+                          </div>
+
+                          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
+                            {quickActions.map((action) => {
+                              const Icon = action.icon
+                              return (
+                                <button
+                                  key={action.title}
+                                  type="button"
+                                  onClick={action.onClick}
+                                  disabled={isRequestInProgress}
+                                  className="group rounded-2xl border border-white/[0.08] bg-black/20 p-3 text-left transition-all hover:border-violet-300/[0.16] hover:bg-white/[0.045] disabled:cursor-not-allowed disabled:opacity-50"
+                                >
+                                  <div className="flex items-start gap-3">
+                                    <div className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-white/[0.07] bg-white/[0.05] text-violet-200 transition-colors group-hover:bg-violet-500/[0.12]">
+                                      <Icon className="h-4.5 w-4.5" />
+                                    </div>
+                                    <div className="min-w-0">
+                                      <p className="text-sm font-semibold text-white">{action.title}</p>
+                                      <p className="mt-1 text-xs leading-relaxed text-gray-400">{action.subtitle}</p>
+                                    </div>
+                                  </div>
+                                </button>
+                              )
+                            })}
+                          </div>
+                        </motion.div>
+
+                        <motion.div
+                          initial={{ opacity: 0, y: 8 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ delay: 0.24 }}
+                          className="rounded-[28px] border border-white/[0.08] bg-[linear-gradient(180deg,rgba(255,255,255,0.035),rgba(255,255,255,0.02))] p-4 backdrop-blur-xl sm:p-5"
+                        >
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-violet-200/75">Workspace</p>
+                              <h2 className="mt-2 text-lg font-semibold text-white">Artifact</h2>
+                            </div>
+                            <div className="rounded-full border border-white/[0.07] bg-white/[0.03] p-2 text-gray-300">
+                              <PanelRightOpen className="h-4 w-4" />
+                            </div>
+                          </div>
+
+                          <div className="mt-4 rounded-2xl border border-white/[0.08] bg-black/20 p-3">
+                            <div className="flex items-center gap-2">
+                              <span className="rounded-full border border-violet-300/[0.14] bg-violet-500/[0.1] px-3 py-1 text-xs font-medium text-violet-100">Preview</span>
+                              <span className="rounded-full border border-white/[0.07] bg-white/[0.03] px-3 py-1 text-xs text-gray-400">Code</span>
+                            </div>
+
+                            <div className="mt-4 rounded-2xl border border-dashed border-white/[0.1] bg-white/[0.02] p-4">
+                              <div className="flex items-start gap-3">
+                                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-white/[0.07] bg-[#1d1d1d] text-violet-200">
+                                  <Box className="h-5 w-5" />
+                                </div>
+                                <div>
+                                  <p className="text-sm font-semibold text-white">No artifact yet</p>
+                                  <p className="mt-1 text-xs leading-relaxed text-gray-400">
+                                    Ask for an interactive quiz, calculator, flashcards, or website component.
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="mt-4">
+                              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-gray-500">Quick starts</p>
+                              <div className="mt-2 flex flex-wrap gap-2">
+                                {artifactStarterChips.map((chip) => (
+                                  <button
+                                    key={chip.label}
+                                    type="button"
+                                    onClick={() => populateHeroComposer(chip.prompt, { artifactMode: chip.artifactMode, webSearchEnabled: false })}
+                                    className="rounded-full border border-white/[0.08] bg-white/[0.03] px-3 py-1.5 text-xs text-gray-300 transition-colors hover:border-violet-300/[0.16] hover:bg-violet-500/[0.08] hover:text-violet-100"
+                                  >
+                                    {chip.label}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+
+                            <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-1">
+                              <div className="rounded-2xl border border-white/[0.07] bg-[#171717] p-3">
+                                <div className="flex items-center gap-2 text-sm font-medium text-white">
+                                  <FolderOpen className="h-4 w-4 text-violet-300" />
+                                  Project context
+                                </div>
+                                <p className="mt-2 text-xs text-gray-400">{activeProject ? `Connected to ${activeProject.name}.` : 'No project selected. Start a project to save context.'}</p>
+                              </div>
+                              <div className="rounded-2xl border border-white/[0.07] bg-[#171717] p-3">
+                                <div className="flex items-center gap-2 text-sm font-medium text-white">
+                                  <Files className="h-4 w-4 text-violet-300" />
+                                  Attachments
+                                </div>
+                                <p className="mt-2 text-xs text-gray-400">{heroReadyAttachmentCount > 0 ? `${heroReadyAttachmentCount} real attachment${heroReadyAttachmentCount === 1 ? '' : 's'} ready for the next prompt.` : 'No file uploaded yet.'}</p>
+                              </div>
+                            </div>
+                          </div>
+                        </motion.div>
+                      </div>
+                    </motion.div>
               ) : isLoadingConversation && displayedMessages.length === 0 ? (
                 <motion.div
                   key="loading"
