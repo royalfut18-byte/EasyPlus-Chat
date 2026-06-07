@@ -3047,7 +3047,7 @@ export default function ChatPage() {
         </div>
 
         <div className="flex-1 overflow-y-auto px-3 py-4 scrollbar-thin md:px-4 md:py-5 lg:px-6">
-              <div className={cn('mx-auto', isImageGenerationMode ? 'max-w-5xl' : isEmptyDraft ? 'max-w-[1380px]' : 'max-w-[820px]')}>
+              <div className={cn('mx-auto', isImageGenerationMode ? 'max-w-5xl' : isEmptyDraft ? 'max-w-[1080px]' : 'max-w-[820px]')}>
                 {isImageGenerationMode ? (
                   <ImageGenerationPanel
                     generatedImages={generatedImages}
@@ -3064,7 +3064,7 @@ export default function ChatPage() {
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: -10 }}
                       transition={{ duration: 0.4 }}
-                      className="relative mx-auto flex min-h-[calc(100svh-11rem)] w-full max-w-[1380px] flex-col gap-4 px-1 py-2 sm:gap-5 md:px-2 lg:gap-6"
+                      className="relative mx-auto flex min-h-[calc(100svh-11rem)] w-full max-w-[1040px] flex-col justify-center gap-5 px-1 py-4 sm:px-2 sm:py-6 lg:gap-6"
                       onDragEnter={handleHeroDragEnter}
                       onDragOver={handleHeroDragOver}
                       onDragLeave={handleHeroDragLeave}
@@ -3085,51 +3085,45 @@ export default function ChatPage() {
                         </div>
                       )}
 
-                      <div className="grid gap-4 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,0.95fr)_minmax(280px,0.78fr)]">
+                      <div className="mx-auto flex w-full max-w-[980px] flex-col items-center gap-4 text-center sm:gap-5">
                         <motion.div
                           initial={{ opacity: 0, y: 8 }}
                           animate={{ opacity: 1, y: 0 }}
                           transition={{ delay: 0.1 }}
-                          className="space-y-4 rounded-[28px] border border-white/[0.08] bg-[radial-gradient(circle_at_top_left,rgba(139,92,246,0.18),transparent_34%),linear-gradient(180deg,rgba(255,255,255,0.04),rgba(255,255,255,0.02))] p-4 shadow-[0_24px_90px_rgba(0,0,0,0.34)] backdrop-blur-xl sm:p-5 lg:p-6"
+                          className="space-y-3"
                         >
-                          <div className="space-y-3">
-                            <div className="inline-flex items-center gap-2 rounded-full border border-violet-300/[0.14] bg-violet-500/[0.08] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-violet-100/90">
-                              <Sparkles className="h-3.5 w-3.5" />
-                              Start your workspace
-                            </div>
-                            <div className="space-y-2">
-                              <h1 className="max-w-2xl text-3xl font-semibold tracking-tight text-white sm:text-4xl xl:text-[2.9rem]">
-                                What do you want to work on?
-                              </h1>
-                              <p className="max-w-2xl text-sm leading-relaxed text-gray-300 sm:text-base">
-                                Ask, build, research, or upload anything. Use models, files, search, artifacts, and Easy Code from one place.
-                              </p>
-                            </div>
+                          <div className="inline-flex items-center gap-2 rounded-full border border-violet-300/[0.14] bg-violet-500/[0.08] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-violet-100/90">
+                            <Sparkles className="h-3.5 w-3.5" />
+                            Start your workspace
                           </div>
-
-                          <div className="grid gap-2.5 sm:grid-cols-3">
-                            <div className="rounded-2xl border border-white/[0.07] bg-black/20 p-3">
-                              <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-gray-500">Project</p>
-                              <p className="mt-2 text-sm font-medium text-white">{activeProject ? activeProject.name : 'No project selected'}</p>
-                              <p className="mt-1 text-xs text-gray-400">{activeProject ? 'Use this chat to build inside the active project.' : 'Start a project to save context and artifacts.'}</p>
-                            </div>
-                            <div className="rounded-2xl border border-white/[0.07] bg-black/20 p-3">
-                              <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-gray-500">Files</p>
-                              <p className="mt-2 text-sm font-medium text-white">{heroReadyAttachmentCount > 0 ? `${heroReadyAttachmentCount} ready to use` : 'No file uploaded yet'}</p>
-                              <p className="mt-1 text-xs text-gray-400">{heroReadyAttachmentCount > 0 ? 'Attachments will be sent with your next message.' : 'Drop files here or attach them from the composer.'}</p>
-                            </div>
-                            <div className="rounded-2xl border border-white/[0.07] bg-black/20 p-3">
-                              <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-gray-500">Modes</p>
-                              <div className="mt-2 flex flex-wrap gap-2">
-                                <span className={cn('rounded-full border px-2.5 py-1 text-[11px]', webSearchEnabled ? 'border-emerald-400/20 bg-emerald-500/10 text-emerald-200' : 'border-white/[0.08] bg-white/[0.04] text-gray-300')}>Search {webSearchEnabled ? 'on' : 'off'}</span>
-                                <span className={cn('rounded-full border px-2.5 py-1 text-[11px]', artifactMode ? 'border-violet-400/20 bg-violet-500/10 text-violet-200' : 'border-white/[0.08] bg-white/[0.04] text-gray-300')}>Artifacts {artifactMode ? 'on' : 'off'}</span>
-                              </div>
-                              <p className="mt-2 text-xs text-gray-400">Toggle them from the top bar or use the quick actions below.</p>
-                            </div>
+                          <div className="space-y-2">
+                            <h1 className="text-2xl font-semibold tracking-tight text-white sm:text-[2.1rem]">
+                              What can I help with?
+                            </h1>
+                            <p className="mx-auto max-w-2xl text-sm leading-relaxed text-gray-400 sm:text-[15px]">
+                              Ask, build, research, or upload anything from one focused workspace.
+                            </p>
                           </div>
+                          <div className="flex flex-wrap items-center justify-center gap-2 text-left">
+                            <span className="rounded-full border border-white/[0.08] bg-white/[0.03] px-3 py-1.5 text-xs text-gray-300">
+                              {activeProject ? `Project: ${activeProject.name}` : 'No project selected'}
+                            </span>
+                            <span className="rounded-full border border-white/[0.08] bg-white/[0.03] px-3 py-1.5 text-xs text-gray-300">
+                              {heroReadyAttachmentCount > 0 ? `${heroReadyAttachmentCount} file${heroReadyAttachmentCount === 1 ? '' : 's'} ready` : 'No file uploaded yet'}
+                            </span>
+                            <span className="rounded-full border border-white/[0.08] bg-white/[0.03] px-3 py-1.5 text-xs text-gray-300">
+                              {artifactMode ? 'Artifacts on' : 'No artifact yet'}
+                            </span>
+                          </div>
+                        </motion.div>
 
-                          <div className="relative overflow-hidden rounded-[26px] border border-white/[0.1] bg-[#1a1a1a]/90 p-2.5 shadow-[0_12px_50px_rgba(0,0,0,0.38)] sm:p-3">
-                            <div className="pointer-events-none absolute inset-x-0 top-0 h-24 bg-[radial-gradient(circle_at_top,rgba(168,85,247,0.16),transparent_58%)]" />
+                        <motion.div
+                          initial={{ opacity: 0, y: 8 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ delay: 0.16 }}
+                          className="w-full max-w-3xl"
+                        >
+                          <div className="relative overflow-hidden rounded-[28px] border border-white/[0.08] bg-[radial-gradient(circle_at_top,rgba(139,92,246,0.14),transparent_46%),rgba(24,24,24,0.92)] p-3 shadow-[0_18px_70px_rgba(0,0,0,0.34)] backdrop-blur-xl sm:p-4">
                             <input
                               ref={heroFileInputRef}
                               type="file"
@@ -3144,7 +3138,7 @@ export default function ChatPage() {
 
                             <div className="relative">
                               {heroAttachments.length > 0 && (
-                                <div className="mb-2 px-1 text-xs text-gray-400">
+                                <div className="mb-2 px-1 text-left text-xs text-gray-400">
                                   {heroAttachments.length} / {HERO_MAX_FILES} attachments
                                 </div>
                               )}
@@ -3160,7 +3154,7 @@ export default function ChatPage() {
                                       ) : (
                                         <div className="flex h-14 w-40 items-center gap-2 rounded-lg border border-white/[0.1] bg-[#202020] p-2 md:h-16 md:w-48">
                                           <FileText className="h-5 w-5 shrink-0 text-gray-400" />
-                                          <div className="min-w-0">
+                                          <div className="min-w-0 text-left">
                                             <p className="truncate text-xs font-medium text-white">{att.name}</p>
                                             <p className="text-[10px] text-gray-400">
                                               {att.uploadStatus === 'pending' ? 'Preparing...' :
@@ -3282,20 +3276,10 @@ export default function ChatPage() {
                         <motion.div
                           initial={{ opacity: 0, y: 8 }}
                           animate={{ opacity: 1, y: 0 }}
-                          transition={{ delay: 0.18 }}
-                          className="rounded-[28px] border border-white/[0.08] bg-[linear-gradient(180deg,rgba(255,255,255,0.035),rgba(255,255,255,0.02))] p-4 backdrop-blur-xl sm:p-5"
+                          transition={{ delay: 0.22 }}
+                          className="w-full max-w-4xl"
                         >
-                          <div className="flex items-center justify-between">
-                            <div>
-                              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-violet-200/75">Quick actions</p>
-                              <h2 className="mt-2 text-lg font-semibold text-white">Use the workspace like the rest of the app</h2>
-                            </div>
-                            <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-violet-300/[0.14] bg-violet-500/[0.08]">
-                              <Sparkles className="h-4.5 w-4.5 text-violet-200" />
-                            </div>
-                          </div>
-
-                          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
+                          <div className="flex flex-wrap justify-center gap-2.5">
                             {quickActions.map((action) => {
                               const Icon = action.icon
                               return (
@@ -3304,15 +3288,15 @@ export default function ChatPage() {
                                   type="button"
                                   onClick={action.onClick}
                                   disabled={isRequestInProgress}
-                                  className="group rounded-2xl border border-white/[0.08] bg-black/20 p-3 text-left transition-all hover:border-violet-300/[0.16] hover:bg-white/[0.045] disabled:cursor-not-allowed disabled:opacity-50"
+                                  className="group min-w-[150px] rounded-2xl border border-white/[0.07] bg-white/[0.025] px-3.5 py-3 text-left transition-all hover:border-violet-300/[0.16] hover:bg-white/[0.045] disabled:cursor-not-allowed disabled:opacity-50"
                                 >
-                                  <div className="flex items-start gap-3">
-                                    <div className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-white/[0.07] bg-white/[0.05] text-violet-200 transition-colors group-hover:bg-violet-500/[0.12]">
-                                      <Icon className="h-4.5 w-4.5" />
+                                  <div className="flex items-start gap-2.5">
+                                    <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-white/[0.07] bg-white/[0.04] text-violet-200 transition-colors group-hover:bg-violet-500/[0.12]">
+                                      <Icon className="h-4 w-4" />
                                     </div>
                                     <div className="min-w-0">
-                                      <p className="text-sm font-semibold text-white">{action.title}</p>
-                                      <p className="mt-1 text-xs leading-relaxed text-gray-400">{action.subtitle}</p>
+                                      <p className="text-sm font-medium text-white">{action.title}</p>
+                                      <p className="mt-0.5 text-[11px] leading-relaxed text-gray-500">{action.subtitle}</p>
                                     </div>
                                   </div>
                                 </button>
@@ -3324,70 +3308,47 @@ export default function ChatPage() {
                         <motion.div
                           initial={{ opacity: 0, y: 8 }}
                           animate={{ opacity: 1, y: 0 }}
-                          transition={{ delay: 0.24 }}
-                          className="rounded-[28px] border border-white/[0.08] bg-[linear-gradient(180deg,rgba(255,255,255,0.035),rgba(255,255,255,0.02))] p-4 backdrop-blur-xl sm:p-5"
+                          transition={{ delay: 0.28 }}
+                          className="grid w-full max-w-4xl gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,0.9fr)]"
                         >
-                          <div className="flex items-center justify-between">
-                            <div>
-                              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-violet-200/75">Workspace</p>
-                              <h2 className="mt-2 text-lg font-semibold text-white">Artifact</h2>
-                            </div>
-                            <div className="rounded-full border border-white/[0.07] bg-white/[0.03] p-2 text-gray-300">
-                              <PanelRightOpen className="h-4 w-4" />
+                          <div className="rounded-2xl border border-white/[0.06] bg-white/[0.025] p-3 text-left">
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-gray-500">Workspace</p>
+                            <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                              <div className="rounded-xl bg-black/20 px-3 py-2.5">
+                                <p className="text-xs font-medium text-white">Project</p>
+                                <p className="mt-1 text-xs text-gray-400">{activeProject ? activeProject.name : 'No project selected'}</p>
+                              </div>
+                              <div className="rounded-xl bg-black/20 px-3 py-2.5">
+                                <p className="text-xs font-medium text-white">Files</p>
+                                <p className="mt-1 text-xs text-gray-400">{heroReadyAttachmentCount > 0 ? 'Ready for the next prompt' : 'No file uploaded yet'}</p>
+                              </div>
                             </div>
                           </div>
 
-                          <div className="mt-4 rounded-2xl border border-white/[0.08] bg-black/20 p-3">
-                            <div className="flex items-center gap-2">
-                              <span className="rounded-full border border-violet-300/[0.14] bg-violet-500/[0.1] px-3 py-1 text-xs font-medium text-violet-100">Preview</span>
-                              <span className="rounded-full border border-white/[0.07] bg-white/[0.03] px-3 py-1 text-xs text-gray-400">Code</span>
+                          <div className="rounded-2xl border border-white/[0.06] bg-white/[0.025] p-3 text-left">
+                            <div className="flex items-center justify-between gap-3">
+                              <div>
+                                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-gray-500">Artifacts</p>
+                                <p className="mt-1 text-sm font-medium text-white">No artifact yet</p>
+                              </div>
+                              <span className="rounded-full border border-white/[0.08] bg-white/[0.03] px-2.5 py-1 text-[11px] text-gray-400">
+                                Preview hidden
+                              </span>
                             </div>
-
-                            <div className="mt-4 rounded-2xl border border-dashed border-white/[0.1] bg-white/[0.02] p-4">
-                              <div className="flex items-start gap-3">
-                                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-white/[0.07] bg-[#1d1d1d] text-violet-200">
-                                  <Box className="h-5 w-5" />
-                                </div>
-                                <div>
-                                  <p className="text-sm font-semibold text-white">No artifact yet</p>
-                                  <p className="mt-1 text-xs leading-relaxed text-gray-400">
-                                    Ask for an interactive quiz, calculator, flashcards, or website component.
-                                  </p>
-                                </div>
-                              </div>
-                            </div>
-
-                            <div className="mt-4">
-                              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-gray-500">Quick starts</p>
-                              <div className="mt-2 flex flex-wrap gap-2">
-                                {artifactStarterChips.map((chip) => (
-                                  <button
-                                    key={chip.label}
-                                    type="button"
-                                    onClick={() => populateHeroComposer(chip.prompt, { artifactMode: chip.artifactMode, webSearchEnabled: false })}
-                                    className="rounded-full border border-white/[0.08] bg-white/[0.03] px-3 py-1.5 text-xs text-gray-300 transition-colors hover:border-violet-300/[0.16] hover:bg-violet-500/[0.08] hover:text-violet-100"
-                                  >
-                                    {chip.label}
-                                  </button>
-                                ))}
-                              </div>
-                            </div>
-
-                            <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-1">
-                              <div className="rounded-2xl border border-white/[0.07] bg-[#171717] p-3">
-                                <div className="flex items-center gap-2 text-sm font-medium text-white">
-                                  <FolderOpen className="h-4 w-4 text-violet-300" />
-                                  Project context
-                                </div>
-                                <p className="mt-2 text-xs text-gray-400">{activeProject ? `Connected to ${activeProject.name}.` : 'No project selected. Start a project to save context.'}</p>
-                              </div>
-                              <div className="rounded-2xl border border-white/[0.07] bg-[#171717] p-3">
-                                <div className="flex items-center gap-2 text-sm font-medium text-white">
-                                  <Files className="h-4 w-4 text-violet-300" />
-                                  Attachments
-                                </div>
-                                <p className="mt-2 text-xs text-gray-400">{heroReadyAttachmentCount > 0 ? `${heroReadyAttachmentCount} real attachment${heroReadyAttachmentCount === 1 ? '' : 's'} ready for the next prompt.` : 'No file uploaded yet.'}</p>
-                              </div>
+                            <p className="mt-2 text-xs leading-relaxed text-gray-400">
+                              Ask for a quiz, calculator, flashcards, or interactive component when you want to open the artifact workspace.
+                            </p>
+                            <div className="mt-3 flex flex-wrap gap-2">
+                              {artifactStarterChips.map((chip) => (
+                                <button
+                                  key={chip.label}
+                                  type="button"
+                                  onClick={() => populateHeroComposer(chip.prompt, { artifactMode: chip.artifactMode, webSearchEnabled: false })}
+                                  className="rounded-full border border-white/[0.08] bg-white/[0.03] px-3 py-1.5 text-xs text-gray-300 transition-colors hover:border-violet-300/[0.16] hover:bg-violet-500/[0.08] hover:text-violet-100"
+                                >
+                                  {chip.label}
+                                </button>
+                              ))}
                             </div>
                           </div>
                         </motion.div>
