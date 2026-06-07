@@ -2,7 +2,7 @@ import 'server-only'
 
 import { AI_MODELS, PUBLIC_MODEL_CAPABILITIES, type AIModel } from '@/types/models'
 import { getAzureDeepSeekDiagnostics } from '@/lib/ai/azure-deepseek.server'
-import { getAzureGpt54Diagnostics } from '@/lib/ai/azure-gpt54.server'
+import { getAzureGpt54ConfigSnapshot, getAzureGpt54Diagnostics } from '@/lib/ai/azure-gpt54.server'
 import { isAzureImageAvailable } from '@/lib/ai/azure-image.server'
 import { readServerEnv } from '@/lib/server-env'
 import { isR2Configured } from '@/lib/storage/r2'
@@ -65,11 +65,10 @@ function hasConfiguredEnv(names: string[]): boolean {
 }
 
 function isAzureGpt54Configured(): boolean {
-  return hasConfiguredEnv([
-    'AZURE_GPT54_API_KEY',
-    'AZURE_GPT54_BASE_URL',
-    'AZURE_GPT54_MODEL',
-  ])
+  const snapshot = getAzureGpt54ConfigSnapshot()
+  return snapshot.envStatus.apiKey.configured &&
+    snapshot.envStatus.baseUrl.configured &&
+    snapshot.envStatus.model.configured
 }
 
 function isAzureDeepSeekConfigured(): boolean {

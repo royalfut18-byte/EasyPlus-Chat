@@ -31,6 +31,7 @@ const EASY_CODE_STATIC_FILES = ['index.html', 'styles.css', 'script.js', 'README
 
 type EasyCodeAiProvider = 'azure-gpt54' | 'azure-deepseek' | 'fallback'
 type EasyCodeAiPhase = 'create' | 'edit' | 'repair'
+type EasyCodePromptType = 'static-site' | 'app' | 'script' | 'other'
 
 export interface EasyCodeAiDiagnostics {
   provider: EasyCodeAiProvider
@@ -331,7 +332,7 @@ function buildEasyCodeProviderDiagnostics(
     envValueLengths: currentEnv?.envValueLengths || null,
     endpointHost: snapshot?.endpointHost || null,
     endpointPath: snapshot?.endpointPath || null,
-    finalRequestPath: snapshot?.endpointPath || null,
+    finalRequestPath: currentEnv?.finalRequestPath || snapshot?.endpointPath || null,
     model: snapshot?.model || null,
     providerStatusCode: overrides.providerStatusCode ?? (isAzureTextProviderError(error) ? error.status : null),
     providerErrorCode: overrides.providerErrorCode ?? (isAzureTextProviderError(error) ? error.providerErrorCode : null),
@@ -369,6 +370,52 @@ function isStaticLandingPageRequest(input: string): boolean {
 function getMissingStaticStarterFiles(files: Array<Pick<EasyCodeFile, 'path'> | Pick<EasyCodeAiFile, 'path' | 'newPath'>>): string[] {
   const paths = new Set(files.map((file: any) => (file.newPath || file.path || '').toLowerCase()))
   return EASY_CODE_STATIC_FILES.filter(path => !paths.has(path.toLowerCase()))
+}
+
+function inferEasyCodePromptType(prompt: string, files: Array<Pick<EasyCodeFile, 'path'>> = []): EasyCodePromptType {
+  const text = `${prompt}\n${files.map((file) => file.path).join('\n')}`.toLowerCase()
+  if (/\b(landing page|website|web site|webpage|homepage|portfolio|business)\b/.test(text)) return 'static-site'
+  if (/\b(script|automation|cli|cron|scraper|bot)\b/.test(text) || files.some((file) => /\.(js|ts|py|sh|ps1)$/i.test(file.path))) {
+    return 'script'
+  }
+  if (/\b(app|dashboard|saas|platform|react|next\.?js|vite|node|python|api)\b/.test(text)) return 'app'
+  return 'other'
+}
+
+function getEasyCodeProviderConfigurationSummary() {
+  const gpt54 = getCurrentEasyCodeProviderEnvDiagnostics('gpt54')
+  const deepseek = getCurrentEasyCodeProviderEnvDiagnostics('deepseek')
+  return {
+    gpt54Configured: gpt54.envConfigured,
+    deepseekConfigured: deepseek.envConfigured,
+    gpt54EndpointHost: gpt54.endpointHost,
+    gpt54EndpointPath: gpt54.endpointPath,
+    gpt54Model: gpt54.model,
+    deepseekEndpointHost: deepseek.endpointHost,
+    deepseekEndpointPath: deepseek.endpointPath,
+    deepseekModel: deepseek.model,
+  }
+}
+
+function getEasyCodeValidationSummary(
+  outputDiagnostics: ReturnType<typeof getEasyCodeAiResultDiagnostics>,
+  requiresStaticStarterFiles: boolean
+) {
+  const reasons: string[] = []
+  if (requiresStaticStarterFiles && outputDiagnostics.missingStarterFiles.length > 0) {
+    reasons.push(`missing_starter_files:${outputDiagnostics.missingStarterFiles.join(',')}`)
+  }
+  if (outputDiagnostics.readmeOnly) reasons.push('readme_only')
+  if (!outputDiagnostics.readiness.ready) {
+    reasons.push(
+      `readiness_failed:meaningful=${outputDiagnostics.readiness.meaningfulFileCount},index=${outputDiagnostics.readiness.hasIndexHtml}`
+    )
+  }
+
+  return {
+    validationRejectedCount: reasons.length,
+    validationRejectedReason: reasons.join('; ') || null,
+  }
 }
 
 function escapeHtml(value: string): string {
@@ -1952,10 +1999,11 @@ function extractJson(text: string): string {
 async function callEasyCodeJsonProvider(
   messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>,
   maxTokens = 8192,
-  options: { timeoutMs?: number; phase?: EasyCodeAiPhase; projectId?: string } = {}
+  options: { timeoutMs?: number; phase?: EasyCodeAiPhase; projectId?: string; promptType?: EasyCodePromptType } = {}
 ): Promise<{ content: string; providerUsed: 'azure-gpt54' | 'azure-deepseek'; diagnostics: EasyCodeAiDiagnostics[] }> {
   const timeoutMs = options.timeoutMs || EASY_CODE_CREATE_TIMEOUT_MS
   const phase = options.phase || 'create'
+  const providerConfig = getEasyCodeProviderConfigurationSummary()
   const diagnostics: EasyCodeAiDiagnostics[] = []
   const tryProvider = async (
     provider: 'azure-gpt54' | 'azure-deepseek',
@@ -1964,16 +2012,25 @@ async function callEasyCodeJsonProvider(
     providerOptions: { responseFormatUsed?: boolean } = {}
   ) => {
     const startedAt = Date.now()
+    const requestStartedAt = new Date(startedAt).toISOString()
     const currentEnv = provider === 'azure-gpt54'
       ? getCurrentEasyCodeProviderEnvDiagnostics('gpt54')
       : getCurrentEasyCodeProviderEnvDiagnostics('deepseek')
     console.info('[Easy Code] AI provider request started', {
       projectId: options.projectId || null,
       phase,
+      promptType: options.promptType || 'other',
       maxTokens,
       timeoutMs,
       provider,
+      providerAttempted: provider === 'azure-gpt54' ? 'gpt54' : 'deepseek',
+      requestStartedAt,
+      gpt54Configured: providerConfig.gpt54Configured,
+      deepseekConfigured: providerConfig.deepseekConfigured,
       envExists: currentEnv.envExists,
+      apiKeySource: currentEnv.apiKeySource || null,
+      baseUrlSource: currentEnv.baseUrlSource || null,
+      modelSource: currentEnv.modelSource || null,
       endpointHost: snapshot.endpointHost,
       endpointPath: snapshot.endpointPath,
       finalRequestPath: currentEnv.finalRequestPath,
@@ -2014,10 +2071,16 @@ async function callEasyCodeJsonProvider(
       console.info('[Easy Code] AI provider request ended', {
         projectId: options.projectId || null,
         phase,
+        promptType: options.promptType || 'other',
         durationMs: Date.now() - startedAt,
         responseChars: content.length,
         provider,
+        providerAttempted: provider === 'azure-gpt54' ? 'gpt54' : 'deepseek',
         providerStatusCode: 200,
+        timeoutHit: false,
+        responseFormatUsed: providerDiagnostics.responseFormatUsed,
+        fallbackUsed: providerDiagnostics.fallbackUsed,
+        finalStatus: 'provider_succeeded',
       })
       return { content, providerUsed: provider, diagnostics }
     } catch (error: any) {
@@ -2046,14 +2109,18 @@ async function callEasyCodeJsonProvider(
       console.error('[Easy Code] AI provider request failed', {
         projectId: options.projectId || null,
         phase,
+        promptType: options.promptType || 'other',
         durationMs: Date.now() - startedAt,
         provider,
+        providerAttempted: provider === 'azure-gpt54' ? 'gpt54' : 'deepseek',
         providerStatusCode: providerDiagnostics.providerStatusCode,
         providerErrorCode: providerDiagnostics.providerErrorCode,
         timeoutHit: providerDiagnostics.timeoutHit,
         responseFormatUsed: providerDiagnostics.responseFormatUsed,
         safeReason: providerDiagnostics.safeReason,
         safeCode: providerDiagnostics.safeCode,
+        fallbackUsed: providerDiagnostics.fallbackUsed,
+        finalStatus: 'provider_failed',
       })
       return null
     }
@@ -2102,6 +2169,8 @@ async function parseEasyCodeJson(
     console.info('[Easy Code] JSON parse succeeded', {
       projectId: projectId || null,
       jsonParseSuccess: true,
+      repairAttempted: false,
+      repairSuccess: false,
       fileCount: result.files.length,
     })
     return { aiResult: result, diagnostics: priorDiagnostics }
@@ -2109,6 +2178,7 @@ async function parseEasyCodeJson(
     console.warn('[Easy Code] JSON parse failed, attempting one repair pass', {
       projectId: projectId || null,
       jsonParseSuccess: false,
+      repairAttempted: true,
       message: parseError?.message,
     })
     const repaired = await callEasyCodeJsonProvider([
@@ -2117,14 +2187,16 @@ async function parseEasyCodeJson(
         content: 'Return only valid JSON matching this schema: {"summary":string,"files":[{"path":string,"language":string,"content":string,"operation":"create|update|delete|rename","newPath":string}],"instructions":string[],"previewType":"static-html|unsupported","title":string,"framework":string}. Do not include markdown.',
       },
       { role: 'user', content: `Repair this invalid Easy Code response into valid JSON only:\n${text.slice(0, 20000)}` },
-    ], 4096, { timeoutMs: EASY_CODE_REPAIR_TIMEOUT_MS, phase: 'repair', projectId })
+    ], 4096, { timeoutMs: EASY_CODE_REPAIR_TIMEOUT_MS, phase: 'repair', projectId, promptType: 'other' })
     try {
       const result = normalizeAiResult(JSON.parse(extractJson(repaired.content)))
       console.info('[Easy Code] JSON repair succeeded', {
         projectId: projectId || null,
         jsonParseSuccess: true,
         fileCount: result.files.length,
+        repairAttempted: true,
         repairPassSuccess: true,
+        repairSuccess: true,
       })
       return { aiResult: result, diagnostics: [...priorDiagnostics, ...repaired.diagnostics] }
     } catch (repairError: any) {
@@ -2132,7 +2204,9 @@ async function parseEasyCodeJson(
         projectId: projectId || null,
         jsonParseSuccess: false,
         message: repairError?.message,
+        repairAttempted: true,
         repairPassSuccess: false,
+        repairSuccess: false,
         errorCategory: categorizeEasyCodeError(repairError),
       })
       throw attachEasyCodeDiagnostics(repairError, [...priorDiagnostics, ...repaired.diagnostics])
@@ -2368,6 +2442,7 @@ export async function runEasyCodeInitialGeneration(userId: string, projectId: st
   if (!project) throw new Error('Project not found.')
   const cleanPrompt = sanitizeEasyCodePrompt(project.description || project.title)
   const staticLandingPage = isStaticLandingPageRequest(cleanPrompt)
+  const promptType = inferEasyCodePromptType(cleanPrompt)
 
   try {
     if (project.generation_status === 'generating' && project.generation_phase !== 'creating_project') {
@@ -2408,7 +2483,7 @@ export async function runEasyCodeInitialGeneration(userId: string, projectId: st
     console.info('[Easy Code] Generation started', {
       projectId,
       mode: 'create',
-      promptType: staticLandingPage ? 'static_site' : 'complex',
+      promptType,
     })
     await updateEasyCodeGenerationState(userId, projectId, {
       status: 'generating',
@@ -2431,11 +2506,16 @@ export async function runEasyCodeInitialGeneration(userId: string, projectId: st
     const outputDiagnostics = getEasyCodeAiResultDiagnostics(aiResult, project)
     const missingStarterFiles = staticLandingPage ? outputDiagnostics.missingStarterFiles : []
     const proposedReadiness = outputDiagnostics.readiness
+    const validationSummary = getEasyCodeValidationSummary(outputDiagnostics, staticLandingPage)
     console.info('[Easy Code] Generation output validated', {
       projectId,
+      phase: 'create',
+      promptType,
       returnedFiles: aiResult.files.length,
+      filesReturnedCount: aiResult.files.length,
       validatedFiles: proposedReadiness.fileCount,
-      rejectedFiles: 0,
+      validationRejectedCount: validationSummary.validationRejectedCount,
+      validationRejectedReason: validationSummary.validationRejectedReason,
       meaningfulFiles: proposedReadiness.meaningfulFileCount,
       hasIndexHtml: proposedReadiness.hasIndexHtml,
       missingStarterFiles,
@@ -2464,7 +2544,10 @@ export async function runEasyCodeInitialGeneration(userId: string, projectId: st
     const missingSavedStarterFiles = staticLandingPage ? getMissingStaticStarterFiles(savedFiles) : []
     console.info('[Easy Code] Generation files saved', {
       projectId,
+      phase: 'create',
+      promptType,
       savedFiles: savedFiles.length,
+      filesSavedCount: savedFiles.length,
       meaningfulFiles: savedReadiness.meaningfulFileCount,
       hasIndexHtml: savedReadiness.hasIndexHtml,
       missingStarterFiles: missingSavedStarterFiles,
@@ -2522,6 +2605,15 @@ export async function runEasyCodeInitialGeneration(userId: string, projectId: st
       getEasyCodeFiles(userId, projectId),
       getEasyCodeMessages(userId, projectId),
     ])
+    console.info('[Easy Code] Generation completed', {
+      projectId,
+      phase: 'create',
+      promptType,
+      providerUsed,
+      filesSavedCount: freshFiles.length,
+      fallbackUsed: providerUsed !== 'azure-gpt54',
+      finalStatus: 'ready',
+    })
     return { project: freshProject, files: freshFiles, messages: freshMessages, aiResult, diagnostics: aiDiagnostics, providerUsed }
   } catch (error: any) {
     const message = getSafeEasyCodeError(error)
@@ -2547,7 +2639,8 @@ export async function runEasyCodeInitialGeneration(userId: string, projectId: st
 
         console.warn('[Easy Code] Static fallback starting', {
           projectId,
-          promptType: 'static_site',
+          phase: 'create',
+          promptType,
           timeoutHit: isTimeoutError(error),
           reason: message,
           fallbackUsed: true,
@@ -2575,6 +2668,8 @@ export async function runEasyCodeInitialGeneration(userId: string, projectId: st
 
         console.info('[Easy Code] Static fallback saved files', {
           projectId,
+          phase: 'create',
+          promptType,
           fallbackUsed: true,
           savedFiles: savedFiles.length,
           filesSavedCount: savedFiles.length,
@@ -2631,10 +2726,13 @@ export async function runEasyCodeInitialGeneration(userId: string, projectId: st
         ])
         console.info('[Easy Code] Status set ready after static fallback', {
           projectId,
+          phase: 'create',
+          promptType,
           fallbackUsed: true,
           savedFiles: freshFiles.length,
           zipFileCount: freshFiles.length,
           previewAvailable: freshFiles.some(file => file.path.toLowerCase() === 'index.html'),
+          finalStatus: 'ready',
         })
         return { project: freshProject, files: freshFiles, messages: freshMessages, aiResult: fallbackResult, fallbackUsed: true, diagnostics: fallbackDiagnostics, providerUsed: 'fallback' }
       } catch (fallbackError: any) {
@@ -2657,9 +2755,12 @@ export async function runEasyCodeInitialGeneration(userId: string, projectId: st
     console.error('[Easy Code] Status updated to failed', {
       message,
       projectId,
+      phase: 'create',
+      promptType,
       timeoutHit: isTimeoutError(error),
       errorCategory,
       fallbackUsed: false,
+      finalStatus: status,
       diagnostics: errorDiagnostics,
     })
     throw attachEasyCodeDiagnostics(new Error(message), errorDiagnostics)
@@ -2680,6 +2781,9 @@ export async function generateEasyCodeFiles(input: {
     input.project.framework === 'html' ||
     input.files.some(file => file.path.toLowerCase() === 'index.html')
   )
+  const promptType = staticLandingPage || staticProjectEdit
+    ? 'static-site'
+    : inferEasyCodePromptType(input.instruction, input.files)
   const fileTree = input.files.map(file => `${file.path} (${file.language || inferLanguage(file.path)}, ${file.size_bytes} bytes)`).join('\n') || 'No files yet.'
   const selectedFile = input.selectedPath
     ? input.files.find(file => file.path === input.selectedPath)
@@ -2786,6 +2890,7 @@ ${fileContext || 'None'}`
   console.info('[Easy Code] AI generation prepared', {
     projectId: input.projectId || null,
     mode: input.mode,
+    promptType,
     staticLandingPage,
     staticProjectEdit,
     contextFileCount: contextFiles.length,
@@ -2797,6 +2902,7 @@ ${fileContext || 'None'}`
     timeoutMs: staticLandingPage ? EASY_CODE_CREATE_TIMEOUT_MS : input.mode === 'edit' ? EASY_CODE_EDIT_TIMEOUT_MS : EASY_CODE_CREATE_TIMEOUT_MS,
     phase: getEasyCodePhase(input.mode),
     projectId: input.projectId,
+    promptType,
   })
   const parsed = await parseEasyCodeJson(raw.content, input.projectId, raw.diagnostics)
   return {
@@ -2907,11 +3013,12 @@ export async function runEasyCodeEdit(userId: string, projectId: string, instruc
   if (cleanInstruction.length < 3) throw new Error('Describe the change you want.')
   const staticProjectEdit = project.framework === 'html' ||
     files.some(file => file.path.toLowerCase() === 'index.html')
+  const promptType = staticProjectEdit ? 'static-site' : inferEasyCodePromptType(cleanInstruction, files)
   console.info('[Easy Code] Edit started', {
     projectId,
     existingFiles: files.length,
     selectedPath: selectedPath || null,
-    promptType: staticProjectEdit ? 'static_site' : 'complex',
+    promptType,
   })
 
   const db = await getDb()
@@ -2934,11 +3041,15 @@ export async function runEasyCodeEdit(userId: string, projectId: string, instruc
     })
     const { aiResult, diagnostics: aiDiagnostics, providerUsed } = generation
     const editDiagnostics = getEasyCodeAiResultDiagnostics(aiResult, project)
+    const validationSummary = getEasyCodeValidationSummary(editDiagnostics, false)
     if (editDiagnostics.readmeOnly || aiResult.files.length === 0) {
       console.warn('[Easy Code] Edit returned invalid operations', {
         projectId,
+        promptType,
         operationsCount: aiResult.files.length,
         readmeOnly: editDiagnostics.readmeOnly,
+        validationRejectedCount: validationSummary.validationRejectedCount,
+        validationRejectedReason: validationSummary.validationRejectedReason,
         errorCategory: editDiagnostics.readmeOnly ? 'readme_only' : 'no_valid_changes',
       })
       throw new Error(editDiagnostics.readmeOnly
@@ -2947,7 +3058,11 @@ export async function runEasyCodeEdit(userId: string, projectId: string, instruc
     }
     console.info('[Easy Code] Edit model output parsed', {
       projectId,
+      promptType,
       operationsCount: aiResult.files.length,
+      filesReturnedCount: aiResult.files.length,
+      validationRejectedCount: validationSummary.validationRejectedCount,
+      validationRejectedReason: validationSummary.validationRejectedReason,
       providerUsed,
     })
     await updateEasyCodeGenerationState(userId, projectId, {
@@ -3007,7 +3122,9 @@ export async function runEasyCodeEdit(userId: string, projectId: string, instruc
     ])
     console.info('[Easy Code] Edit completed', {
       projectId,
+      promptType,
       filesCount: freshFiles.length,
+      filesSavedCount: aiResult.files.length,
       changedFiles: aiResult.files.map(file => file.newPath || file.path),
       finalStatus: 'ready',
       fallbackUsed: providerUsed !== 'azure-gpt54',
@@ -3043,11 +3160,13 @@ export async function runEasyCodeEdit(userId: string, projectId: string, instruc
     }).catch(() => {})
     console.error('[Easy Code] Edit failed', {
       projectId,
+      promptType,
       message,
       timeoutHit: isTimeoutError(error),
       errorCategory: categorizeEasyCodeError(error),
       fallbackUsed: false,
       existingFilesPreserved: true,
+      finalStatus: 'ready',
       diagnostics: errorDiagnostics,
     })
     throw attachEasyCodeDiagnostics(new Error(message), errorDiagnostics)

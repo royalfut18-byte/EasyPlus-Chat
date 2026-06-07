@@ -1,7 +1,7 @@
 import 'server-only'
 
 import type { ChatAttachment, ChatMessage } from '@/types/models'
-import { getServerEnvStatus, readServerEnv } from '@/lib/server-env'
+import { getServerEnvStatus, readFirstServerEnv } from '@/lib/server-env'
 import {
   AzureTextProviderError,
   type AzureTextProviderConfigSnapshot,
@@ -11,6 +11,9 @@ const DEFAULT_AZURE_GPT54_MODEL = 'gpt-5.4'
 const REQUEST_TIMEOUT_MS = 120_000
 const FIRST_TOKEN_TIMEOUT_MS = 45_000
 const AVAILABILITY_CACHE_MS = 5 * 60_000
+export const AZURE_GPT54_API_KEY_ENV_PRIORITY = ['AZURE_GPT54_API_KEY', 'AZURE_OPENAI_API_KEY', 'AZURE_FOUNDRY_API_KEY'] as const
+export const AZURE_GPT54_BASE_URL_ENV_PRIORITY = ['AZURE_GPT54_BASE_URL', 'AZURE_OPENAI_BASE_URL', 'AZURE_FOUNDRY_BASE_URL'] as const
+export const AZURE_GPT54_MODEL_ENV_PRIORITY = ['AZURE_GPT54_MODEL', 'AZURE_OPENAI_MODEL', 'AZURE_FOUNDRY_MODEL'] as const
 
 type AuthMode = 'api-key' | 'bearer'
 type AzureChatMessage = {
@@ -26,6 +29,9 @@ export interface AzureGpt54Diagnostics {
   apiKeyConfigured: boolean
   baseUrlConfigured: boolean
   modelConfigured: boolean
+  apiKeySource: string | null
+  baseUrlSource: string | null
+  modelSource: string | null
   probeOk: boolean
   status: number | null
   endpointHost: string | null
@@ -64,38 +70,95 @@ function normalizeBaseUrl(baseUrl: string): string {
     .replace(/\/chat\/completions$/i, '')
 }
 
-function getProviderConfig() {
-  const apiKey = readServerEnv('AZURE_GPT54_API_KEY')
-  const baseUrl = readServerEnv('AZURE_GPT54_BASE_URL')
-  const configuredModel = readServerEnv('AZURE_GPT54_MODEL')
-  const model = configuredModel || DEFAULT_AZURE_GPT54_MODEL
-  const apiKeyEnv = getServerEnvStatus('AZURE_GPT54_API_KEY')
-  const baseUrlEnv = getServerEnvStatus('AZURE_GPT54_BASE_URL')
-  const modelEnv = getServerEnvStatus('AZURE_GPT54_MODEL')
-
+function resolveProviderEnv(names: readonly string[]) {
+  const resolved = readFirstServerEnv([...names])
   return {
-    apiKey,
-    baseUrl: baseUrl ? normalizeBaseUrl(baseUrl) : undefined,
-    model,
-    apiKeyConfigured: Boolean(apiKey),
-    baseUrlConfigured: Boolean(baseUrl),
-    modelConfigured: Boolean(configuredModel),
+    value: resolved.value,
+    source: resolved.source || null,
     envStatus: {
-      apiKey: apiKeyEnv,
-      baseUrl: baseUrlEnv,
-      model: modelEnv,
+      exists: names.some((name) => getServerEnvStatus(name).exists),
+      configured: Boolean(resolved.value),
     },
   }
 }
 
+export function getAzureGpt54ResolvedEnvDiagnostics() {
+  const apiKey = resolveProviderEnv(AZURE_GPT54_API_KEY_ENV_PRIORITY)
+  const baseUrl = resolveProviderEnv(AZURE_GPT54_BASE_URL_ENV_PRIORITY)
+  const model = resolveProviderEnv(AZURE_GPT54_MODEL_ENV_PRIORITY)
+  const normalizedBaseUrl = baseUrl.value ? normalizeBaseUrl(baseUrl.value) : undefined
+  const resolvedModel = model.value || DEFAULT_AZURE_GPT54_MODEL
+
+  return {
+    apiKey: apiKey.value,
+    apiKeySource: apiKey.source,
+    baseUrl: normalizedBaseUrl,
+    baseUrlSource: baseUrl.source,
+    configuredModel: model.value,
+    model: resolvedModel,
+    modelSource: model.source,
+    apiKeyConfigured: Boolean(apiKey.value),
+    baseUrlConfigured: Boolean(normalizedBaseUrl),
+    modelConfigured: Boolean(model.value),
+    envStatus: {
+      apiKey: apiKey.envStatus,
+      baseUrl: baseUrl.envStatus,
+      model: model.envStatus,
+    },
+  }
+}
+
+function getProviderConfig() {
+  const {
+    apiKey,
+    apiKeySource,
+    baseUrl,
+    baseUrlSource,
+    configuredModel,
+    model,
+    modelSource,
+    apiKeyConfigured,
+    baseUrlConfigured,
+  modelConfigured,
+  envStatus,
+  } = getAzureGpt54ResolvedEnvDiagnostics()
+
+  return {
+    apiKey,
+    apiKeySource,
+    baseUrl,
+    baseUrlSource,
+    configuredModel,
+    model,
+    modelSource,
+    apiKeyConfigured,
+    baseUrlConfigured,
+    modelConfigured,
+    envStatus,
+  }
+}
+
 export function getAzureGpt54ConfigSnapshot(): AzureTextProviderConfigSnapshot {
-  const { model, apiKeyConfigured, baseUrlConfigured, modelConfigured, envStatus, baseUrl } = getProviderConfig()
+  const {
+    model,
+    apiKeyConfigured,
+    baseUrlConfigured,
+    modelConfigured,
+    envStatus,
+    baseUrl,
+    apiKeySource,
+    baseUrlSource,
+    modelSource,
+  } = getProviderConfig()
   const endpoint = getEndpointMetadata(baseUrl)
   return {
     provider: 'azure-gpt54',
     apiKeyConfigured,
     baseUrlConfigured,
     modelConfigured,
+    apiKeySource,
+    baseUrlSource,
+    modelSource,
     ...endpoint,
     model,
     envStatus,
@@ -285,7 +348,18 @@ export async function getAzureGpt54Diagnostics(force = false): Promise<AzureGpt5
     return availabilityCache.diagnostics
   }
 
-  const { apiKey, baseUrl, model, apiKeyConfigured, baseUrlConfigured, modelConfigured, envStatus } = getProviderConfig()
+  const {
+    apiKey,
+    baseUrl,
+    model,
+    apiKeyConfigured,
+    baseUrlConfigured,
+    modelConfigured,
+    envStatus,
+    apiKeySource,
+    baseUrlSource,
+    modelSource,
+  } = getProviderConfig()
   const endpoint = getEndpointMetadata(baseUrl)
   if (!apiKey || !baseUrl) {
     const diagnostics = {
@@ -293,6 +367,9 @@ export async function getAzureGpt54Diagnostics(force = false): Promise<AzureGpt5
       apiKeyConfigured,
       baseUrlConfigured,
       modelConfigured,
+      apiKeySource,
+      baseUrlSource,
+      modelSource,
       probeOk: false,
       status: null,
       ...endpoint,
@@ -305,6 +382,9 @@ export async function getAzureGpt54Diagnostics(force = false): Promise<AzureGpt5
       apiKeyConfigured,
       baseUrlConfigured,
       modelConfigured,
+      apiKeySource,
+      baseUrlSource,
+      modelSource,
       model,
       envStatus,
       ...endpoint,
@@ -334,6 +414,9 @@ export async function getAzureGpt54Diagnostics(force = false): Promise<AzureGpt5
         apiKeyConfigured,
         baseUrlConfigured,
         modelConfigured,
+        apiKeySource,
+        baseUrlSource,
+        modelSource,
         probeOk: false,
         status: response.status,
         ...endpoint,
@@ -361,12 +444,15 @@ export async function getAzureGpt54Diagnostics(force = false): Promise<AzureGpt5
     const content = data?.choices?.[0]?.message?.content
     const available = typeof content === 'string' && content.trim().length > 0
     const diagnostics = {
-      configured: true,
-      apiKeyConfigured,
-      baseUrlConfigured,
-      modelConfigured,
-      probeOk: available,
-      status: response.status,
+        configured: true,
+        apiKeyConfigured,
+        baseUrlConfigured,
+        modelConfigured,
+        apiKeySource,
+        baseUrlSource,
+        modelSource,
+        probeOk: available,
+        status: response.status,
       ...endpoint,
       model,
       lastProbeAt,
@@ -390,6 +476,9 @@ export async function getAzureGpt54Diagnostics(force = false): Promise<AzureGpt5
       apiKeyConfigured,
       baseUrlConfigured,
       modelConfigured,
+      apiKeySource,
+      baseUrlSource,
+      modelSource,
       probeOk: false,
       status: null,
       ...endpoint,
@@ -431,6 +520,9 @@ export async function generateAzureGpt54Json(
     baseUrlConfigured,
     modelConfigured,
     envStatus,
+    apiKeySource,
+    baseUrlSource,
+    modelSource,
   } = getProviderConfig()
   const endpoint = getEndpointMetadata(baseUrl)
 
@@ -444,6 +536,9 @@ export async function generateAzureGpt54Json(
       model,
       envStatus,
       ...endpoint,
+      apiKeySource,
+      baseUrlSource,
+      modelSource,
       phase: options.phase || 'json_generation',
       projectId: options.projectId || null,
     })
@@ -462,6 +557,9 @@ export async function generateAzureGpt54Json(
     timeoutMs,
     temperature,
     responseFormat: options.responseFormat || 'text',
+    apiKeySource,
+    baseUrlSource,
+    modelSource,
   })
 
   let response: Response

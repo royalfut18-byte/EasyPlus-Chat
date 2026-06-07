@@ -1,8 +1,16 @@
 import 'server-only'
 
+import {
+  AZURE_GPT54_API_KEY_ENV_PRIORITY,
+  AZURE_GPT54_BASE_URL_ENV_PRIORITY,
+  AZURE_GPT54_MODEL_ENV_PRIORITY,
+  getAzureGpt54ResolvedEnvDiagnostics,
+} from '@/lib/ai/azure-gpt54.server'
 import { getServerEnvStatus, readServerEnv } from '@/lib/server-env'
 
 type EasyCodeTrackedProvider = 'gpt54' | 'deepseek'
+
+type EasyCodeEnvValueStatus = 'missing' | 'blank_or_whitespace' | 'quoted_blank' | 'configured'
 
 export interface EasyCodeProviderAttemptDiagnostics {
   provider: EasyCodeTrackedProvider
@@ -55,9 +63,9 @@ let lastFallback: EasyCodeFallbackDiagnostics = {
 function getProviderEnvNames(provider: EasyCodeTrackedProvider) {
   return provider === 'gpt54'
     ? {
-        apiKey: 'AZURE_GPT54_API_KEY',
-        baseUrl: 'AZURE_GPT54_BASE_URL',
-        model: 'AZURE_GPT54_MODEL',
+        apiKey: [...AZURE_GPT54_API_KEY_ENV_PRIORITY],
+        baseUrl: [...AZURE_GPT54_BASE_URL_ENV_PRIORITY],
+        model: [...AZURE_GPT54_MODEL_ENV_PRIORITY],
         defaultModel: 'gpt-5.4',
       }
     : {
@@ -89,18 +97,140 @@ function getEndpointMetadata(baseUrl?: string) {
   }
 }
 
+function getSingleEnvValueStatus(name: string): EasyCodeEnvValueStatus {
+  if (!Object.prototype.hasOwnProperty.call(process.env, name)) return 'missing'
+  const raw = process.env[name]
+  if (raw == null || raw.trim().length === 0) return 'blank_or_whitespace'
+
+  let normalized = raw.trim()
+  for (let i = 0; i < 2; i += 1) {
+    if (
+      (normalized.startsWith('"') && normalized.endsWith('"')) ||
+      (normalized.startsWith("'") && normalized.endsWith("'"))
+    ) {
+      normalized = normalized.slice(1, -1).trim()
+    }
+  }
+
+  return normalized ? 'configured' : 'quoted_blank'
+}
+
+function getEnvValueStatus(names: string | string[]): EasyCodeEnvValueStatus {
+  const candidates = (Array.isArray(names) ? names : [names]).map(getSingleEnvValueStatus)
+  if (candidates.includes('configured')) return 'configured'
+  if (candidates.includes('quoted_blank')) return 'quoted_blank'
+  if (candidates.includes('blank_or_whitespace')) return 'blank_or_whitespace'
+  return 'missing'
+}
+
+function getLastEasyCodeAttemptSummary() {
+  const candidates = [
+    lastAttempts.gpt54
+      ? {
+          provider: 'gpt54' as const,
+          attemptedAt: lastAttempts.gpt54.attemptedAt,
+          status: lastAttempts.gpt54.statusCode === 200 ? 'succeeded' : 'failed',
+          safeReason: lastAttempts.gpt54.safeReason,
+          fallbackUsed: lastAttempts.gpt54.fallbackUsed,
+        }
+      : null,
+    lastAttempts.deepseek
+      ? {
+          provider: 'deepseek' as const,
+          attemptedAt: lastAttempts.deepseek.attemptedAt,
+          status: lastAttempts.deepseek.statusCode === 200 ? 'succeeded' : 'failed',
+          safeReason: lastAttempts.deepseek.safeReason,
+          fallbackUsed: lastAttempts.deepseek.fallbackUsed,
+        }
+      : null,
+    lastFallback.attemptedAt
+      ? {
+          provider: 'fallback' as const,
+          attemptedAt: lastFallback.attemptedAt,
+          status: lastFallback.fallbackUsed ? 'fallback' : 'succeeded',
+          safeReason: lastFallback.safeReason || null,
+          fallbackUsed: lastFallback.fallbackUsed,
+        }
+      : null,
+  ].filter(Boolean)
+
+  if (candidates.length === 0) {
+    return {
+      provider: null,
+      status: null,
+      safeReason: null,
+      fallbackUsed: false,
+      attemptedAt: null,
+    }
+  }
+
+  candidates.sort((a, b) => Date.parse(b!.attemptedAt) - Date.parse(a!.attemptedAt))
+  const latest = candidates[0]!
+  return {
+    provider: latest.provider,
+    status: latest.status,
+    safeReason: latest.safeReason,
+    fallbackUsed: latest.fallbackUsed,
+    attemptedAt: latest.attemptedAt,
+  }
+}
+
 export function getCurrentEasyCodeProviderEnvDiagnostics(provider: EasyCodeTrackedProvider) {
   const names = getProviderEnvNames(provider)
-  const apiKey = readServerEnv(names.apiKey)
-  const baseUrl = normalizeBaseUrl(provider, readServerEnv(names.baseUrl))
-  const configuredModel = readServerEnv(names.model)
+  if (provider === 'gpt54') {
+    const resolved = getAzureGpt54ResolvedEnvDiagnostics()
+    const endpoint = getEndpointMetadata(resolved.baseUrl)
+    const apiKeyNames = [...AZURE_GPT54_API_KEY_ENV_PRIORITY]
+    const baseUrlNames = [...AZURE_GPT54_BASE_URL_ENV_PRIORITY]
+    const modelNames = [...AZURE_GPT54_MODEL_ENV_PRIORITY]
+    return {
+      envExists: {
+        apiKey: apiKeyNames.some((name) => getServerEnvStatus(name).exists),
+        baseUrl: baseUrlNames.some((name) => getServerEnvStatus(name).exists),
+        model: modelNames.some((name) => getServerEnvStatus(name).exists),
+      },
+      envValueStatus: {
+        apiKey: getEnvValueStatus(apiKeyNames),
+        baseUrl: getEnvValueStatus(baseUrlNames),
+        model: getEnvValueStatus(modelNames),
+      },
+      envConfigured: Boolean(resolved.apiKey && resolved.baseUrl && resolved.configuredModel),
+      envValueLengths: {
+        apiKey: resolved.apiKey?.length || 0,
+        baseUrl: resolved.baseUrl?.length || 0,
+        model: resolved.configuredModel?.length || 0,
+      },
+      endpointHost: endpoint.endpointHost,
+      endpointPath: endpoint.endpointPath,
+      finalRequestPath: endpoint.finalRequestPath,
+      model: resolved.model,
+      apiKeyConfigured: resolved.apiKeyConfigured,
+      baseUrlConfigured: resolved.baseUrlConfigured,
+      modelConfigured: resolved.modelConfigured,
+      apiKeySource: resolved.apiKeySource,
+      baseUrlSource: resolved.baseUrlSource,
+      modelSource: resolved.modelSource,
+    }
+  }
+
+  const apiKeyName = 'AZURE_DEEPSEEK_API_KEY'
+  const baseUrlName = 'AZURE_DEEPSEEK_BASE_URL'
+  const modelName = 'AZURE_DEEPSEEK_MODEL'
+  const apiKey = readServerEnv(apiKeyName)
+  const baseUrl = normalizeBaseUrl(provider, readServerEnv(baseUrlName))
+  const configuredModel = readServerEnv(modelName)
   const model = configuredModel || names.defaultModel
   const endpoint = getEndpointMetadata(baseUrl)
   return {
     envExists: {
-      apiKey: getServerEnvStatus(names.apiKey).exists,
-      baseUrl: getServerEnvStatus(names.baseUrl).exists,
-      model: getServerEnvStatus(names.model).exists,
+      apiKey: getServerEnvStatus(apiKeyName).exists,
+      baseUrl: getServerEnvStatus(baseUrlName).exists,
+      model: getServerEnvStatus(modelName).exists,
+    },
+    envValueStatus: {
+      apiKey: getEnvValueStatus(apiKeyName),
+      baseUrl: getEnvValueStatus(baseUrlName),
+      model: getEnvValueStatus(modelName),
     },
     envConfigured: Boolean(apiKey && baseUrl && configuredModel),
     envValueLengths: {
@@ -115,6 +245,9 @@ export function getCurrentEasyCodeProviderEnvDiagnostics(provider: EasyCodeTrack
     apiKeyConfigured: Boolean(apiKey),
     baseUrlConfigured: Boolean(baseUrl),
     modelConfigured: Boolean(configuredModel),
+    apiKeySource: apiKeyName,
+    baseUrlSource: baseUrlName,
+    modelSource: modelName,
   }
 }
 
@@ -155,6 +288,7 @@ export function recordEasyCodeAiSuccess() {
 export function getEasyCodeProviderDiagnosticsSummary() {
   const gpt54 = getCurrentEasyCodeProviderEnvDiagnostics('gpt54')
   const deepseek = getCurrentEasyCodeProviderEnvDiagnostics('deepseek')
+  const lastAttempt = getLastEasyCodeAttemptSummary()
   return {
     easyCodeProvider: {
       gpt54Configured: gpt54.envConfigured,
@@ -164,12 +298,16 @@ export function getEasyCodeProviderDiagnosticsSummary() {
       endpointHost: gpt54.endpointHost,
       endpointPath: gpt54.endpointPath,
       model: gpt54.model,
+      apiKeySource: gpt54.apiKeySource,
+      baseUrlSource: gpt54.baseUrlSource,
+      modelSource: gpt54.modelSource,
       lastStatus: lastAttempts.gpt54?.statusCode ?? null,
       lastSafeReason: lastAttempts.gpt54?.safeReason ?? null,
       lastSafeCode: lastAttempts.gpt54?.safeCode ?? null,
       lastAttemptAt: lastAttempts.gpt54?.attemptedAt ?? null,
       fallbackUsed: lastFallback.fallbackUsed,
       envExists: gpt54.envExists,
+      envValueStatus: gpt54.envValueStatus,
       envValueLengths: gpt54.envValueLengths,
       finalRequestPath: gpt54.finalRequestPath,
       responseFormatUsed: lastAttempts.gpt54?.responseFormatUsed ?? false,
@@ -177,6 +315,15 @@ export function getEasyCodeProviderDiagnosticsSummary() {
       providerErrorMessage: lastAttempts.gpt54?.providerErrorMessage ?? null,
       deepseekFallbackAttempt: lastAttempts.deepseek,
       fallback: lastFallback,
+      deepseekConfigured: deepseek.envConfigured,
+      deepseekEnvExists: deepseek.envExists,
+      deepseekEnvValueStatus: deepseek.envValueStatus,
+      deepseekEnvValueLengths: deepseek.envValueLengths,
+      lastEasyCodeProvider: lastAttempt.provider,
+      lastEasyCodeStatus: lastAttempt.status,
+      lastEasyCodeSafeReason: lastAttempt.safeReason,
+      lastEasyCodeFallbackUsed: lastAttempt.fallbackUsed,
+      lastEasyCodeAttemptAt: lastAttempt.attemptedAt,
     },
   }
 }

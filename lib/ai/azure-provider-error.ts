@@ -9,6 +9,9 @@ export interface AzureTextProviderConfigSnapshot {
   apiKeyConfigured: boolean
   baseUrlConfigured: boolean
   modelConfigured: boolean
+  apiKeySource?: string | null
+  baseUrlSource?: string | null
+  modelSource?: string | null
   endpointHost: string | null
   endpointPath: string
   model: string
