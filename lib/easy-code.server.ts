@@ -418,6 +418,104 @@ function getEasyCodeValidationSummary(
   }
 }
 
+function getEasyCodeJsonSystemPrompt() {
+  return `You are Easy Code, a high-end coding workspace inside EasyPlus. Act as a precise senior product engineer and designer.
+Return only strict JSON with this exact shape:
+{"summary":"...","title":"optional project title","framework":"html|react|next|vite|python|node|other","previewType":"static-html|unsupported","instructions":["..."],"files":[{"path":"relative/path","language":"html|css|javascript|typescript|tsx|python|json|markdown|text","content":"full file content","operation":"create|update|delete|rename","newPath":"optional/new/path"}]}
+You may also return "operations" instead of "files" with the same array shape.
+Rules:
+- Return JSON only. No markdown fences. No prose outside JSON.
+- Generate complete file contents, not patches.
+- Use only relative paths. No absolute paths, no ../ traversal.
+- Keep each file under ${EASY_CODE_MAX_FILE_BYTES} bytes.
+- Return at most ${EASY_CODE_MAX_FILES_PER_AI_CALL} files.
+- For simple landing pages, websites, portfolios, product pages, and business sites, generate only a static HTML project unless the user explicitly asks for React, Next.js, Vite, Node, or Python.
+- Static first pass must contain exactly these four non-empty files: index.html, styles.css, script.js, README.md.
+- Never return README only.
+- Never return zero files.
+- Never use lorem ipsum, TODO placeholders, fake broken assets, or generic copy that sounds unfinished.
+- No external paid dependencies. Keep simple landing pages fully static and previewable.
+- Make landing pages feel premium: intentional layout, polished typography, strong spacing, rich sections, tasteful gradients, glass or layered surfaces when appropriate, motion, mobile responsiveness, and professional copywriting.
+- For React/Vite/Next/Python/Node projects, generate files and README/run instructions, but previewType should be unsupported unless there is a root index.html.
+- Do not include secrets or API keys.
+- For edits, preserve the existing working structure and return only changed files as complete replacement content.
+- For static HTML edits, read the current files carefully, improve the existing experience, and update index.html, styles.css, and script.js as needed.
+- Do not expose backend providers, model names, or routing details.`
+}
+
+async function repairIncompleteStaticLandingPageGeneration(input: {
+  project: Pick<EasyCodeProject, 'title' | 'description'>
+  instruction: string
+  projectId?: string
+  priorResult: EasyCodeAiResult
+  priorDiagnostics: EasyCodeAiDiagnostics[]
+  missingStarterFiles: string[]
+  validationRejectedReason: string | null
+}): Promise<EasyCodeGenerationPayload> {
+  console.warn('[Easy Code] Static generation incomplete, requesting corrected AI pass', {
+    projectId: input.projectId || null,
+    missingStarterFiles: input.missingStarterFiles,
+    validationRejectedReason: input.validationRejectedReason,
+    priorFilesReturnedCount: input.priorResult.files.length,
+    priorProviderAttempts: input.priorDiagnostics.length,
+  })
+
+  try {
+    const raw = await callEasyCodeJsonProvider([
+      { role: 'system', content: getEasyCodeJsonSystemPrompt() },
+      {
+        role: 'user',
+        content: `The previous static landing page response was incomplete and failed validation.
+Project: ${input.project.title}
+Original description: ${input.project.description || ''}
+Original instruction: ${input.instruction}
+Missing required files: ${input.missingStarterFiles.join(', ') || 'none'}
+Validation failure: ${input.validationRejectedReason || 'unknown'}
+
+Previous incomplete JSON:
+${JSON.stringify(input.priorResult).slice(0, 18000)}
+
+Return a corrected full static project.
+Requirements:
+- framework must be "html"
+- previewType must be "static-html"
+- files must be exactly: index.html, styles.css, script.js, README.md
+- preserve the business name, topic, and custom copy from the original instruction
+- keep the site premium, responsive, and production-ready
+- index.html must link styles.css and script.js
+- include polished hero, services/features, pricing/packages, testimonials, FAQ, and booking/contact CTA
+- return all four files as complete contents
+- do not output markdown fences
+- do not output prose outside JSON`,
+      },
+    ], 3200, {
+      timeoutMs: EASY_CODE_CREATE_TIMEOUT_MS,
+      phase: 'repair',
+      projectId: input.projectId,
+      promptType: 'static-site',
+    })
+
+    const parsed = await parseEasyCodeJson(raw.content, input.projectId, raw.diagnostics)
+    console.info('[Easy Code] Corrective static AI pass completed', {
+      projectId: input.projectId || null,
+      providerUsed: raw.providerUsed,
+      returnedFiles: parsed.aiResult.files.length,
+      filesReturnedCount: parsed.aiResult.files.length,
+    })
+    return {
+      aiResult: parsed.aiResult,
+      diagnostics: [...input.priorDiagnostics, ...parsed.diagnostics],
+      providerUsed: raw.providerUsed,
+    }
+  } catch (error: any) {
+    const correctionDiagnostics = Array.isArray(error?.easyCodeDiagnostics) ? error.easyCodeDiagnostics : []
+    throw attachEasyCodeDiagnostics(
+      error instanceof Error ? error : new Error(String(error)),
+      [...input.priorDiagnostics, ...correctionDiagnostics]
+    )
+  }
+}
+
 function escapeHtml(value: string): string {
   return value
     .replace(/&/g, '&amp;')
@@ -2500,13 +2598,13 @@ export async function runEasyCodeInitialGeneration(userId: string, projectId: st
       instruction: cleanPrompt,
       projectId,
     })
-    const { aiResult, diagnostics: aiDiagnostics, providerUsed } = generation
+    let { aiResult, diagnostics: aiDiagnostics, providerUsed } = generation
 
-    const filesCreated = aiResult.files.map(file => file.newPath || file.path)
-    const outputDiagnostics = getEasyCodeAiResultDiagnostics(aiResult, project)
-    const missingStarterFiles = staticLandingPage ? outputDiagnostics.missingStarterFiles : []
-    const proposedReadiness = outputDiagnostics.readiness
-    const validationSummary = getEasyCodeValidationSummary(outputDiagnostics, staticLandingPage)
+    let filesCreated = aiResult.files.map(file => file.newPath || file.path)
+    let outputDiagnostics = getEasyCodeAiResultDiagnostics(aiResult, project)
+    let missingStarterFiles = staticLandingPage ? outputDiagnostics.missingStarterFiles : []
+    let proposedReadiness = outputDiagnostics.readiness
+    let validationSummary = getEasyCodeValidationSummary(outputDiagnostics, staticLandingPage)
     console.info('[Easy Code] Generation output validated', {
       projectId,
       phase: 'create',
@@ -2522,9 +2620,47 @@ export async function runEasyCodeInitialGeneration(userId: string, projectId: st
       readmeOnly: outputDiagnostics.readmeOnly,
       providerUsed,
     })
-    if (missingStarterFiles.length > 0) throw new Error('Generation incomplete. Retry.')
-    if (outputDiagnostics.readmeOnly) throw new Error('Generation incomplete. Retry.')
-    if (!proposedReadiness.ready) throw new Error('Generation incomplete. Retry.')
+
+    if (staticLandingPage && (missingStarterFiles.length > 0 || outputDiagnostics.readmeOnly || !proposedReadiness.ready)) {
+      const correctedGeneration = await repairIncompleteStaticLandingPageGeneration({
+        project,
+        instruction: cleanPrompt,
+        projectId,
+        priorResult: aiResult,
+        priorDiagnostics: aiDiagnostics,
+        missingStarterFiles,
+        validationRejectedReason: validationSummary.validationRejectedReason,
+      })
+
+      aiResult = correctedGeneration.aiResult
+      aiDiagnostics = correctedGeneration.diagnostics
+      providerUsed = correctedGeneration.providerUsed
+      filesCreated = aiResult.files.map(file => file.newPath || file.path)
+      outputDiagnostics = getEasyCodeAiResultDiagnostics(aiResult, project)
+      missingStarterFiles = outputDiagnostics.missingStarterFiles
+      proposedReadiness = outputDiagnostics.readiness
+      validationSummary = getEasyCodeValidationSummary(outputDiagnostics, true)
+
+      console.info('[Easy Code] Corrected generation output validated', {
+        projectId,
+        phase: 'create',
+        promptType,
+        returnedFiles: aiResult.files.length,
+        filesReturnedCount: aiResult.files.length,
+        validatedFiles: proposedReadiness.fileCount,
+        validationRejectedCount: validationSummary.validationRejectedCount,
+        validationRejectedReason: validationSummary.validationRejectedReason,
+        meaningfulFiles: proposedReadiness.meaningfulFileCount,
+        hasIndexHtml: proposedReadiness.hasIndexHtml,
+        missingStarterFiles,
+        readmeOnly: outputDiagnostics.readmeOnly,
+        providerUsed,
+      })
+    }
+
+    if (missingStarterFiles.length > 0) throw attachEasyCodeDiagnostics(new Error('Generation incomplete. Retry.'), aiDiagnostics)
+    if (outputDiagnostics.readmeOnly) throw attachEasyCodeDiagnostics(new Error('Generation incomplete. Retry.'), aiDiagnostics)
+    if (!proposedReadiness.ready) throw attachEasyCodeDiagnostics(new Error('Generation incomplete. Retry.'), aiDiagnostics)
     await updateEasyCodeGenerationState(userId, projectId, {
       status: 'generating',
       phase: 'saving_files',
@@ -2552,8 +2688,8 @@ export async function runEasyCodeInitialGeneration(userId: string, projectId: st
       hasIndexHtml: savedReadiness.hasIndexHtml,
       missingStarterFiles: missingSavedStarterFiles,
     })
-    if (missingSavedStarterFiles.length > 0) throw new Error('Generation incomplete. Retry.')
-    if (!savedReadiness.ready) throw new Error('Generation incomplete. Retry.')
+    if (missingSavedStarterFiles.length > 0) throw attachEasyCodeDiagnostics(new Error('Generation incomplete. Retry.'), aiDiagnostics)
+    if (!savedReadiness.ready) throw attachEasyCodeDiagnostics(new Error('Generation incomplete. Retry.'), aiDiagnostics)
     await db.from('easy_code_projects')
       .update({
         title: aiResult.title || project.title,
@@ -2805,28 +2941,7 @@ export async function generateEasyCodeFiles(input: {
   ].join('\n')).join('\n\n')
 
   const recentMessages = staticLandingPage ? '' : input.messages.slice(-10).map(message => `${message.role}: ${message.content}`).join('\n')
-  const system = `You are Easy Code, a high-end coding workspace inside EasyPlus. Act as a precise senior product engineer and designer.
-Return only strict JSON with this exact shape:
-{"summary":"...","title":"optional project title","framework":"html|react|next|vite|python|node|other","previewType":"static-html|unsupported","instructions":["..."],"files":[{"path":"relative/path","language":"html|css|javascript|typescript|tsx|python|json|markdown|text","content":"full file content","operation":"create|update|delete|rename","newPath":"optional/new/path"}]}
-You may also return "operations" instead of "files" with the same array shape.
-Rules:
-- Return JSON only. No markdown fences. No prose outside JSON.
-- Generate complete file contents, not patches.
-- Use only relative paths. No absolute paths, no ../ traversal.
-- Keep each file under ${EASY_CODE_MAX_FILE_BYTES} bytes.
-- Return at most ${EASY_CODE_MAX_FILES_PER_AI_CALL} files.
-- For simple landing pages, websites, portfolios, product pages, and business sites, generate only a static HTML project unless the user explicitly asks for React, Next.js, Vite, Node, or Python.
-- Static first pass must contain exactly these four non-empty files: index.html, styles.css, script.js, README.md.
-- Never return README only.
-- Never return zero files.
-- Never use lorem ipsum, TODO placeholders, fake broken assets, or generic copy that sounds unfinished.
-- No external paid dependencies. Keep simple landing pages fully static and previewable.
-- Make landing pages feel premium: intentional layout, polished typography, strong spacing, rich sections, tasteful gradients, glass or layered surfaces when appropriate, motion, mobile responsiveness, and professional copywriting.
-- For React/Vite/Next/Python/Node projects, generate files and README/run instructions, but previewType should be unsupported unless there is a root index.html.
-- Do not include secrets or API keys.
-- For edits, preserve the existing working structure and return only changed files as complete replacement content.
-- For static HTML edits, read the current files carefully, improve the existing experience, and update index.html, styles.css, and script.js as needed.
-- Do not expose backend providers, model names, or routing details.`
+  const system = getEasyCodeJsonSystemPrompt()
 
   const user = staticLandingPage
     ? `Mode: create
