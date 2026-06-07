@@ -16,6 +16,7 @@ import {
   Upload,
 } from 'lucide-react'
 import { Logo } from '@/components/brand/logo'
+import { UI_MODELS } from '@/types/models'
 
 const chats = [
   { title: 'Research synthesis', date: 'Today', active: true },
@@ -24,6 +25,12 @@ const chats = [
 ]
 
 const projects = ['HSC Economics', 'Client Website', 'Startup Research']
+
+const previewModels = UI_MODELS.map((model) => ({
+  id: model.id,
+  name: model.name,
+  color: model.color,
+}))
 
 export function WorkspacePreview() {
   return (
@@ -100,6 +107,21 @@ export function WorkspacePreview() {
               <div>
                 <p className="text-xs text-gray-600">Project</p>
                 <h3 className="text-sm font-semibold text-white md:text-base">HSC Economics</h3>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {previewModels.map((model, index) => (
+                  <span
+                    key={model.id}
+                    className={`rounded-full border px-3 py-1 text-xs ${
+                      index === 1
+                        ? 'border-white/[0.14] bg-white/[0.08] text-white'
+                        : 'border-white/[0.08] bg-white/[0.03] text-gray-400'
+                    }`}
+                  >
+                    <span className="mr-2 inline-block h-2 w-2 rounded-full align-middle" style={{ backgroundColor: model.color }} />
+                    {model.name}
+                  </span>
+                ))}
               </div>
               <div className="flex flex-wrap gap-2">
                 {['Fast chat', 'Research', 'Artifacts'].map((item, index) => (

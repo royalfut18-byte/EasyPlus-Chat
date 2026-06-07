@@ -23,6 +23,7 @@ import {
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Logo } from '@/components/brand/logo'
+import { UI_MODELS } from '@/types/models'
 import { WorkspacePreview } from './workspace-preview'
 
 const features = [
@@ -74,6 +75,22 @@ const trustPoints = [
   'Unlimited account support',
   'Clean workspace for files, chats, and outputs',
 ]
+
+const landingModels = UI_MODELS.map((model) => ({
+  id: model.id,
+  name: model.name,
+  color: model.color,
+  badge:
+    model.id === 'claude-opus-4.8'
+      ? 'Max'
+      : model.id === 'chat-gpt-5.5'
+        ? 'Fast'
+        : model.id === 'gemini-3.1-pro'
+          ? 'Research'
+          : model.id === 'deepseek-v4-pro'
+            ? 'Coding'
+            : 'Images',
+}))
 
 export function LandingPage() {
   return (
@@ -170,6 +187,34 @@ export function LandingPage() {
                   {item}
                 </span>
               ))}
+            </motion.div>
+
+            <motion.div
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.4 }}
+              className="mx-auto mt-8 max-w-4xl rounded-[1.75rem] border border-white/[0.08] bg-white/[0.03] p-4 text-left shadow-2xl shadow-black/20"
+            >
+              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-violet-300">Model lineup</p>
+                  <p className="mt-2 text-sm text-gray-400">
+                    Switch between premium models for coding, writing, research, reasoning, and image generation inside one workspace.
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {landingModels.map((model) => (
+                    <div
+                      key={model.id}
+                      className="rounded-full border border-white/[0.08] bg-black/20 px-3 py-1.5 text-xs text-gray-200"
+                    >
+                      <span className="mr-2 inline-block h-2 w-2 rounded-full align-middle" style={{ backgroundColor: model.color }} />
+                      <span>{model.name}</span>
+                      <span className="ml-2 text-gray-500">{model.badge}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </motion.div>
           </div>
 
