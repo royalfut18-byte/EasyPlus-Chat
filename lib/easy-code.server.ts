@@ -62,6 +62,24 @@ interface EasyCodeGenerationPayload {
   aiResult: EasyCodeAiResult
   diagnostics: EasyCodeAiDiagnostics[]
   providerUsed: EasyCodeAiProvider
+  outcome?: EasyCodeGenerationOutcome
+}
+
+type EasyCodeFinalGenerationMode = 'ai_full' | 'ai_recovered' | 'ai_completed' | 'provider_fallback' | 'failed'
+
+interface EasyCodeGenerationOutcome {
+  providerStatusCode: number | null
+  aiResponseReceived: boolean
+  parseFailed: boolean
+  repairAttempted: boolean
+  repairSucceeded: boolean
+  targetedCompletionAttempted: boolean
+  targetedCompletionSucceeded: boolean
+  recoveredFromAiOutput: boolean
+  localMissingFilesSynthesized: boolean
+  fallbackUsed: boolean
+  fallbackReason: string | null
+  finalGenerationMode: EasyCodeFinalGenerationMode
 }
 
 export type EasyCodeOperation = 'create' | 'update' | 'delete' | 'rename'
@@ -185,6 +203,7 @@ function getSafeEasyCodeError(error: any): string {
   if (category === 'deployment_not_found') return 'AI deployment was not found.'
   if (category === 'provider_busy') return 'AI provider is busy. Try again.'
   if (category === 'invalid_json' || category === 'invalid_changes' || category === 'no_valid_changes') return 'AI returned invalid file data.'
+  if (category === 'no_usable_content') return 'AI returned no usable project content. Retry.'
   if (category === 'generation_incomplete') return 'Generation incomplete. Retry.'
   if (category === 'save_failed') return typeof error?.message === 'string' && error.message ? error.message : 'Could not save updated files.'
   if (category === 'provider_unavailable' || category === 'unknown') return 'AI provider request failed.'
@@ -214,6 +233,7 @@ function categorizeEasyCodeError(error: any): string {
   if (message === 'The AI returned invalid file data. Try again.') return 'invalid_json'
   if (message === 'The AI returned invalid file changes. Try again.') return 'invalid_changes'
   if (message === 'No valid file changes were returned. Try again.') return 'no_valid_changes'
+  if (message === 'AI returned no usable project content. Retry.') return 'no_usable_content'
   if (message === 'Could not save fallback files.') return 'save_failed'
   if (message === 'Could not save updated files.') return 'save_failed'
   if (message === 'Generation incomplete. Retry.') return 'generation_incomplete'
@@ -352,13 +372,51 @@ function buildEasyCodeProviderDiagnostics(
   }
 }
 
-function withEasyCodeDiagnostics(metadata: any, diagnostics: EasyCodeAiDiagnostics[], providerUsed?: EasyCodeAiProvider) {
+function getEasyCodeLastProviderStatusCode(diagnostics: EasyCodeAiDiagnostics[]): number | null {
+  const attempt = [...diagnostics]
+    .reverse()
+    .find((item) => item.provider !== 'fallback' && item.providerStatusCode != null)
+  return attempt?.providerStatusCode ?? null
+}
+
+function didEasyCodeReceiveSuccessfulAiResponse(diagnostics: EasyCodeAiDiagnostics[]): boolean {
+  return diagnostics.some((item) => item.provider !== 'fallback' && item.providerStatusCode === 200)
+}
+
+function buildEasyCodeGenerationOutcome(
+  diagnostics: EasyCodeAiDiagnostics[],
+  overrides: Partial<EasyCodeGenerationOutcome>
+): EasyCodeGenerationOutcome {
+  return {
+    providerStatusCode: getEasyCodeLastProviderStatusCode(diagnostics),
+    aiResponseReceived: didEasyCodeReceiveSuccessfulAiResponse(diagnostics),
+    parseFailed: false,
+    repairAttempted: false,
+    repairSucceeded: false,
+    targetedCompletionAttempted: false,
+    targetedCompletionSucceeded: false,
+    recoveredFromAiOutput: false,
+    localMissingFilesSynthesized: false,
+    fallbackUsed: false,
+    fallbackReason: null,
+    finalGenerationMode: 'ai_full',
+    ...overrides,
+  }
+}
+
+function withEasyCodeDiagnostics(
+  metadata: any,
+  diagnostics: EasyCodeAiDiagnostics[],
+  providerUsed?: EasyCodeAiProvider,
+  outcome?: EasyCodeGenerationOutcome
+) {
   return {
     ...(metadata || {}),
     diagnostics: {
       providerUsed: providerUsed || null,
       fallbackUsed: providerUsed === 'azure-deepseek' || providerUsed === 'fallback',
       attempts: diagnostics,
+      outcome: outcome || null,
     },
   }
 }
@@ -496,6 +554,13 @@ async function repairIncompleteStaticLandingPageGeneration(input: {
       aiResult: normalized.aiResult,
       diagnostics: input.priorDiagnostics,
       providerUsed: priorProviderUsed,
+      outcome: buildEasyCodeGenerationOutcome(input.priorDiagnostics, {
+        repairAttempted: false,
+        repairSucceeded: false,
+        recoveredFromAiOutput: normalized.recoveredFromAiOutput,
+        localMissingFilesSynthesized: normalized.localMissingFilesSynthesized,
+        finalGenerationMode: normalized.recoveredFromAiOutput || normalized.localMissingFilesSynthesized ? 'ai_recovered' : 'ai_full',
+      }),
     }
   }
 
@@ -576,6 +641,15 @@ Requirements:
       aiResult: completedResult.aiResult,
       diagnostics: [...input.priorDiagnostics, ...parsed.diagnostics],
       providerUsed: raw.providerUsed,
+      outcome: buildEasyCodeGenerationOutcome([...input.priorDiagnostics, ...parsed.diagnostics], {
+        repairAttempted: true,
+        repairSucceeded: true,
+        targetedCompletionAttempted: true,
+        targetedCompletionSucceeded: completedResult.missingStarterFiles.length === 0,
+        recoveredFromAiOutput: completedResult.recoveredFromAiOutput,
+        localMissingFilesSynthesized: completedResult.localMissingFilesSynthesized,
+        finalGenerationMode: 'ai_completed',
+      }),
     }
   } catch (error: any) {
     const correctionDiagnostics = Array.isArray(error?.easyCodeDiagnostics) ? error.easyCodeDiagnostics : []
@@ -664,16 +738,19 @@ function resolveStaticProjectTitle(input: {
   return 'Custom Landing Page'
 }
 
-function buildStaticAiSuccessSummary(title: string, variant: 'created' | 'normalized' | 'completed') {
+function buildStaticAiSuccessSummary(title: string, variant: 'created' | 'recovered' | 'completed' | 'supported') {
   const normalizedTitle = title.replace(/\s+/g, ' ').trim() || 'custom landing page'
   const noun = /\b(landing page|website|site|homepage)\b/i.test(normalizedTitle)
     ? normalizedTitle
     : `${normalizedTitle} landing page`
-  if (variant === 'normalized') {
-    return `Created a custom ${noun} with AI and normalized it into project files.`
+  if (variant === 'recovered') {
+    return `Created a custom ${noun} with AI and recovered the project files.`
   }
   if (variant === 'completed') {
     return `Created a custom ${noun} with AI and completed the missing project files.`
+  }
+  if (variant === 'supported') {
+    return `Created a custom ${noun} with AI and added missing support files.`
   }
   return `Created a custom ${noun} with AI.`
 }
@@ -694,6 +771,321 @@ ${summary}
 
 Open index.html in the Easy Code preview or a browser.
 `
+}
+
+function buildSynthesizedStaticStyles(title: string) {
+  return `:root {
+  --bg: #08111f;
+  --panel: rgba(9, 17, 31, 0.72);
+  --panel-strong: rgba(17, 24, 39, 0.92);
+  --text: #f8fafc;
+  --muted: #cbd5e1;
+  --accent: #38bdf8;
+  --accent-strong: #7c3aed;
+  --border: rgba(148, 163, 184, 0.18);
+  --shadow: 0 24px 80px rgba(2, 6, 23, 0.45);
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0;
+  font-family: Inter, "Segoe UI", sans-serif;
+  background:
+    radial-gradient(circle at top, rgba(124, 58, 237, 0.22), transparent 32%),
+    radial-gradient(circle at 20% 20%, rgba(56, 189, 248, 0.14), transparent 24%),
+    linear-gradient(180deg, #050816 0%, #0b1120 52%, #020617 100%);
+  color: var(--text);
+  min-height: 100vh;
+}
+
+a { color: inherit; text-decoration: none; }
+img { max-width: 100%; display: block; }
+
+.page-shell,
+main,
+.site-shell {
+  width: min(1180px, calc(100% - 2rem));
+  margin: 0 auto;
+}
+
+.site-header,
+header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  backdrop-filter: blur(18px);
+  background: rgba(5, 8, 22, 0.72);
+  border-bottom: 1px solid var(--border);
+}
+
+.nav,
+nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 0;
+}
+
+.nav-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.85rem;
+  color: var(--muted);
+}
+
+.brand,
+.logo,
+.site-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.menu-button {
+  display: none;
+}
+
+.hero,
+.hero-section {
+  display: grid;
+  gap: 2rem;
+  align-items: center;
+  padding: 5.5rem 0 3rem;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+}
+
+.eyebrow,
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  border: 1px solid rgba(125, 211, 252, 0.18);
+  background: rgba(56, 189, 248, 0.08);
+  color: #bae6fd;
+  padding: 0.45rem 0.8rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+
+h1, h2, h3 {
+  line-height: 1.05;
+  margin: 0 0 1rem;
+}
+
+h1 {
+  font-size: clamp(2.6rem, 6vw, 5rem);
+  max-width: 11ch;
+}
+
+.lead,
+.subcopy,
+p {
+  color: var(--muted);
+  line-height: 1.7;
+}
+
+.hero-actions,
+.button-row,
+.cta-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.9rem;
+  margin-top: 1.5rem;
+}
+
+.button,
+button,
+.cta {
+  appearance: none;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  padding: 0.85rem 1.3rem;
+  font: inherit;
+  cursor: pointer;
+  transition: transform 160ms ease, background 160ms ease, border-color 160ms ease;
+}
+
+.button:hover,
+button:hover,
+.cta:hover {
+  transform: translateY(-1px);
+}
+
+.primary,
+.button.primary {
+  background: linear-gradient(135deg, var(--accent-strong), var(--accent));
+  color: white;
+  box-shadow: 0 18px 40px rgba(56, 189, 248, 0.24);
+}
+
+.secondary,
+.button.secondary {
+  border-color: var(--border);
+  background: rgba(15, 23, 42, 0.45);
+  color: var(--text);
+}
+
+.glass-card,
+.hero-card,
+.pricing-card,
+.panel,
+.feature-card,
+.card,
+.faq-item,
+.testimonial,
+.metric,
+.service-card,
+form {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 24px;
+  box-shadow: var(--shadow);
+}
+
+.hero-card,
+.glass-card,
+.pricing-card,
+.card,
+.service-card {
+  padding: 1.35rem;
+}
+
+.metrics,
+.stats,
+.service-grid,
+.pricing-grid,
+.testimonial-grid,
+.faq-grid,
+.results-grid,
+.feature-grid {
+  display: grid;
+  gap: 1rem;
+}
+
+.metrics,
+.stats {
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  margin: 2rem 0 0;
+}
+
+.service-grid,
+.pricing-grid,
+.testimonial-grid,
+.feature-grid {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.section {
+  padding: 4rem 0;
+}
+
+.section-heading {
+  max-width: 42rem;
+  margin-bottom: 1.5rem;
+}
+
+input,
+textarea,
+select {
+  width: 100%;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  background: rgba(2, 6, 23, 0.55);
+  color: var(--text);
+  padding: 0.95rem 1rem;
+}
+
+form {
+  padding: 1.25rem;
+}
+
+footer {
+  padding: 2rem 0 3rem;
+  color: var(--muted);
+}
+
+@media (max-width: 768px) {
+  .page-shell,
+  main,
+  .site-shell {
+    width: min(100% - 1.25rem, 100%);
+  }
+
+  .nav {
+    flex-wrap: wrap;
+  }
+
+  .nav-links {
+    width: 100%;
+    order: 3;
+  }
+
+  .menu-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-color: var(--border);
+    background: rgba(15, 23, 42, 0.45);
+    color: var(--text);
+  }
+
+  .hero,
+  .hero-section {
+    padding-top: 4.5rem;
+  }
+}
+
+/* Synthesized by Easy Code for ${title}. */
+`
+}
+
+function buildSynthesizedStaticScript(title: string) {
+  return `(() => {
+  const menuButton = document.querySelector('.menu-button');
+  const navLinks = document.querySelector('.nav-links');
+  const yearTarget = document.getElementById('year');
+  const scrollLinks = Array.from(document.querySelectorAll('a[href^="#"]'));
+  const form = document.querySelector('form');
+
+  if (yearTarget) yearTarget.textContent = String(new Date().getFullYear());
+
+  if (menuButton && navLinks) {
+    menuButton.addEventListener('click', () => {
+      const expanded = menuButton.getAttribute('aria-expanded') === 'true';
+      menuButton.setAttribute('aria-expanded', String(!expanded));
+      navLinks.classList.toggle('is-open', !expanded);
+    });
+  }
+
+  scrollLinks.forEach((link) => {
+    link.addEventListener('click', (event) => {
+      const href = link.getAttribute('href');
+      if (!href || href === '#') return;
+      const target = document.querySelector(href);
+      if (!target) return;
+      event.preventDefault();
+      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  });
+
+  if (form) {
+    form.addEventListener('submit', (event) => {
+      event.preventDefault();
+      const submitButton = form.querySelector('button[type="submit"], .button.primary, .cta');
+      if (submitButton) {
+        const original = submitButton.textContent || 'Submit';
+        submitButton.textContent = 'Request sent';
+        window.setTimeout(() => { submitButton.textContent = original; }, 2200);
+      }
+    });
+  }
+
+  console.log('${title} support script ready');
+})();`
 }
 
 function insertBeforeClosingTag(html: string, closingTag: string, snippet: string) {
@@ -760,13 +1152,17 @@ function normalizeMeaningfulStaticAiOutput(input: {
   const hasStylesFile = fileMap.has('styles.css')
   const hasScriptFile = fileMap.has('script.js')
   const hasReadmeFile = fileMap.has('readme.md')
-  const needsStylesFile = !hasStylesFile && extractedCss.length > 0
-  const needsScriptFile = !hasScriptFile && extractedJs.length > 0
+  const needsStylesFile = !hasStylesFile
+  const needsScriptFile = !hasScriptFile
   const title = resolveStaticProjectTitle({
     instruction: input.instruction,
     aiTitle: input.aiResult.title,
     projectTitle: input.projectTitle,
   })
+  const localMissingFilesSynthesized =
+    (!hasStylesFile && extractedCss.length === 0) ||
+    (!hasScriptFile && extractedJs.length === 0) ||
+    !hasReadmeFile
 
   if ((needsStylesFile || hasStylesFile) && !/<link\b[^>]+href=["'][^"']*styles\.css["']/i.test(normalizedHtml)) {
     normalizedHtml = insertBeforeClosingTag(normalizedHtml, '</head>', '\n  <link rel="stylesheet" href="styles.css">\n')
@@ -785,7 +1181,7 @@ function normalizeMeaningfulStaticAiOutput(input: {
     fileMap.set('styles.css', {
       path: 'styles.css',
       language: 'css',
-      content: extractedCss.join('\n\n'),
+      content: extractedCss.length > 0 ? extractedCss.join('\n\n') : buildSynthesizedStaticStyles(title),
       operation: 'create',
     })
   }
@@ -793,7 +1189,7 @@ function normalizeMeaningfulStaticAiOutput(input: {
     fileMap.set('script.js', {
       path: 'script.js',
       language: 'javascript',
-      content: extractedJs.join('\n\n'),
+      content: extractedJs.length > 0 ? extractedJs.join('\n\n') : buildSynthesizedStaticScript(title),
       operation: 'create',
     })
   }
@@ -801,14 +1197,18 @@ function normalizeMeaningfulStaticAiOutput(input: {
     fileMap.set('readme.md', {
       path: 'README.md',
       language: 'markdown',
-      content: buildStaticAiReadme(title, buildStaticAiSuccessSummary(title, 'created')),
+      content: buildStaticAiReadme(title, buildStaticAiSuccessSummary(title, localMissingFilesSynthesized ? 'supported' : 'created')),
       operation: 'create',
     })
   }
 
   const normalizedFiles = Array.from(fileMap.values())
   const normalizedSingleFileHtml = originalFileCount === 1 && normalizedFiles.length > 1
-  const variant = normalizedSingleFileHtml ? 'normalized' : 'created'
+  const variant = normalizedSingleFileHtml
+    ? 'recovered'
+    : localMissingFilesSynthesized
+      ? 'supported'
+      : 'created'
   return {
     aiResult: {
       ...input.aiResult,
@@ -821,6 +1221,8 @@ function normalizeMeaningfulStaticAiOutput(input: {
     meaningfulAiOutput,
     normalizedSingleFileHtml,
     missingStarterFiles: getMissingStaticStarterFiles(normalizedFiles),
+    recoveredFromAiOutput: normalizedSingleFileHtml,
+    localMissingFilesSynthesized,
   }
 }
 
@@ -2373,6 +2775,245 @@ function getEasyCodeAiResultDiagnostics(
   }
 }
 
+function decodeEscapedEasyCodeText(text: string): string {
+  return text
+    .replace(/\\r\\n/g, '\n')
+    .replace(/\\n/g, '\n')
+    .replace(/\\t/g, '  ')
+    .replace(/\\"/g, '"')
+    .replace(/\\\\/g, '\\')
+}
+
+function normalizeRecoveredHtmlDocument(html: string, title: string) {
+  let normalized = html.trim()
+  if (!/^<!doctype/i.test(normalized)) {
+    normalized = `<!doctype html>\n${normalized}`
+  }
+
+  if (!/<html\b/i.test(normalized)) {
+    normalized = `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>${escapeHtml(title)}</title>
+</head>
+<body>
+${normalized}
+</body>
+</html>`
+  }
+
+  if (!/<head\b/i.test(normalized)) {
+    normalized = normalized.replace(/<html\b([^>]*)>/i, `<html$1>\n<head>\n  <meta charset="utf-8">\n  <meta name="viewport" content="width=device-width, initial-scale=1">\n  <title>${escapeHtml(title)}</title>\n</head>`)
+  }
+  if (!/<title\b/i.test(normalized)) {
+    normalized = insertBeforeClosingTag(normalized, '</head>', `\n  <title>${escapeHtml(title)}</title>\n`)
+  }
+  if (!/<meta\b[^>]+viewport/i.test(normalized)) {
+    normalized = insertBeforeClosingTag(normalized, '</head>', '\n  <meta name="viewport" content="width=device-width, initial-scale=1">\n')
+  }
+  if (!/<meta\b[^>]+charset/i.test(normalized)) {
+    normalized = insertBeforeClosingTag(normalized, '</head>', '\n  <meta charset="utf-8">\n')
+  }
+  if (!/<body\b/i.test(normalized)) {
+    normalized = normalized.replace(/<\/head>/i, '</head>\n<body>') + '\n</body>'
+  }
+  if (!/<\/body>/i.test(normalized)) normalized = `${normalized}\n</body>`
+  if (!/<\/html>/i.test(normalized)) normalized = `${normalized}\n</html>`
+  return normalized
+}
+
+function extractMeaningfulHtmlFromText(text: string, title: string): string | null {
+  const candidates = [text.trim()]
+  const fenced = text.match(/```(?:html)?\s*([\s\S]*?)```/i)?.[1]?.trim()
+  if (fenced) candidates.push(fenced)
+  const decoded = decodeEscapedEasyCodeText(text)
+  if (decoded.trim() && decoded.trim() !== text.trim()) candidates.push(decoded.trim())
+
+  for (const candidate of candidates) {
+    const htmlMatch =
+      candidate.match(/<!doctype html[\s\S]*?(?:<\/html>|$)/i) ||
+      candidate.match(/<html\b[\s\S]*?(?:<\/html>|$)/i)
+    if (htmlMatch?.[0]) {
+      return normalizeRecoveredHtmlDocument(htmlMatch[0], title)
+    }
+
+    const fragmentMatch = candidate.match(/<(main|section|header|div)\b[\s\S]{320,}$/i)
+    if (fragmentMatch?.[0]) {
+      return normalizeRecoveredHtmlDocument(fragmentMatch[0], title)
+    }
+  }
+
+  return null
+}
+
+async function recoverStaticLandingPageFromRawAiOutput(input: {
+  project: Pick<EasyCodeProject, 'title' | 'description'>
+  instruction: string
+  projectId?: string
+  sourceText: string
+  repairText?: string
+  diagnostics: EasyCodeAiDiagnostics[]
+}): Promise<EasyCodeGenerationPayload | null> {
+  const title = resolveStaticProjectTitle({
+    instruction: input.instruction,
+    projectTitle: input.project.title,
+  })
+  const candidateTexts = [input.repairText, input.sourceText].filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+
+  for (const candidate of candidateTexts) {
+    const recoveredHtml = extractMeaningfulHtmlFromText(candidate, title)
+    if (!recoveredHtml) continue
+
+    const normalized = normalizeMeaningfulStaticAiOutput({
+      aiResult: {
+        summary: buildStaticAiSuccessSummary(title, 'recovered'),
+        files: [
+          {
+            path: 'index.html',
+            language: 'html',
+            content: recoveredHtml,
+            operation: 'create',
+          },
+        ],
+        instructions: ['Review the generated copy and replace any placeholder booking details.'],
+        previewType: 'static-html',
+        title,
+        framework: 'html',
+      },
+      instruction: input.instruction,
+      projectTitle: input.project.title,
+    })
+
+    if (!normalized.meaningfulAiOutput) continue
+
+    const finalMode: EasyCodeFinalGenerationMode = normalized.localMissingFilesSynthesized || normalized.recoveredFromAiOutput
+      ? 'ai_recovered'
+      : 'ai_full'
+
+    console.info('[Easy Code] Recovered static project from raw AI output', {
+      projectId: input.projectId || null,
+      recoveredFromAiOutput: normalized.recoveredFromAiOutput,
+      localMissingFilesSynthesized: normalized.localMissingFilesSynthesized,
+      meaningfulAiOutput: normalized.meaningfulAiOutput,
+      missingStarterFiles: normalized.missingStarterFiles,
+      normalizedSingleFileHtml: normalized.normalizedSingleFileHtml,
+      targetedCompletionAttempted: false,
+      targetedCompletionSucceeded: false,
+      fallbackUsed: false,
+    })
+
+    return {
+      aiResult: normalized.aiResult,
+      diagnostics: input.diagnostics,
+      providerUsed: input.diagnostics.find((item) => item.provider !== 'fallback')?.provider || 'azure-gpt54',
+      outcome: buildEasyCodeGenerationOutcome(input.diagnostics, {
+        parseFailed: true,
+        repairAttempted: true,
+        repairSucceeded: false,
+        recoveredFromAiOutput: true,
+        localMissingFilesSynthesized: normalized.localMissingFilesSynthesized,
+        finalGenerationMode: finalMode,
+      }),
+    }
+  }
+
+  if (!candidateTexts.some((value) => value.length >= 200)) {
+    return null
+  }
+
+  try {
+    const completion = await callEasyCodeJsonProvider([
+      { role: 'system', content: getEasyCodeJsonSystemPrompt() },
+      {
+        role: 'user',
+        content: `The previous Easy Code response for this static landing page was malformed.
+Project: ${title}
+Original description: ${input.project.description || ''}
+Instruction: ${input.instruction}
+
+Recover this project by returning valid JSON with a strong index.html and any missing support files if needed.
+Focus on the same business/topic. Preserve the brand and intent.
+
+Malformed AI output excerpt:
+${candidateTexts[0].slice(0, 18000)}
+
+Requirements:
+- framework must be "html"
+- previewType must be "static-html"
+- include at least index.html
+- if possible include styles.css, script.js, and README.md
+- return JSON only`,
+      },
+    ], 3200, {
+      timeoutMs: EASY_CODE_CREATE_TIMEOUT_MS,
+      phase: 'repair',
+      projectId: input.projectId,
+      promptType: 'static-site',
+    })
+
+    const parsed = await parseEasyCodeJson(completion.content, input.projectId, [...input.diagnostics, ...completion.diagnostics])
+    const normalized = normalizeMeaningfulStaticAiOutput({
+      aiResult: {
+        ...parsed.aiResult,
+        title: resolveStaticProjectTitle({
+          instruction: input.instruction,
+          aiTitle: parsed.aiResult.title,
+          projectTitle: input.project.title,
+        }),
+        framework: 'html',
+        previewType: 'static-html',
+      },
+      instruction: input.instruction,
+      projectTitle: input.project.title,
+    })
+
+    if (!normalized.meaningfulAiOutput) return null
+
+    const outcome = buildEasyCodeGenerationOutcome(parsed.diagnostics, {
+      parseFailed: true,
+      repairAttempted: true,
+      repairSucceeded: false,
+      targetedCompletionAttempted: true,
+      targetedCompletionSucceeded: true,
+      recoveredFromAiOutput: true,
+      localMissingFilesSynthesized: normalized.localMissingFilesSynthesized,
+      finalGenerationMode: 'ai_completed',
+    })
+
+    console.info('[Easy Code] Targeted static completion recovered project', {
+      projectId: input.projectId || null,
+      returnedFiles: normalized.aiResult.files.length,
+      meaningfulAiOutput: normalized.meaningfulAiOutput,
+      missingStarterFiles: normalized.missingStarterFiles,
+      normalizedSingleFileHtml: normalized.normalizedSingleFileHtml,
+      targetedCompletionAttempted: true,
+      targetedCompletionSucceeded: true,
+      fallbackUsed: false,
+    })
+
+    return {
+      aiResult: {
+        ...normalized.aiResult,
+        summary: buildStaticAiSuccessSummary(title, 'completed'),
+      },
+      diagnostics: parsed.diagnostics,
+      providerUsed: completion.providerUsed,
+      outcome,
+    }
+  } catch (error: any) {
+    console.error('[Easy Code] Targeted static completion failed', {
+      projectId: input.projectId || null,
+      targetedCompletionAttempted: true,
+      targetedCompletionSucceeded: false,
+      fallbackUsed: false,
+      message: error?.message || 'Unknown error',
+    })
+    return null
+  }
+}
+
 function extractJson(text: string): string {
   const trimmed = text.trim()
   if (trimmed.startsWith('{') && trimmed.endsWith('}')) return trimmed
@@ -2569,13 +3210,19 @@ async function parseEasyCodeJson(
       repairAttempted: true,
       message: parseError?.message,
     })
-    const repaired = await callEasyCodeJsonProvider([
-      {
-        role: 'system',
-        content: 'Return only valid JSON matching this schema: {"summary":string,"files":[{"path":string,"language":string,"content":string,"operation":"create|update|delete|rename","newPath":string}],"instructions":string[],"previewType":"static-html|unsupported","title":string,"framework":string}. Do not include markdown.',
-      },
-      { role: 'user', content: `Repair this invalid Easy Code response into valid JSON only:\n${text.slice(0, 20000)}` },
-    ], 4096, { timeoutMs: EASY_CODE_REPAIR_TIMEOUT_MS, phase: 'repair', projectId, promptType: 'other' })
+    let repaired: Awaited<ReturnType<typeof callEasyCodeJsonProvider>>
+    try {
+      repaired = await callEasyCodeJsonProvider([
+        {
+          role: 'system',
+          content: 'Return only valid JSON matching this schema: {"summary":string,"files":[{"path":string,"language":string,"content":string,"operation":"create|update|delete|rename","newPath":string}],"instructions":string[],"previewType":"static-html|unsupported","title":string,"framework":string}. Do not include markdown.',
+        },
+        { role: 'user', content: `Repair this invalid Easy Code response into valid JSON only:\n${text.slice(0, 20000)}` },
+      ], 4096, { timeoutMs: EASY_CODE_REPAIR_TIMEOUT_MS, phase: 'repair', projectId, promptType: 'other' })
+    } catch (repairRequestError: any) {
+      ;(repairRequestError as any).easyCodeSourceText = text
+      throw repairRequestError
+    }
     try {
       const result = normalizeAiResult(JSON.parse(extractJson(repaired.content)))
       console.info('[Easy Code] JSON repair succeeded', {
@@ -2588,6 +3235,8 @@ async function parseEasyCodeJson(
       })
       return { aiResult: result, diagnostics: [...priorDiagnostics, ...repaired.diagnostics] }
     } catch (repairError: any) {
+      ;(repairError as any).easyCodeSourceText = text
+      ;(repairError as any).easyCodeRepairText = repaired.content
       console.error('[Easy Code] JSON repair failed', {
         projectId: projectId || null,
         jsonParseSuccess: false,
@@ -2889,6 +3538,10 @@ export async function runEasyCodeInitialGeneration(userId: string, projectId: st
       projectId,
     })
     let { aiResult, diagnostics: aiDiagnostics, providerUsed } = generation
+    let generationOutcome = generation.outcome || buildEasyCodeGenerationOutcome(aiDiagnostics, {
+      finalGenerationMode: providerUsed === 'fallback' ? 'provider_fallback' : 'ai_full',
+      fallbackUsed: providerUsed === 'fallback',
+    })
 
     let filesCreated = aiResult.files.map(file => file.newPath || file.path)
     let outputDiagnostics = getEasyCodeAiResultDiagnostics(aiResult, project)
@@ -2926,6 +3579,7 @@ export async function runEasyCodeInitialGeneration(userId: string, projectId: st
       aiResult = correctedGeneration.aiResult
       aiDiagnostics = correctedGeneration.diagnostics
       providerUsed = correctedGeneration.providerUsed
+      generationOutcome = correctedGeneration.outcome || generationOutcome
       filesCreated = aiResult.files.map(file => file.newPath || file.path)
       outputDiagnostics = getEasyCodeAiResultDiagnostics(aiResult, project)
       missingStarterFiles = outputDiagnostics.missingStarterFiles
@@ -2959,7 +3613,8 @@ export async function runEasyCodeInitialGeneration(userId: string, projectId: st
       metadata: withEasyCodeDiagnostics(
         buildEasyCodeProgress('saving_files', filesCreated, null, staticLandingPage ? 'static_site' : 'generic'),
         aiDiagnostics,
-        providerUsed
+        providerUsed,
+        generationOutcome
       ),
     })
 
@@ -2991,7 +3646,8 @@ export async function runEasyCodeInitialGeneration(userId: string, projectId: st
         generation_metadata: withEasyCodeDiagnostics(
           buildEasyCodeProgress('building_preview', filesCreated, null, staticLandingPage ? 'static_site' : 'generic'),
           aiDiagnostics,
-          providerUsed
+          providerUsed,
+          generationOutcome
         ),
         updated_at: new Date().toISOString(),
       })
@@ -3009,6 +3665,7 @@ export async function runEasyCodeInitialGeneration(userId: string, projectId: st
         generationDiagnostics: {
           providerUsed,
           attempts: aiDiagnostics,
+          outcome: generationOutcome,
         },
       },
     })
@@ -3020,7 +3677,8 @@ export async function runEasyCodeInitialGeneration(userId: string, projectId: st
       metadata: withEasyCodeDiagnostics(
         buildEasyCodeProgress('complete', filesCreated, null, staticLandingPage ? 'static_site' : 'generic'),
         aiDiagnostics,
-        providerUsed
+        providerUsed,
+        generationOutcome
       ),
       title: aiResult.title || project.title,
       framework: aiResult.framework || project.framework,
@@ -3039,15 +3697,33 @@ export async function runEasyCodeInitialGeneration(userId: string, projectId: st
       promptType,
       providerUsed,
       filesSavedCount: freshFiles.length,
-      fallbackUsed: providerUsed !== 'azure-gpt54',
+      fallbackUsed: generationOutcome.fallbackUsed,
+      finalGenerationMode: generationOutcome.finalGenerationMode,
       finalStatus: 'ready',
     })
     return { project: freshProject, files: freshFiles, messages: freshMessages, aiResult, diagnostics: aiDiagnostics, providerUsed }
   } catch (error: any) {
-    const message = getSafeEasyCodeError(error)
-    const errorCategory = categorizeEasyCodeError(error)
     const errorDiagnostics: EasyCodeAiDiagnostics[] = Array.isArray(error?.easyCodeDiagnostics) ? error.easyCodeDiagnostics : []
-    const allowStaticFallback = staticLandingPage && errorCategory !== 'save_failed'
+    const hadSuccessfulAiResponse = didEasyCodeReceiveSuccessfulAiResponse(errorDiagnostics)
+    let message = getSafeEasyCodeError(error)
+    const errorCategory = categorizeEasyCodeError(error)
+    if (hadSuccessfulAiResponse && (
+      errorCategory === 'invalid_json' ||
+      errorCategory === 'generation_incomplete' ||
+      errorCategory === 'unknown' ||
+      message === 'AI provider request failed.'
+    )) {
+      message = 'AI returned no usable project content. Retry.'
+    }
+    const failureOutcome = buildEasyCodeGenerationOutcome(errorDiagnostics, {
+      parseFailed: errorCategory === 'invalid_json' || errorCategory === 'unknown',
+      repairAttempted: hadSuccessfulAiResponse,
+      repairSucceeded: false,
+      fallbackUsed: false,
+      fallbackReason: hadSuccessfulAiResponse ? message : null,
+      finalGenerationMode: 'failed',
+    })
+    const allowStaticFallback = staticLandingPage && errorCategory !== 'save_failed' && !hadSuccessfulAiResponse
     if (allowStaticFallback) {
       try {
         const db = await getDb()
@@ -3063,6 +3739,11 @@ export async function runEasyCodeInitialGeneration(userId: string, projectId: st
             safeCode: 'static_fallback_used',
           }),
         ]
+        const fallbackOutcome = buildEasyCodeGenerationOutcome(fallbackDiagnostics, {
+          fallbackUsed: true,
+          fallbackReason: message,
+          finalGenerationMode: 'provider_fallback',
+        })
         recordEasyCodeFallbackUsage(fallbackResult.summary, 'static_fallback_used')
 
         console.warn('[Easy Code] Static fallback starting', {
@@ -3086,7 +3767,7 @@ export async function runEasyCodeInitialGeneration(userId: string, projectId: st
           status: 'generating',
           phase: 'saving_files',
           error: null,
-          metadata: withEasyCodeDiagnostics(buildEasyCodeProgress('saving_files', fallbackFiles, null, 'static_site'), fallbackDiagnostics, 'fallback'),
+          metadata: withEasyCodeDiagnostics(buildEasyCodeProgress('saving_files', fallbackFiles, null, 'static_site'), fallbackDiagnostics, 'fallback', fallbackOutcome),
         })
         await applyEasyCodeAiResult(userId, projectId, fallbackResult)
         const savedFiles = await getEasyCodeFiles(userId, projectId)
@@ -3126,6 +3807,7 @@ export async function runEasyCodeInitialGeneration(userId: string, projectId: st
             generationDiagnostics: {
               providerUsed: 'fallback',
               attempts: fallbackDiagnostics,
+              outcome: fallbackOutcome,
             },
           },
         })
@@ -3138,7 +3820,8 @@ export async function runEasyCodeInitialGeneration(userId: string, projectId: st
             ...withEasyCodeDiagnostics(
               buildEasyCodeProgress('complete', fallbackFiles, null, 'static_site'),
               fallbackDiagnostics,
-              'fallback'
+              'fallback',
+              fallbackOutcome
             ),
             warning: fallbackResult.summary,
           },
@@ -3160,6 +3843,7 @@ export async function runEasyCodeInitialGeneration(userId: string, projectId: st
           savedFiles: freshFiles.length,
           zipFileCount: freshFiles.length,
           previewAvailable: freshFiles.some(file => file.path.toLowerCase() === 'index.html'),
+          finalGenerationMode: fallbackOutcome.finalGenerationMode,
           finalStatus: 'ready',
         })
         return { project: freshProject, files: freshFiles, messages: freshMessages, aiResult: fallbackResult, fallbackUsed: true, diagnostics: fallbackDiagnostics, providerUsed: 'fallback' }
@@ -3178,7 +3862,7 @@ export async function runEasyCodeInitialGeneration(userId: string, projectId: st
       status,
       phase: 'failed',
       error: message,
-      metadata: withEasyCodeDiagnostics(buildEasyCodeProgress('failed', [], message), errorDiagnostics),
+      metadata: withEasyCodeDiagnostics(buildEasyCodeProgress('failed', [], message), errorDiagnostics, undefined, failureOutcome),
     }).catch(() => {})
     console.error('[Easy Code] Status updated to failed', {
       message,
@@ -3188,6 +3872,7 @@ export async function runEasyCodeInitialGeneration(userId: string, projectId: st
       timeoutHit: isTimeoutError(error),
       errorCategory,
       fallbackUsed: false,
+      finalGenerationMode: failureOutcome.finalGenerationMode,
       finalStatus: status,
       diagnostics: errorDiagnostics,
     })
@@ -3312,11 +3997,37 @@ ${fileContext || 'None'}`
     projectId: input.projectId,
     promptType,
   })
-  const parsed = await parseEasyCodeJson(raw.content, input.projectId, raw.diagnostics)
+  let parsed: Awaited<ReturnType<typeof parseEasyCodeJson>>
+  try {
+    parsed = await parseEasyCodeJson(raw.content, input.projectId, raw.diagnostics)
+  } catch (error: any) {
+    const diagnostics = Array.isArray(error?.easyCodeDiagnostics) ? error.easyCodeDiagnostics : raw.diagnostics
+    if (staticLandingPage && didEasyCodeReceiveSuccessfulAiResponse(diagnostics)) {
+      const recovered = await recoverStaticLandingPageFromRawAiOutput({
+        project: input.project,
+        instruction: input.instruction,
+        projectId: input.projectId,
+        sourceText: raw.content,
+        repairText: typeof error?.easyCodeRepairText === 'string' ? error.easyCodeRepairText : undefined,
+        diagnostics,
+      })
+      if (recovered) {
+        return recovered
+      }
+      throw attachEasyCodeDiagnostics(new Error('AI returned no usable project content. Retry.'), diagnostics)
+    }
+    throw error
+  }
   return {
     aiResult: parsed.aiResult,
     diagnostics: parsed.diagnostics,
     providerUsed: raw.providerUsed,
+    outcome: buildEasyCodeGenerationOutcome(parsed.diagnostics, {
+      providerStatusCode: 200,
+      repairAttempted: false,
+      repairSucceeded: false,
+      finalGenerationMode: 'ai_full',
+    }),
   }
 }
 
