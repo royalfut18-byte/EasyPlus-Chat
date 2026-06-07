@@ -284,6 +284,13 @@ function getEasyCodeFallbackSummaryLead(error: any): string {
   if (category === 'provider_busy') return 'AI generation was unavailable because the provider is busy, so'
   if (category === 'timeout') return 'AI generation timed out, so'
   if (category === 'invalid_json' || category === 'invalid_changes' || category === 'no_valid_changes') return 'AI generation returned invalid file data, so'
+  if (category === 'generation_incomplete') {
+    const hadSuccessfulAiAttempt = Array.isArray(error?.easyCodeDiagnostics) &&
+      error.easyCodeDiagnostics.some((item: EasyCodeAiDiagnostics) => item.provider === 'azure-gpt54' && item.providerStatusCode === 200)
+    return hadSuccessfulAiAttempt
+      ? 'AI generated a partial project that could not be completed automatically, so'
+      : 'AI generation was incomplete, so'
+  }
   if (firstAttempt?.safeCode === 'gpt54_max_tokens_unsupported_400') {
     return 'AI generation was unavailable because the GPT-5.4 request body was rejected, so'
   }
@@ -431,6 +438,7 @@ Rules:
 - Return at most ${EASY_CODE_MAX_FILES_PER_AI_CALL} files.
 - For simple landing pages, websites, portfolios, product pages, and business sites, generate only a static HTML project unless the user explicitly asks for React, Next.js, Vite, Node, or Python.
 - Static first pass must contain exactly these four non-empty files: index.html, styles.css, script.js, README.md.
+- Do not inline all CSS or JavaScript into index.html. Use external styles.css and script.js files.
 - Never return README only.
 - Never return zero files.
 - Never use lorem ipsum, TODO placeholders, fake broken assets, or generic copy that sounds unfinished.
@@ -452,39 +460,74 @@ async function repairIncompleteStaticLandingPageGeneration(input: {
   missingStarterFiles: string[]
   validationRejectedReason: string | null
 }): Promise<EasyCodeGenerationPayload> {
+  const normalized = normalizeMeaningfulStaticAiOutput({
+    aiResult: input.priorResult,
+    instruction: input.instruction,
+    projectTitle: input.project.title,
+  })
+
   console.warn('[Easy Code] Static generation incomplete, requesting corrected AI pass', {
     projectId: input.projectId || null,
+    aiReturnedFiles: input.priorResult.files.length,
+    meaningfulAiOutput: normalized.meaningfulAiOutput,
     missingStarterFiles: input.missingStarterFiles,
+    normalizedSingleFileHtml: normalized.normalizedSingleFileHtml,
+    targetedCompletionAttempted: false,
+    targetedCompletionSucceeded: false,
     validationRejectedReason: input.validationRejectedReason,
     priorFilesReturnedCount: input.priorResult.files.length,
     priorProviderAttempts: input.priorDiagnostics.length,
   })
+
+  if (normalized.meaningfulAiOutput && normalized.missingStarterFiles.length === 0) {
+    const priorProviderUsed = input.priorDiagnostics.find((item) => item.provider !== 'fallback')?.provider || 'azure-gpt54'
+    console.info('[Easy Code] Incomplete static generation recovered locally', {
+      projectId: input.projectId || null,
+      aiReturnedFiles: input.priorResult.files.length,
+      meaningfulAiOutput: true,
+      missingStarterFiles: [],
+      normalizedSingleFileHtml: normalized.normalizedSingleFileHtml,
+      targetedCompletionAttempted: false,
+      targetedCompletionSucceeded: false,
+      fallbackUsed: false,
+      fallbackReason: null,
+    })
+    return {
+      aiResult: normalized.aiResult,
+      diagnostics: input.priorDiagnostics,
+      providerUsed: priorProviderUsed,
+    }
+  }
+
+  const workingResult = normalized.meaningfulAiOutput ? normalized.aiResult : input.priorResult
+  const workingMissingFiles = normalized.meaningfulAiOutput ? normalized.missingStarterFiles : input.missingStarterFiles
 
   try {
     const raw = await callEasyCodeJsonProvider([
       { role: 'system', content: getEasyCodeJsonSystemPrompt() },
       {
         role: 'user',
-        content: `The previous static landing page response was incomplete and failed validation.
-Project: ${input.project.title}
+        content: `You already generated a custom static landing page, but the project files are incomplete.
+Project: ${resolveStaticProjectTitle({ instruction: input.instruction, aiTitle: workingResult.title, projectTitle: input.project.title })}
 Original description: ${input.project.description || ''}
 Original instruction: ${input.instruction}
-Missing required files: ${input.missingStarterFiles.join(', ') || 'none'}
+Missing required files: ${workingMissingFiles.join(', ') || 'none'}
 Validation failure: ${input.validationRejectedReason || 'unknown'}
 
-Previous incomplete JSON:
-${JSON.stringify(input.priorResult).slice(0, 18000)}
+Current project JSON:
+${JSON.stringify(workingResult).slice(0, 18000)}
 
-Return a corrected full static project.
+Return only the missing project files needed to finish this exact static site.
 Requirements:
 - framework must be "html"
 - previewType must be "static-html"
-- files must be exactly: index.html, styles.css, script.js, README.md
+- final project must contain exactly: index.html, styles.css, script.js, README.md
 - preserve the business name, topic, and custom copy from the original instruction
 - keep the site premium, responsive, and production-ready
-- index.html must link styles.css and script.js
+- if index.html needs updating to link styles.css or script.js, include an updated index.html too
 - include polished hero, services/features, pricing/packages, testimonials, FAQ, and booking/contact CTA
-- return all four files as complete contents
+- do not rewrite working files unless necessary
+- do not return README only
 - do not output markdown fences
 - do not output prose outside JSON`,
       },
@@ -496,19 +539,57 @@ Requirements:
     })
 
     const parsed = await parseEasyCodeJson(raw.content, input.projectId, raw.diagnostics)
+    const mergedFiles = mergeEasyCodeAiFiles(workingResult.files, parsed.aiResult.files)
+    const completedTitle = resolveStaticProjectTitle({
+      instruction: input.instruction,
+      aiTitle: parsed.aiResult.title || workingResult.title,
+      projectTitle: input.project.title,
+    })
+    const completedResult = normalizeMeaningfulStaticAiOutput({
+      aiResult: {
+        ...workingResult,
+        ...parsed.aiResult,
+        title: completedTitle,
+        framework: 'html',
+        previewType: 'static-html',
+        summary: buildStaticAiSuccessSummary(completedTitle, 'completed'),
+        files: mergedFiles,
+      },
+      instruction: input.instruction,
+      projectTitle: input.project.title,
+    })
+
     console.info('[Easy Code] Corrective static AI pass completed', {
       projectId: input.projectId || null,
       providerUsed: raw.providerUsed,
       returnedFiles: parsed.aiResult.files.length,
       filesReturnedCount: parsed.aiResult.files.length,
+      meaningfulAiOutput: completedResult.meaningfulAiOutput,
+      missingStarterFiles: completedResult.missingStarterFiles,
+      normalizedSingleFileHtml: completedResult.normalizedSingleFileHtml,
+      targetedCompletionAttempted: true,
+      targetedCompletionSucceeded: completedResult.missingStarterFiles.length === 0,
+      fallbackUsed: false,
+      fallbackReason: null,
     })
     return {
-      aiResult: parsed.aiResult,
+      aiResult: completedResult.aiResult,
       diagnostics: [...input.priorDiagnostics, ...parsed.diagnostics],
       providerUsed: raw.providerUsed,
     }
   } catch (error: any) {
     const correctionDiagnostics = Array.isArray(error?.easyCodeDiagnostics) ? error.easyCodeDiagnostics : []
+    console.error('[Easy Code] Corrective static AI pass failed', {
+      projectId: input.projectId || null,
+      meaningfulAiOutput: normalized.meaningfulAiOutput,
+      missingStarterFiles: workingMissingFiles,
+      normalizedSingleFileHtml: normalized.normalizedSingleFileHtml,
+      targetedCompletionAttempted: true,
+      targetedCompletionSucceeded: false,
+      fallbackUsed: false,
+      fallbackReason: null,
+      message: error?.message || 'Unknown error',
+    })
     throw attachEasyCodeDiagnostics(
       error instanceof Error ? error : new Error(String(error)),
       [...input.priorDiagnostics, ...correctionDiagnostics]
@@ -526,6 +607,29 @@ function escapeHtml(value: string): string {
 }
 
 function inferStaticSiteTitle(prompt: string): string {
+  const quotedMatch = prompt.match(/["“]([^"”]{2,80})["”]/)
+  if (quotedMatch?.[1]) {
+    return quotedMatch[1]
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 80)
+  }
+  const calledMatch = prompt.match(/\bcalled\s+["“]?([^"”\n]{2,80})["”]?/i)
+  if (calledMatch?.[1]) {
+    return calledMatch[1]
+      .replace(/\b(landing page|website|web site|webpage|homepage)\b/gi, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 80)
+  }
+  const forMatch = prompt.match(/\bfor\s+["“]?([^"”\n]{2,80})["”]?\s*$/i)
+  if (forMatch?.[1]) {
+    return forMatch[1]
+      .replace(/\b(landing page|website|web site|webpage|homepage)\b/gi, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 80)
+  }
   const text = prompt.toLowerCase()
   if (/\b(pressure\s*wash|pressure\s*washing|power\s*wash|power\s*washing|soft\s*wash)\b/.test(text)) return 'Premier Pressure Washing'
   if (/\b(car\s*wash|car\s*washing|carwash)\b/.test(text)) return 'Premium Car Wash'
@@ -543,6 +647,192 @@ function inferStaticSiteTitle(prompt: string): string {
     .slice(0, 5)
     .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
     .join(' ')
+}
+
+function resolveStaticProjectTitle(input: {
+  instruction?: string
+  aiTitle?: string
+  projectTitle?: string
+}) {
+  const aiTitle = typeof input.aiTitle === 'string' ? input.aiTitle.trim() : ''
+  if (aiTitle) return aiTitle.slice(0, 80)
+  const sources = [input.instruction, input.projectTitle].filter((value): value is string => Boolean(value))
+  for (const source of sources) {
+    const inferred = inferStaticSiteTitle(source)
+    if (inferred) return inferred
+  }
+  return 'Custom Landing Page'
+}
+
+function buildStaticAiSuccessSummary(title: string, variant: 'created' | 'normalized' | 'completed') {
+  const normalizedTitle = title.replace(/\s+/g, ' ').trim() || 'custom landing page'
+  const noun = /\b(landing page|website|site|homepage)\b/i.test(normalizedTitle)
+    ? normalizedTitle
+    : `${normalizedTitle} landing page`
+  if (variant === 'normalized') {
+    return `Created a custom ${noun} with AI and normalized it into project files.`
+  }
+  if (variant === 'completed') {
+    return `Created a custom ${noun} with AI and completed the missing project files.`
+  }
+  return `Created a custom ${noun} with AI.`
+}
+
+function buildStaticAiReadme(title: string, summary: string) {
+  return `# ${title}
+
+${summary}
+
+## Files
+
+- index.html - page structure and content
+- styles.css - responsive visual styling
+- script.js - interactive behavior
+- README.md - project notes
+
+## Run locally
+
+Open index.html in the Easy Code preview or a browser.
+`
+}
+
+function insertBeforeClosingTag(html: string, closingTag: string, snippet: string) {
+  const lower = html.toLowerCase()
+  const index = lower.lastIndexOf(closingTag.toLowerCase())
+  if (index >= 0) {
+    return `${html.slice(0, index)}${snippet}${html.slice(index)}`
+  }
+  return `${html}${snippet}`
+}
+
+function normalizeMeaningfulStaticAiOutput(input: {
+  aiResult: EasyCodeAiResult
+  instruction: string
+  projectTitle?: string
+}) {
+  const fileMap = new Map<string, EasyCodeAiFile>(
+    input.aiResult.files
+      .filter((file) => file.operation !== 'delete')
+      .map((file) => [(file.newPath || file.path).toLowerCase(), { ...file } as EasyCodeAiFile])
+  )
+  const indexFile = fileMap.get('index.html')
+  if (!indexFile?.content?.trim()) {
+    return {
+      aiResult: input.aiResult,
+      meaningfulAiOutput: false,
+      normalizedSingleFileHtml: false,
+      missingStarterFiles: getMissingStaticStarterFiles(input.aiResult.files),
+    }
+  }
+
+  const html = indexFile.content
+  const meaningfulAiOutput = html.length >= 220 && /<(html|body|main|section|header|footer)\b/i.test(html)
+  if (!meaningfulAiOutput) {
+    return {
+      aiResult: input.aiResult,
+      meaningfulAiOutput: false,
+      normalizedSingleFileHtml: false,
+      missingStarterFiles: getMissingStaticStarterFiles(input.aiResult.files),
+    }
+  }
+
+  const originalFileCount = fileMap.size
+  let normalizedHtml = html
+  const extractedCss: string[] = []
+  const extractedJs: string[] = []
+
+  normalizedHtml = normalizedHtml.replace(/<style\b[^>]*>([\s\S]*?)<\/style>/gi, (_match, css) => {
+    const content = typeof css === 'string' ? css.trim() : ''
+    if (content) extractedCss.push(content)
+    return ''
+  })
+
+  normalizedHtml = normalizedHtml.replace(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi, (match, attrs, scriptContent) => {
+    const attrText = typeof attrs === 'string' ? attrs : ''
+    if (/\bsrc\s*=/.test(attrText) || /\btype\s*=\s*["']application\/ld\+json["']/i.test(attrText)) {
+      return match
+    }
+    const content = typeof scriptContent === 'string' ? scriptContent.trim() : ''
+    if (content) extractedJs.push(content)
+    return ''
+  })
+
+  const hasStylesFile = fileMap.has('styles.css')
+  const hasScriptFile = fileMap.has('script.js')
+  const hasReadmeFile = fileMap.has('readme.md')
+  const needsStylesFile = !hasStylesFile && extractedCss.length > 0
+  const needsScriptFile = !hasScriptFile && extractedJs.length > 0
+  const title = resolveStaticProjectTitle({
+    instruction: input.instruction,
+    aiTitle: input.aiResult.title,
+    projectTitle: input.projectTitle,
+  })
+
+  if ((needsStylesFile || hasStylesFile) && !/<link\b[^>]+href=["'][^"']*styles\.css["']/i.test(normalizedHtml)) {
+    normalizedHtml = insertBeforeClosingTag(normalizedHtml, '</head>', '\n  <link rel="stylesheet" href="styles.css">\n')
+  }
+  if ((needsScriptFile || hasScriptFile) && !/<script\b[^>]+src=["'][^"']*script\.js["'][^>]*>\s*<\/script>/i.test(normalizedHtml)) {
+    normalizedHtml = insertBeforeClosingTag(normalizedHtml, '</body>', '\n  <script src="script.js"></script>\n')
+  }
+
+  normalizedHtml = normalizedHtml.replace(/\n{3,}/g, '\n\n').trim()
+  indexFile.content = normalizedHtml
+  indexFile.language = 'html'
+  indexFile.operation = 'create'
+  fileMap.set('index.html', indexFile)
+
+  if (needsStylesFile) {
+    fileMap.set('styles.css', {
+      path: 'styles.css',
+      language: 'css',
+      content: extractedCss.join('\n\n'),
+      operation: 'create',
+    })
+  }
+  if (needsScriptFile) {
+    fileMap.set('script.js', {
+      path: 'script.js',
+      language: 'javascript',
+      content: extractedJs.join('\n\n'),
+      operation: 'create',
+    })
+  }
+  if (!hasReadmeFile) {
+    fileMap.set('readme.md', {
+      path: 'README.md',
+      language: 'markdown',
+      content: buildStaticAiReadme(title, buildStaticAiSuccessSummary(title, 'created')),
+      operation: 'create',
+    })
+  }
+
+  const normalizedFiles = Array.from(fileMap.values())
+  const normalizedSingleFileHtml = originalFileCount === 1 && normalizedFiles.length > 1
+  const variant = normalizedSingleFileHtml ? 'normalized' : 'created'
+  return {
+    aiResult: {
+      ...input.aiResult,
+      title,
+      framework: 'html',
+      previewType: 'static-html' as const,
+      summary: buildStaticAiSuccessSummary(title, variant),
+      files: normalizedFiles,
+    },
+    meaningfulAiOutput,
+    normalizedSingleFileHtml,
+    missingStarterFiles: getMissingStaticStarterFiles(normalizedFiles),
+  }
+}
+
+function mergeEasyCodeAiFiles(existing: EasyCodeAiFile[], incoming: EasyCodeAiFile[]) {
+  const merged = new Map<string, EasyCodeAiFile>()
+  for (const file of existing) {
+    merged.set((file.newPath || file.path).toLowerCase(), file)
+  }
+  for (const file of incoming) {
+    merged.set((file.newPath || file.path).toLowerCase(), file)
+  }
+  return Array.from(merged.values())
 }
 
 function buildFallbackStaticSite(prompt: string, reason: string): EasyCodeAiResult {
@@ -2611,6 +2901,7 @@ export async function runEasyCodeInitialGeneration(userId: string, projectId: st
       promptType,
       returnedFiles: aiResult.files.length,
       filesReturnedCount: aiResult.files.length,
+      meaningfulAiOutput: proposedReadiness.hasIndexHtml && proposedReadiness.meaningfulFileCount > 0,
       validatedFiles: proposedReadiness.fileCount,
       validationRejectedCount: validationSummary.validationRejectedCount,
       validationRejectedReason: validationSummary.validationRejectedReason,
@@ -2647,6 +2938,7 @@ export async function runEasyCodeInitialGeneration(userId: string, projectId: st
         promptType,
         returnedFiles: aiResult.files.length,
         filesReturnedCount: aiResult.files.length,
+        meaningfulAiOutput: proposedReadiness.hasIndexHtml && proposedReadiness.meaningfulFileCount > 0,
         validatedFiles: proposedReadiness.fileCount,
         validationRejectedCount: validationSummary.validationRejectedCount,
         validationRejectedReason: validationSummary.validationRejectedReason,
@@ -2955,6 +3247,7 @@ Requirements:
 - previewType must be "static-html"
 - files must be exactly: index.html, styles.css, script.js, README.md
 - index.html should link styles.css and script.js
+- do not inline all CSS or JavaScript into index.html
 - include a polished hero section, services, benefits, pricing, testimonials, FAQ, contact or booking CTA, and responsive mobile layout
 - write professional business copy, not generic filler
 - script.js should add safe polished interactions such as smooth scrolling, reveal-on-scroll, menu handling, and CTA feedback
