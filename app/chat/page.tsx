@@ -4,7 +4,6 @@ import { useState, useEffect, useMemo, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
-  Sparkles,
   Box,
   PanelRightOpen,
   Globe,
@@ -15,11 +14,6 @@ import {
   FileText,
   FolderOpen,
   ArrowLeft,
-  Code2,
-  Search,
-  GraduationCap,
-  LayoutPanelTop,
-  Files,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { ensureProfile } from '@/lib/supabase/ensure-profile'
@@ -2859,43 +2853,6 @@ export default function ChatPage() {
   )
   const heroReadyAttachmentCount = heroAttachments.filter((attachment) => attachment.uploadStatus === 'uploaded').length
 
-  const syncHeroTextareaHeight = () => {
-    requestAnimationFrame(() => {
-      const textarea = heroTextareaRef.current
-      if (!textarea) return
-      textarea.style.height = 'auto'
-      textarea.style.height = `${Math.min(textarea.scrollHeight, 160)}px`
-    })
-  }
-
-  const focusHeroComposer = () => {
-    requestAnimationFrame(() => {
-      heroTextareaRef.current?.focus()
-      syncHeroTextareaHeight()
-    })
-  }
-
-  const populateHeroComposer = (
-    prompt: string,
-    options: {
-      artifactMode?: boolean
-      webSearchEnabled?: boolean
-      openUploader?: boolean
-    } = {}
-  ) => {
-    setHeroInput(prompt)
-    if (typeof options.artifactMode === 'boolean') {
-      setArtifactMode(options.artifactMode)
-    }
-    if (typeof options.webSearchEnabled === 'boolean') {
-      setWebSearchEnabled(options.webSearchEnabled)
-    }
-    focusHeroComposer()
-    if (options.openUploader) {
-      requestAnimationFrame(() => heroFileInputRef.current?.click())
-    }
-  }
-
   const submitHeroComposer = () => {
     if ((!heroInput.trim() && heroAttachments.length === 0) || isRequestInProgress || heroHasActiveUpload) return
     const content = heroInput.trim() || (heroReadyAttachmentCount > 0 ? 'Please analyze the attached file.' : '')
@@ -2907,46 +2864,6 @@ export default function ChatPage() {
       if (heroTextareaRef.current) heroTextareaRef.current.style.height = 'auto'
     })
   }
-
-  const quickActions = [
-    {
-      title: 'Analyze a file',
-      subtitle: 'Upload PDFs, images, docs, or screenshots',
-      icon: FileText,
-      onClick: () => populateHeroComposer('Analyze the uploaded file and walk me through the key points, risks, and next steps.', { openUploader: true }),
-    },
-    {
-      title: 'Build with Easy Code',
-      subtitle: 'Generate, preview, edit, and download projects',
-      icon: Code2,
-      onClick: () => router.push('/easy-code'),
-    },
-    {
-      title: 'Create an artifact',
-      subtitle: 'Interactive quizzes, calculators, flashcards, tools',
-      icon: LayoutPanelTop,
-      onClick: () => populateHeroComposer('Make me an interactive quiz about...', { artifactMode: true, webSearchEnabled: false }),
-    },
-    {
-      title: 'Search the web',
-      subtitle: 'Research current information',
-      icon: Search,
-      onClick: () => populateHeroComposer('Search the web for...', { webSearchEnabled: true, artifactMode: false }),
-    },
-    {
-      title: 'Write or study',
-      subtitle: 'Essays, notes, summaries, exam prep',
-      icon: GraduationCap,
-      onClick: () => populateHeroComposer('Review this essay and give me feedback on structure, clarity, and how to improve it.'),
-    },
-  ] as const
-
-  const artifactStarterChips = [
-    { label: 'Quiz', prompt: 'Make me an interactive quiz about...', artifactMode: true as const },
-    { label: 'Calculator', prompt: 'Build me a calculator that...', artifactMode: true as const },
-    { label: 'Flashcards', prompt: 'Create interactive flashcards for...', artifactMode: true as const },
-    { label: 'Timeline', prompt: 'Make me an interactive timeline for...', artifactMode: true as const },
-  ]
 
   return (
     <div className="flex h-[100dvh] overflow-hidden bg-[#0f0f0f] md:h-screen">
@@ -3047,7 +2964,7 @@ export default function ChatPage() {
         </div>
 
         <div className="flex-1 overflow-y-auto px-3 py-4 scrollbar-thin md:px-4 md:py-5 lg:px-6">
-              <div className={cn('mx-auto', isImageGenerationMode ? 'max-w-5xl' : isEmptyDraft ? 'max-w-[1080px]' : 'max-w-[820px]')}>
+              <div className={cn('mx-auto', isImageGenerationMode ? 'max-w-5xl' : isEmptyDraft ? 'max-w-[820px]' : 'max-w-[820px]')}>
                 {isImageGenerationMode ? (
                   <ImageGenerationPanel
                     generatedImages={generatedImages}
@@ -3064,7 +2981,7 @@ export default function ChatPage() {
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: -10 }}
                       transition={{ duration: 0.4 }}
-                      className="relative mx-auto flex min-h-[calc(100svh-11rem)] w-full max-w-[1040px] flex-col justify-center gap-5 px-1 py-4 sm:px-2 sm:py-6 lg:gap-6"
+                      className="relative mx-auto flex min-h-[calc(100svh-11rem)] w-full max-w-[820px] flex-col justify-center px-1 py-4 sm:px-2 sm:py-6"
                       onDragEnter={handleHeroDragEnter}
                       onDragOver={handleHeroDragOver}
                       onDragLeave={handleHeroDragLeave}
@@ -3085,45 +3002,25 @@ export default function ChatPage() {
                         </div>
                       )}
 
-                      <div className="mx-auto flex w-full max-w-[980px] flex-col items-center gap-4 text-center sm:gap-5">
+                      <div className="mx-auto flex w-full max-w-[760px] flex-col items-center gap-4 text-center sm:gap-5">
                         <motion.div
                           initial={{ opacity: 0, y: 8 }}
                           animate={{ opacity: 1, y: 0 }}
                           transition={{ delay: 0.1 }}
-                          className="space-y-3"
+                          className="space-y-2"
                         >
-                          <div className="inline-flex items-center gap-2 rounded-full border border-violet-300/[0.14] bg-violet-500/[0.08] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-violet-100/90">
-                            <Sparkles className="h-3.5 w-3.5" />
-                            Start your workspace
-                          </div>
-                          <div className="space-y-2">
-                            <h1 className="text-2xl font-semibold tracking-tight text-white sm:text-[2.1rem]">
-                              What can I help with?
-                            </h1>
-                            <p className="mx-auto max-w-2xl text-sm leading-relaxed text-gray-400 sm:text-[15px]">
-                              Ask, build, research, or upload anything from one focused workspace.
-                            </p>
-                          </div>
-                          <div className="flex flex-wrap items-center justify-center gap-2 text-left">
-                            <span className="rounded-full border border-white/[0.08] bg-white/[0.03] px-3 py-1.5 text-xs text-gray-300">
-                              {activeProject ? `Project: ${activeProject.name}` : 'No project selected'}
-                            </span>
-                            <span className="rounded-full border border-white/[0.08] bg-white/[0.03] px-3 py-1.5 text-xs text-gray-300">
-                              {heroReadyAttachmentCount > 0 ? `${heroReadyAttachmentCount} file${heroReadyAttachmentCount === 1 ? '' : 's'} ready` : 'No file uploaded yet'}
-                            </span>
-                            <span className="rounded-full border border-white/[0.08] bg-white/[0.03] px-3 py-1.5 text-xs text-gray-300">
-                              {artifactMode ? 'Artifacts on' : 'No artifact yet'}
-                            </span>
-                          </div>
+                          <h1 className="text-2xl font-semibold tracking-tight text-white sm:text-[2rem]">
+                            How can I help?
+                          </h1>
                         </motion.div>
 
                         <motion.div
                           initial={{ opacity: 0, y: 8 }}
                           animate={{ opacity: 1, y: 0 }}
                           transition={{ delay: 0.16 }}
-                          className="w-full max-w-3xl"
+                          className="w-full"
                         >
-                          <div className="relative overflow-hidden rounded-[28px] border border-white/[0.08] bg-[radial-gradient(circle_at_top,rgba(139,92,246,0.14),transparent_46%),rgba(24,24,24,0.92)] p-3 shadow-[0_18px_70px_rgba(0,0,0,0.34)] backdrop-blur-xl sm:p-4">
+                          <div className="relative overflow-hidden rounded-[26px] border border-white/[0.08] bg-[radial-gradient(circle_at_top,rgba(139,92,246,0.10),transparent_42%),rgba(24,24,24,0.9)] p-3 shadow-[0_18px_60px_rgba(0,0,0,0.32)] backdrop-blur-xl sm:p-4">
                             <input
                               ref={heroFileInputRef}
                               type="file"
@@ -3252,103 +3149,7 @@ export default function ChatPage() {
                                   onSelectMode={setReasoningMode}
                                   disabled={isRequestInProgress}
                                 />
-                                <div className="flex flex-wrap gap-2">
-                                  <button
-                                    type="button"
-                                    onClick={() => populateHeroComposer('Search the web for...', { webSearchEnabled: true })}
-                                    className="rounded-full border border-white/[0.08] bg-white/[0.03] px-3 py-1 text-[11px] text-gray-300 transition-colors hover:border-emerald-400/20 hover:bg-emerald-500/[0.07] hover:text-emerald-100"
-                                  >
-                                    Search
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => populateHeroComposer('Make me an interactive artifact for...', { artifactMode: true })}
-                                    className="rounded-full border border-white/[0.08] bg-white/[0.03] px-3 py-1 text-[11px] text-gray-300 transition-colors hover:border-violet-400/20 hover:bg-violet-500/[0.08] hover:text-violet-100"
-                                  >
-                                    Artifact
-                                  </button>
-                                </div>
                               </div>
-                            </div>
-                          </div>
-                        </motion.div>
-
-                        <motion.div
-                          initial={{ opacity: 0, y: 8 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          transition={{ delay: 0.22 }}
-                          className="w-full max-w-4xl"
-                        >
-                          <div className="flex flex-wrap justify-center gap-2.5">
-                            {quickActions.map((action) => {
-                              const Icon = action.icon
-                              return (
-                                <button
-                                  key={action.title}
-                                  type="button"
-                                  onClick={action.onClick}
-                                  disabled={isRequestInProgress}
-                                  className="group min-w-[150px] rounded-2xl border border-white/[0.07] bg-white/[0.025] px-3.5 py-3 text-left transition-all hover:border-violet-300/[0.16] hover:bg-white/[0.045] disabled:cursor-not-allowed disabled:opacity-50"
-                                >
-                                  <div className="flex items-start gap-2.5">
-                                    <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-white/[0.07] bg-white/[0.04] text-violet-200 transition-colors group-hover:bg-violet-500/[0.12]">
-                                      <Icon className="h-4 w-4" />
-                                    </div>
-                                    <div className="min-w-0">
-                                      <p className="text-sm font-medium text-white">{action.title}</p>
-                                      <p className="mt-0.5 text-[11px] leading-relaxed text-gray-500">{action.subtitle}</p>
-                                    </div>
-                                  </div>
-                                </button>
-                              )
-                            })}
-                          </div>
-                        </motion.div>
-
-                        <motion.div
-                          initial={{ opacity: 0, y: 8 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          transition={{ delay: 0.28 }}
-                          className="grid w-full max-w-4xl gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,0.9fr)]"
-                        >
-                          <div className="rounded-2xl border border-white/[0.06] bg-white/[0.025] p-3 text-left">
-                            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-gray-500">Workspace</p>
-                            <div className="mt-2 grid gap-2 sm:grid-cols-2">
-                              <div className="rounded-xl bg-black/20 px-3 py-2.5">
-                                <p className="text-xs font-medium text-white">Project</p>
-                                <p className="mt-1 text-xs text-gray-400">{activeProject ? activeProject.name : 'No project selected'}</p>
-                              </div>
-                              <div className="rounded-xl bg-black/20 px-3 py-2.5">
-                                <p className="text-xs font-medium text-white">Files</p>
-                                <p className="mt-1 text-xs text-gray-400">{heroReadyAttachmentCount > 0 ? 'Ready for the next prompt' : 'No file uploaded yet'}</p>
-                              </div>
-                            </div>
-                          </div>
-
-                          <div className="rounded-2xl border border-white/[0.06] bg-white/[0.025] p-3 text-left">
-                            <div className="flex items-center justify-between gap-3">
-                              <div>
-                                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-gray-500">Artifacts</p>
-                                <p className="mt-1 text-sm font-medium text-white">No artifact yet</p>
-                              </div>
-                              <span className="rounded-full border border-white/[0.08] bg-white/[0.03] px-2.5 py-1 text-[11px] text-gray-400">
-                                Preview hidden
-                              </span>
-                            </div>
-                            <p className="mt-2 text-xs leading-relaxed text-gray-400">
-                              Ask for a quiz, calculator, flashcards, or interactive component when you want to open the artifact workspace.
-                            </p>
-                            <div className="mt-3 flex flex-wrap gap-2">
-                              {artifactStarterChips.map((chip) => (
-                                <button
-                                  key={chip.label}
-                                  type="button"
-                                  onClick={() => populateHeroComposer(chip.prompt, { artifactMode: chip.artifactMode, webSearchEnabled: false })}
-                                  className="rounded-full border border-white/[0.08] bg-white/[0.03] px-3 py-1.5 text-xs text-gray-300 transition-colors hover:border-violet-300/[0.16] hover:bg-violet-500/[0.08] hover:text-violet-100"
-                                >
-                                  {chip.label}
-                                </button>
-                              ))}
                             </div>
                           </div>
                         </motion.div>
