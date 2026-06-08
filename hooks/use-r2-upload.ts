@@ -3,6 +3,7 @@
 import { useState, useCallback } from 'react'
 import { ChatAttachment } from '@/types/models'
 import { INLINE_UPLOAD_MAX_BYTES } from '@/lib/upload-limits'
+import { inferChatAttachmentMimeType } from '@/lib/chat-attachments'
 
 const MAX_UPLOAD_MB = parseInt(process.env.NEXT_PUBLIC_MAX_UPLOAD_MB || '512', 10)
 const MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024
@@ -30,30 +31,7 @@ interface UploadOptions {
 }
 
 function inferMimeType(file: File): string {
-  if (file.type) {
-    return file.type.toLowerCase() === 'image/jpg' ? 'image/jpeg' : file.type
-  }
-
-  const ext = file.name.toLowerCase().split('.').pop()
-  const map: Record<string, string> = {
-    png: 'image/png',
-    jpg: 'image/jpeg',
-    jpeg: 'image/jpeg',
-    webp: 'image/webp',
-    gif: 'image/gif',
-    pdf: 'application/pdf',
-    txt: 'text/plain',
-    md: 'text/markdown',
-    markdown: 'text/markdown',
-    rtf: 'application/rtf',
-    csv: 'text/csv',
-    json: 'application/json',
-    docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-  }
-
-  return map[ext || ''] || 'application/octet-stream'
+  return inferChatAttachmentMimeType(file.name, file.type)
 }
 
 function withInferredMimeType(file: File): File {

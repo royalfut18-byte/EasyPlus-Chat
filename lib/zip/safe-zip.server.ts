@@ -11,9 +11,12 @@ export const ZIP_MAX_TOTAL_TEXT_BYTES = 2 * 1024 * 1024
 export const ZIP_MAX_SINGLE_TEXT_BYTES = 180 * 1024
 
 const READABLE_EXTENSIONS = new Set([
-  '.html', '.css', '.js', '.jsx', '.ts', '.tsx', '.json', '.md', '.txt', '.py',
-  '.java', '.c', '.cpp', '.cs', '.php', '.rb', '.go', '.rs', '.sql', '.xml',
-  '.yaml', '.yml',
+  '.html', '.htm', '.css', '.js', '.mjs', '.cjs', '.jsx', '.ts', '.tsx',
+  '.json', '.jsonl', '.md', '.txt', '.py', '.pyw', '.java', '.c', '.cc',
+  '.cpp', '.cxx', '.h', '.hh', '.hpp', '.cs', '.php', '.rb', '.go', '.rs',
+  '.swift', '.kt', '.kts', '.scala', '.sql', '.xml', '.yaml', '.yml', '.toml',
+  '.ini', '.cfg', '.conf', '.env', '.sh', '.bash', '.zsh', '.ps1', '.bat',
+  '.cmd', '.graphql', '.gql', '.prisma', '.vue', '.svelte',
 ])
 
 const READABLE_BASENAMES = new Set([
@@ -25,6 +28,14 @@ const READABLE_BASENAMES = new Set([
   'requirements.txt',
   'package.json',
   'pyproject.toml',
+  'cargo.toml',
+  'cargo.lock',
+  'pipfile',
+  'pipfile.lock',
+  'composer.json',
+  'pom.xml',
+  'build.gradle',
+  'build.gradle.kts',
   'readme',
   'readme.md',
 ])

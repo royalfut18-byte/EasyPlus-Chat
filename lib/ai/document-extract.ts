@@ -2,6 +2,7 @@ import type { ChatAttachment } from '@/types/models'
 import { downloadObjectFromR2, isR2Configured } from '@/lib/storage/r2'
 import { inflateRawSync } from 'node:zlib'
 import { formatZipContext, readSafeZipAttachment } from '@/lib/zip/safe-zip.server'
+import { getChatAttachmentExtension, inferChatAttachmentMimeType } from '@/lib/chat-attachments'
 
 const DEFAULT_MAX_DOCUMENT_CHARS = 60000
 const COMPREHENSIVE_MAX_DOCUMENT_CHARS = 220000
@@ -44,6 +45,29 @@ function extractTextFromJson(dataUrl: string): string {
 
 function extractTextFromMarkdown(dataUrl: string): string {
   return decodeBase64DataUrl(dataUrl)
+}
+
+function extractPlainTextBuffer(buffer: Buffer): string {
+  return buffer.toString('utf-8')
+}
+
+function isTextLikeAttachment(mimeType: string, name: string): boolean {
+  const ext = getChatAttachmentExtension(name)
+  if (ext === '.docx' || ext === '.xlsx' || ext === '.pptx' || ext === '.pdf' || ext === '.zip') return false
+
+  return mimeType.startsWith('text/') ||
+    mimeType === 'application/json' ||
+    mimeType === 'application/xml' ||
+    mimeType === 'text/xml' ||
+    mimeType === 'application/javascript' ||
+    mimeType === 'application/x-javascript' ||
+    mimeType === 'application/typescript' ||
+    mimeType === 'application/sql' ||
+    mimeType === 'application/yaml' ||
+    mimeType === 'application/x-yaml' ||
+    mimeType === 'application/toml' ||
+    mimeType === 'application/graphql' ||
+    mimeType === 'application/octet-stream'
 }
 
 function extractTextFromRtfString(raw: string): string {
@@ -250,7 +274,7 @@ export async function extractTextFromAttachment(attachment: ChatAttachment): Pro
   if (attachment.type !== 'document') return ''
   if (attachment.textContent) return attachment.textContent
 
-  const mime = attachment.mimeType.toLowerCase()
+  const mime = inferChatAttachmentMimeType(attachment.name, attachment.mimeType)
   const name = attachment.name.toLowerCase()
 
   if (mime === 'application/zip' || name.endsWith('.zip')) {
@@ -279,7 +303,7 @@ export async function extractTextFromAttachment(attachment: ChatAttachment): Pro
       return extractPptxText(buffer)
     }
 
-    const textContent = buffer.toString('utf-8')
+    const textContent = extractPlainTextBuffer(buffer)
     if (mime === 'application/json') {
       try {
         return JSON.stringify(JSON.parse(textContent), null, 2)
@@ -287,7 +311,10 @@ export async function extractTextFromAttachment(attachment: ChatAttachment): Pro
         return textContent
       }
     }
-    return textContent
+    if (isTextLikeAttachment(mime, name)) {
+      return textContent
+    }
+    return ''
   }
 
   const dataUrl = attachment.dataUrl
@@ -322,6 +349,13 @@ export async function extractTextFromAttachment(attachment: ChatAttachment): Pro
   }
   if (buffer && mime === 'application/vnd.openxmlformats-officedocument.presentationml.presentation') {
     return extractPptxText(buffer)
+  }
+
+  if (buffer && isTextLikeAttachment(mime, name)) {
+    if (mime === 'application/json') {
+      return extractTextFromJson(dataUrl)
+    }
+    return extractPlainTextBuffer(buffer)
   }
 
   return ''

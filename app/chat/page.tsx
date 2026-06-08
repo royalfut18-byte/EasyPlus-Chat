@@ -35,6 +35,7 @@ import { parsePageRangeRequest } from '@/lib/ai/document-requests'
 import { buildGeneratedZipPreview, hideGeneratedZipManifestFromDisplay, parseGeneratedZipFromResponse, type GeneratedZipFile, type GeneratedZipManifest } from '@/lib/generated-zip'
 import { createGeneratedFileAttachment } from '@/lib/generated-file-client'
 import { detectGeneratedFileIntent, getGeneratedFileLabel, getGeneratedFileMimeType, isGeneratedFileArtifactLanguage, type GeneratedFileIntent } from '@/lib/generated-files'
+import { getAcceptedChatAttachmentExtensions, inferChatAttachmentMimeType, isSupportedChatAttachment } from '@/lib/chat-attachments'
 import type { Conversation, Message, ChatAttachment, Artifact, ReasoningMode } from '@/types/models'
 
 const DEFAULT_PANEL_WIDTH = 560
@@ -2489,7 +2490,7 @@ export default function ChatPage() {
   }
 
   const HERO_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp']
-  const HERO_ALLOWED_EXTENSIONS = ['.pdf', '.txt', '.md', '.csv', '.json', '.docx', '.xlsx', '.pptx', '.png', '.jpg', '.jpeg', '.webp', '.gif', '.mp4', '.webm', '.mp3', '.wav', '.zip', '.tar', '.gz']
+  const HERO_ALLOWED_EXTENSIONS = getAcceptedChatAttachmentExtensions()
   const HERO_MAX_FILE_SIZE = heroMaxUploadMB * 1024 * 1024
   const HERO_MAX_FILES = 30
 
@@ -2503,21 +2504,10 @@ export default function ChatPage() {
   }
 
   const heroProcessFile = async (file: File): Promise<void> => {
-    const ext = '.' + (file.name.split('.').pop()?.toLowerCase() || '')
-    const mimeMap: Record<string, string> = {
-      '.pdf': 'application/pdf', '.txt': 'text/plain', '.md': 'text/markdown',
-      '.csv': 'text/csv', '.json': 'application/json',
-      '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-      '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.gif': 'image/gif',
-      '.mp4': 'video/mp4', '.webm': 'video/webm', '.mp3': 'audio/mpeg', '.wav': 'audio/wav',
-      '.zip': 'application/zip', '.tar': 'application/x-tar', '.gz': 'application/gzip',
-    }
-    const mime = mimeMap[ext] || file.type
+    const mime = inferChatAttachmentMimeType(file.name, file.type)
     const sourceFile = file.type === mime ? file : new File([file], file.name, { type: mime, lastModified: file.lastModified })
 
-    if (!HERO_ALLOWED_EXTENSIONS.includes(ext)) {
+    if (!isSupportedChatAttachment({ filename: file.name, mimeType: mime })) {
       toast({ title: 'Unsupported file type', description: `Supported: ${HERO_ALLOWED_EXTENSIONS.join(', ')}`, variant: 'destructive' })
       return
     }

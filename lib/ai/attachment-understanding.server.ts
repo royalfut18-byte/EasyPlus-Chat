@@ -21,6 +21,7 @@ import {
   MAX_CHAT_IMAGE_ATTACHMENTS,
   MAX_CHAT_TOTAL_EXTRACTED_TEXT_CHARS,
   getChatAttachmentExtension,
+  inferChatAttachmentMimeType,
   isSupportedChatAttachment,
   isSupportedChatImageMimeType,
   normalizeChatAttachmentMimeType,
@@ -300,7 +301,7 @@ export async function prepareImageAttachmentsForModel(params: {
 }
 
 function detectPreparedAttachmentKind(attachment: ChatAttachment): PreparedAttachmentKind {
-  const mimeType = normalizeChatAttachmentMimeType(attachment.mimeType)
+  const mimeType = inferChatAttachmentMimeType(attachment.name, attachment.mimeType)
   const ext = getChatAttachmentExtension(attachment.name)
 
   if (attachment.type === 'image') return 'image'
@@ -313,6 +314,9 @@ function detectPreparedAttachmentKind(attachment: ChatAttachment): PreparedAttac
   if (mimeType === 'text/markdown' || ext === '.md' || ext === '.markdown') return 'markdown'
   if (mimeType === 'application/rtf' || mimeType === 'text/rtf' || ext === '.rtf') return 'rtf'
   if (mimeType === 'application/json' || ext === '.json') return 'json'
+  if (mimeType === 'application/xml' || mimeType === 'text/xml' || ext === '.xml') return 'text'
+  if (mimeType === 'text/html' || mimeType === 'text/css' || mimeType === 'text/javascript' || mimeType === 'application/javascript' || mimeType === 'application/typescript') return 'text'
+  if (mimeType.startsWith('text/') || mimeType === 'application/sql' || mimeType === 'application/yaml' || mimeType === 'application/x-yaml' || mimeType === 'application/toml' || mimeType === 'application/graphql') return 'text'
   if (mimeType === 'text/plain' || ext === '.txt') return 'text'
   return 'unknown'
 }

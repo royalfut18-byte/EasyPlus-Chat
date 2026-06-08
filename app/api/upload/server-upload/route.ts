@@ -2,13 +2,16 @@ import { NextRequest, NextResponse } from 'next/server'
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3'
 import { createClient } from '@/lib/supabase/server'
 import { getAccountEntitlement, getEntitlementBlockResponse } from '@/lib/account-entitlements.server'
-import { CHAT_ATTACHMENT_UNSUPPORTED_ERROR, SUPPORTED_CHAT_ATTACHMENT_MIME_TYPES } from '@/lib/chat-attachments'
+import {
+  CHAT_ATTACHMENT_UNSUPPORTED_ERROR,
+  inferChatAttachmentMimeType,
+  isSupportedChatAttachment,
+} from '@/lib/chat-attachments'
 
 export const runtime = 'nodejs'
 
 const SERVER_UPLOAD_MAX_BYTES = 20 * 1024 * 1024 // 20MB limit for server uploads
 
-const ALLOWED_MIME_TYPES: Set<string> = new Set(SUPPORTED_CHAT_ATTACHMENT_MIME_TYPES)
 const HEIC_MIME_TYPES: Set<string> = new Set(['image/heic', 'image/heif'])
 
 function sanitizeFileName(name: string): string {
@@ -71,14 +74,16 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    if (HEIC_MIME_TYPES.has(file.type)) {
+    const resolvedMimeType = inferChatAttachmentMimeType(file.name, file.type)
+
+    if (HEIC_MIME_TYPES.has(resolvedMimeType)) {
       return NextResponse.json(
         { error: 'HEIC images are not supported yet. Please upload JPG or PNG.' },
         { status: 400 }
       )
     }
 
-    if (!ALLOWED_MIME_TYPES.has(file.type)) {
+    if (!isSupportedChatAttachment({ filename: file.name, mimeType: resolvedMimeType })) {
       return NextResponse.json(
         { error: CHAT_ATTACHMENT_UNSUPPORTED_ERROR },
         { status: 400 }
@@ -94,7 +99,7 @@ export async function POST(request: NextRequest) {
     if (process.env.NODE_ENV !== 'production') {
       console.log('[Server Upload] Starting:', {
         fileName: safeFileName,
-        mimeType: file.type,
+        mimeType: resolvedMimeType,
         sizeBytes: file.size,
         key,
       })
@@ -122,7 +127,7 @@ export async function POST(request: NextRequest) {
         Bucket: R2_BUCKET_NAME,
         Key: key,
         Body: new Uint8Array(fileBuffer),
-        ContentType: file.type,
+        ContentType: resolvedMimeType,
       }))
 
       if (process.env.NODE_ENV !== 'production') {
@@ -135,7 +140,7 @@ export async function POST(request: NextRequest) {
         key,
         bucket: R2_BUCKET_NAME,
         fileName: safeFileName,
-        mimeType: file.type,
+        mimeType: resolvedMimeType,
         sizeBytes: file.size,
       })
     } catch (err: any) {
