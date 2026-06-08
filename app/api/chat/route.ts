@@ -876,6 +876,7 @@ RULES FOR USING THESE RESULTS:
       webSearchFailed,
       artifactMode: artifactMode || false,
       hasSearchResults,
+      hasImageAttachments: hasCurrentImageAttachments,
       memoryContext: fullContextPrompt || memoryContext,
     })
 

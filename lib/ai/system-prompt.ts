@@ -7,6 +7,7 @@ interface SystemPromptOptions {
   webSearchFailed?: boolean
   artifactMode: boolean
   hasSearchResults: boolean
+  hasImageAttachments?: boolean
   memoryContext?: string
 }
 
@@ -28,7 +29,7 @@ function getCurrentDateString(): string {
 }
 
 export function buildSystemPrompt(options: SystemPromptOptions): string {
-  const { model, webSearchPerformed, webSearchFailed, artifactMode, hasSearchResults, memoryContext } = options
+  const { model, webSearchPerformed, webSearchFailed, artifactMode, hasSearchResults, hasImageAttachments = false, memoryContext } = options
 
   const currentDate = getCurrentDateString()
   const modelIdentity = model.name
@@ -227,6 +228,18 @@ For explicit Google Docs requests, use language gdoc and write clean markdown/pl
 For Canva-style designs, use language canva and provide complete HTML/CSS for the design. The app will preview it and download it as an .html file, because Canva has no open native file format.
 For artifact refinement requests such as "make it better", "add animations", "change the colors", or "add a section", return a full updated artifact block that replaces the previous artifact. Preserve working interactions and include all required HTML/CSS/JS in the block.
 Do not output raw HTML outside artifact blocks. Do not include secrets or API keys.`
+  }
+
+  if (hasImageAttachments) {
+    prompt += `
+
+IMAGE ANALYSIS:
+- At least one user image is attached in this request. Base your answer on the actual visible content of the image, not on common defaults or expectations.
+- For counting tasks, visually count the items that are actually present. Do not default to the usual number for hands, faces, dice, clocks, objects, or symbols if the image shows something unusual.
+- If the user asks how many fingers, hands, objects, buttons, people, or items are shown, inspect carefully and answer with the visible count.
+- Include clearly visible extra parts, duplicates, deformities, reflections, clones, or edited/generated anomalies in the count when they are part of the image.
+- If part of the image is blurred, cropped, hidden, or ambiguous, say that explicitly instead of guessing.
+- Example: if an attached hand image visibly shows six fingers, answer six fingers, not five.`
   }
 
   return prompt
