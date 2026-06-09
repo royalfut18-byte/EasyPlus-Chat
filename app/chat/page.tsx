@@ -126,6 +126,14 @@ function saveProjectArtifact(projectId: string | null, artifact: Artifact, conve
   })
 }
 
+function buildChatUrl(projectId?: string | null, conversationId?: string | null): string {
+  const params = new URLSearchParams()
+  if (projectId) params.set('projectId', projectId)
+  if (conversationId) params.set('conversationId', conversationId)
+  const query = params.toString()
+  return query ? `/chat?${query}` : '/chat'
+}
+
 function buildArtifactModeInstructions(currentArtifact?: Artifact | null): string {
   const artifactContext = currentArtifact?.code
     ? `
@@ -1054,6 +1062,8 @@ export default function ChatPage() {
     if (!currentConversation && messages.length === 0 && generatedImages.length === 0) {
       setSelectedModel(getPreferredDefaultModelId(availableModelIdsForDefaults))
       setReasoningMode('instant')
+      const targetUrl = buildChatUrl(projectId || null, null)
+      router.replace(targetUrl, { scroll: false })
       return
     }
 
@@ -1070,6 +1080,7 @@ export default function ChatPage() {
     setImageConversationId(null)
     setSelectedModel(getPreferredDefaultModelId(availableModelIdsForDefaults))
     setReasoningMode('instant')
+    router.replace(buildChatUrl(projectId || null, null), { scroll: false })
   }
 
   const handleSelectConversation = async (id: string) => {
@@ -1087,6 +1098,7 @@ export default function ChatPage() {
 
     // IMMEDIATELY update UI
     setCurrentConversation(conv)
+    router.replace(buildChatUrl(conv.project_id || projectId || null, conv.id), { scroll: false })
     setSelectedModel(conv.model_used)
     setImageConversationId(conv.model_used === 'image-generation' ? conv.id : null)
     setReasoningMode(conv.reasoning_mode || 'instant')
@@ -1367,6 +1379,7 @@ export default function ChatPage() {
 
         // Mark this as the selected conversation
         selectedConversationIdRef.current = conversation!.id
+        router.replace(buildChatUrl(conversation!.project_id || projectId || null, conversation!.id), { scroll: false })
 
         // Update user message with real conversation ID
         const updatedUserMessage = { ...userMessage, conversation_id: conversation!.id }
