@@ -267,6 +267,7 @@ function looksLikeStreamingArtifactPayload(content: string): boolean {
   return (
     trimmed.includes('<EASYPLUS_ARTIFACT') ||
     trimmed.includes('```artifact:') ||
+    /^artifact\s*[:\-]\s*[a-z0-9+#.-]+\s*:/i.test(trimmed) ||
     trimmed.includes('ARTIFACT_BLOCK_START') ||
     /^```(?:html|svg|jsx|tsx|css|javascript|typescript|markdown|md)\b/i.test(trimmed) ||
     /^<!DOCTYPE\s+html/i.test(trimmed) ||

@@ -202,7 +202,7 @@ export interface Artifact {
   code: string
   explanation?: string
   generatedAttachment?: ChatAttachment | null
-  extractionMethod?: 'wrapper' | 'artifact_fence' | 'legacy_wrapper' | 'fenced_code' | 'raw_html'
+  extractionMethod?: 'wrapper' | 'artifact_fence' | 'legacy_wrapper' | 'fenced_code' | 'raw_html' | 'inline_artifact'
   repaired?: boolean
   validationError?: string | null
   validationErrors?: string[]

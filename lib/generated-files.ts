@@ -16,6 +16,8 @@ const DOCX_KEYWORDS = /\b(word document|word doc|docx|google docs|google doc|doc
 const PDF_KEYWORDS = /\b(pdf|report export|pdf export|export as pdf|downloadable pdf)\b/i
 const CANVA_PRESENTATION_KEYWORDS = /\b(canva-style|canva style|canva)\b/i
 const INTERACTIVE_ARTIFACT_KEYWORDS = /\b(interactive|widget|calculator|tool|game|quiz|browser app|web app|landing page|website|html|react|tsx|jsx)\b/i
+const FILE_DELIVERY_KEYWORDS = /\b(download|downloadable|export|file|formatted file|final file|save as|as a pdf|as pdf|into pdf)\b/i
+const REPORT_KEYWORDS = /\b(report|audit|summary document)\b/i
 
 export function normalizeGeneratedFileKind(value: string | null | undefined): GeneratedFileKind | null {
   const normalized = String(value || '').trim().toLowerCase()
@@ -62,6 +64,8 @@ export function detectGeneratedFileIntent(message: string): GeneratedFileIntent 
   const text = String(message || '').trim()
   if (!text) return null
   const lower = text.toLowerCase()
+  const hasExplicitFileDeliveryIntent = FILE_DELIVERY_KEYWORDS.test(lower)
+  const looksLikeReportExportRequest = REPORT_KEYWORDS.test(lower) && hasExplicitFileDeliveryIntent
 
   if (INTERACTIVE_ARTIFACT_KEYWORDS.test(lower) && !POWERPOINT_KEYWORDS.test(lower) && !DOCX_KEYWORDS.test(lower) && !PDF_KEYWORDS.test(lower)) {
     return null
@@ -71,11 +75,11 @@ export function detectGeneratedFileIntent(message: string): GeneratedFileIntent 
     return getGeneratedFileIntent('pptx')
   }
 
-  if (PDF_KEYWORDS.test(lower)) return getGeneratedFileIntent('pdf')
+  if (PDF_KEYWORDS.test(lower) || looksLikeReportExportRequest) return getGeneratedFileIntent('pdf')
   if (POWERPOINT_KEYWORDS.test(lower)) return getGeneratedFileIntent(/google slides/i.test(lower) ? 'gslides' : 'pptx')
   if (DOCX_KEYWORDS.test(lower)) return getGeneratedFileIntent(/google docs?/i.test(lower) ? 'gdoc' : 'docx')
 
-  if (/\b(downloadable file|download file|export file|report|presentation export|slides export)\b/i.test(lower)) {
+  if (/\b(downloadable file|download file|export file|presentation export|slides export)\b/i.test(lower)) {
     return getGeneratedFileIntent('pdf')
   }
 
@@ -108,4 +112,3 @@ export function createGeneratedFileBaseName(title: string): string {
 export function createGeneratedFilename(title: string, kind: GeneratedFileKind): string {
   return `${createGeneratedFileBaseName(title)}.${getGeneratedFileExtension(kind)}`
 }
-

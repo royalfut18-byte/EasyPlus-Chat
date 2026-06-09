@@ -17,7 +17,7 @@ const SUPPORTED_LANGUAGES = new Set([
   'docx', 'xlsx', 'pptx', 'gdoc', 'gsheet', 'gslides', 'canva', 'pdf'
 ])
 
-type ArtifactExtractionMethod = 'wrapper' | 'artifact_fence' | 'legacy_wrapper' | 'fenced_code' | 'raw_html' | 'none'
+type ArtifactExtractionMethod = 'wrapper' | 'artifact_fence' | 'legacy_wrapper' | 'fenced_code' | 'raw_html' | 'inline_artifact' | 'none'
 
 type ArtifactParseDiagnostics = {
   artifactIntentDetected: boolean
@@ -406,6 +406,55 @@ function parseEasyPlusArtifactWrapper(content: string): { fullMatch: string; lan
   }
 }
 
+function parseInlineArtifactBlock(content: string): { fullMatch: string; language: string; title: string; code: string } | null {
+  const marker = /(?:^|\n)(artifact)\s*[:\-]\s*([a-z0-9+#.-]+)\s*:/i.exec(content)
+  if (!marker || marker.index == null) return null
+
+  const startIndex = content.slice(marker.index).startsWith('\n')
+    ? marker.index + 1
+    : marker.index
+  const markerText = content.slice(startIndex, startIndex + marker[0].trimStart().length)
+  const language = marker[2]
+  const rest = content.slice(startIndex + markerText.length)
+  if (!rest.trim()) return null
+
+  const trimmedRest = rest.trimStart()
+  let title = ''
+  let code = ''
+
+  if (/^[{\[]/.test(trimmedRest)) {
+    title = 'Generated Artifact'
+    code = trimmedRest
+  } else {
+    const newlineIndex = trimmedRest.indexOf('\n')
+    const payloadStartCandidates = ['{', '[', '<']
+      .map((char) => trimmedRest.indexOf(char))
+      .filter((index) => index >= 0)
+    const payloadStartIndex = payloadStartCandidates.length > 0
+      ? Math.min(...payloadStartCandidates)
+      : -1
+
+    if (payloadStartIndex >= 0 && (newlineIndex === -1 || payloadStartIndex < newlineIndex)) {
+      title = trimmedRest.slice(0, payloadStartIndex).trim()
+      code = trimmedRest.slice(payloadStartIndex).trim()
+    } else if (newlineIndex >= 0) {
+      title = trimmedRest.slice(0, newlineIndex).trim()
+      code = trimmedRest.slice(newlineIndex + 1).trim()
+    } else {
+      return null
+    }
+  }
+
+  if (!code) return null
+
+  return {
+    fullMatch: content.slice(startIndex).trim(),
+    language,
+    title: title || 'Generated Artifact',
+    code,
+  }
+}
+
 export function parseArtifactFromResponse(
   content: string,
   artifactMode: boolean,
@@ -452,6 +501,22 @@ export function parseArtifactFromResponse(
     const validated = validateArtifact(artifact, userPrompt, 'artifact_fence')
     return {
       cleanContent: buildCleanContent(content, fullMatch, validated.artifact),
+      artifact: validated.artifact,
+      diagnostics: validated.diagnostics,
+    }
+  }
+
+  const inlineArtifact = parseInlineArtifactBlock(content)
+  if (inlineArtifact) {
+    const artifact = createArtifact(
+      inferLanguageFromCode(inlineArtifact.code, inlineArtifact.language),
+      inlineArtifact.title,
+      inlineArtifact.code,
+      'inline_artifact'
+    )
+    const validated = validateArtifact(artifact, userPrompt, 'inline_artifact')
+    return {
+      cleanContent: buildCleanContent(content, inlineArtifact.fullMatch, validated.artifact),
       artifact: validated.artifact,
       diagnostics: validated.diagnostics,
     }

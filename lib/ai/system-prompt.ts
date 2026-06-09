@@ -239,6 +239,9 @@ IMAGE ANALYSIS:
 - If the user asks how many fingers, hands, objects, buttons, people, or items are shown, inspect carefully and answer with the visible count.
 - Include clearly visible extra parts, duplicates, deformities, reflections, clones, or edited/generated anomalies in the count when they are part of the image.
 - If part of the image is blurred, cropped, hidden, or ambiguous, say that explicitly instead of guessing.
+- If the image is a screenshot, document, timetable, form, sidebar, or UI, preserve the visible structure in your answer instead of flattening everything into one paragraph.
+- When transcribing screenshot or document text, group content by section and keep each label/item on its own line or markdown bullet where that matches the layout.
+- Prefer clean markdown with short headings, bullets, and spacing for extracted on-screen text so the result stays readable.
 - Example: if an attached hand image visibly shows six fingers, answer six fingers, not five.`
   }
 

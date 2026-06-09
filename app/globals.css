@@ -118,19 +118,19 @@
 
 .prose p {
   @apply mb-3 leading-6;
-  white-space: normal;
+  white-space: pre-wrap;
   word-break: break-word;
 }
 
 .prose li {
-  white-space: normal;
+  white-space: pre-wrap;
   word-break: break-word;
 }
 
 .prose strong,
 .prose em {
   display: inline;
-  white-space: normal;
+  white-space: inherit;
 }
 
 @media (min-width: 768px) {
@@ -247,7 +247,7 @@
 .message-content p {
   margin-bottom: 1rem;
   line-height: 1.75;
-  white-space: normal;
+  white-space: pre-wrap;
 }
 
 .message-content p:last-child {
@@ -272,6 +272,7 @@
   display: list-item;
   margin-bottom: 0.5rem;
   line-height: 1.75;
+  white-space: pre-wrap;
 }
 
 .message-content li:last-child {
