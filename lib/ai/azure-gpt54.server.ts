@@ -705,7 +705,7 @@ export async function streamAzureGpt54Response(
     console.info('[Azure GPT-5.4] Stream request started', {
       model,
       temperature,
-      maxTokens: Math.min(maxTokens, 8192),
+      maxTokens: Math.min(maxTokens, 16384),
       endpointHost: endpoint.endpointHost,
       endpointPath: endpoint.endpointPath,
       ...payloadDiagnostics,
@@ -717,7 +717,7 @@ export async function streamAzureGpt54Response(
         model,
         messages: toAzureChatMessages(messages, systemPromptText),
         temperature,
-        ...getCompletionTokenField(model, Math.min(maxTokens, 8192)),
+        ...getCompletionTokenField(model, Math.min(maxTokens, 16384)),
         stream: true,
       }),
       signal: controller.signal,

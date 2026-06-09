@@ -284,6 +284,80 @@ function isTransformationRequest(message: string): boolean {
   return (hasTransformSignal && hasEssayStructureSignal) || (hasTransformSignal && looksLikePastedDraft)
 }
 
+const AUTO_CONTINUE_LIMIT = 3
+const CONTINUATION_ASSISTANT_CONTEXT_CHARS = 12000
+const SAME_MODEL_CONTINUATION_PROMPT = [
+  'Continue the same response from exactly where you stopped.',
+  'Do not repeat the introduction, earlier paragraphs, headings, or sentences you already wrote.',
+  'Finish the interrupted sentence first if it was cut off, then continue the remaining task.',
+  'Keep the same tone, structure, and format.',
+  'Return only the continuation text.',
+].join(' ')
+
+function responseLooksIncomplete(text: string): boolean {
+  const trimmed = String(text || '').trimEnd()
+  if (!trimmed) return false
+
+  const codeFenceCount = (trimmed.match(/```/g) || []).length
+  if (codeFenceCount % 2 !== 0) return true
+
+  const artifactOpenCount = (trimmed.match(/<EASYPLUS_ARTIFACT\b/gi) || []).length
+  const artifactCloseCount = (trimmed.match(/<\/EASYPLUS_ARTIFACT>/gi) || []).length
+  if (artifactOpenCount > artifactCloseCount) return true
+
+  if (/[,:;(\[\-–—]$/.test(trimmed)) return true
+  if (/\b(and|or|but|because|which|that|while|although|however|therefore|consequently|additionally|furthermore|meanwhile|including)$/i.test(trimmed)) {
+    return true
+  }
+
+  return !/[.!?]["')\]]*$/.test(trimmed)
+}
+
+function shouldAutoContinueResponse(args: {
+  response: string
+  userPrompt: string
+  longTask: boolean
+  continuationCount: number
+}): boolean {
+  if (args.continuationCount >= AUTO_CONTINUE_LIMIT) return false
+
+  const response = String(args.response || '')
+  if (response.length < 700) return false
+  if (!responseLooksIncomplete(response)) return false
+
+  const userPrompt = String(args.userPrompt || '').toLowerCase()
+  const longFormSignals = [
+    'essay',
+    'report',
+    'analysis',
+    'body paragraph',
+    'rewrite',
+    'restructure',
+    'speech',
+    'story',
+    'chapter',
+    'guide',
+    'step by step',
+    'full response',
+    'long response',
+    'continue',
+  ]
+
+  return args.longTask || isTransformationRequest(userPrompt) || longFormSignals.some((signal) => userPrompt.includes(signal))
+}
+
+function buildContinuationMessages(baseMessages: ChatMessage[], currentResponse: string): ChatMessage[] {
+  const assistantContext = currentResponse.length > CONTINUATION_ASSISTANT_CONTEXT_CHARS
+    ? `[Assistant response so far - final excerpt only]\n${currentResponse.slice(-CONTINUATION_ASSISTANT_CONTEXT_CHARS)}`
+    : currentResponse
+
+  return [
+    ...baseMessages,
+    { role: 'assistant', content: assistantContext },
+    { role: 'user', content: SAME_MODEL_CONTINUATION_PROMPT },
+  ]
+}
+
 export async function POST(request: NextRequest) {
   const startTime = Date.now()
   let stage = 'init'
@@ -1206,16 +1280,15 @@ RULES FOR USING THESE RESULTS:
     const responseStream = new ReadableStream({
       async start(controller) {
         try {
-          // Call AI provider with reasoning-adjusted maxTokens
-          let providerStream: ReadableStream | null = null
           const maxTokens = reasoningProfile.maxTokens
           const identitySanitizer = createIdentityLeakStreamSanitizer(selectedModel.name)
           const providerAttempts: ChatProviderAttempt[] = []
           let finalProviderUsed: ChatProviderAttempt['provider'] | null = null
-          let lastError: Error | null = null
+          let continuationCount = 0
+          let currentMessagesForModel = messagesForModel
 
-          for (const attemptedProvider of providerAttemptOrder) {
-            const configured = attemptedProvider === 'azure-gpt54'
+          const isConfiguredProvider = (attemptedProvider: ChatProviderAttempt['provider']) => (
+            attemptedProvider === 'azure-gpt54'
               ? (() => {
                   const snapshot = getAzureGpt54ConfigSnapshot()
                   return snapshot.envStatus.apiKey.configured &&
@@ -1230,140 +1303,201 @@ RULES FOR USING THESE RESULTS:
                       snapshot.envStatus.model.configured
                   })()
                 : true
+          )
 
-            try {
-              if (attemptedProvider === 'google') {
-                providerStream = await streamGeminiResponse(validatedModel, messagesForModel, systemPrompt, temperature, maxTokens)
-              } else if (attemptedProvider === 'anthropic') {
-                providerStream = await streamBedrockResponse(validatedModel, messagesForModel, systemPrompt, temperature, maxTokens)
-              } else if (attemptedProvider === 'azure-gpt54') {
-                providerStream = await streamAzureGpt54Response(messagesForModel, systemPrompt, temperature, maxTokens)
-              } else {
-                providerStream = await streamAzureDeepSeekResponse(messagesForModel, systemPrompt, temperature, maxTokens)
-              }
+          const openProviderStream = async (
+            attemptOrder: ChatProviderAttempt['provider'][],
+            inputMessages: ChatMessage[],
+            allowFallback: boolean
+          ): Promise<{ stream: ReadableStream; provider: ChatProviderAttempt['provider'] }> => {
+            let providerStream: ReadableStream | null = null
+            let resolvedProvider: ChatProviderAttempt['provider'] | null = null
+            let lastError: Error | null = null
+            const localAttempts: ChatProviderAttempt[] = []
 
-              finalProviderUsed = attemptedProvider
-              providerAttempts.push({
-                provider: attemptedProvider,
-                configured,
-                attempted: true,
-                succeeded: true,
-                status: null,
-                safeReason: null,
-              })
-              break
-            } catch (error: any) {
-              lastError = error instanceof Error ? error : new Error(String(error))
-              providerAttempts.push({
-                provider: attemptedProvider,
-                configured,
-                attempted: true,
-                succeeded: false,
-                status: isAzureTextProviderError(error) ? error.status : null,
-                safeReason: isAzureTextProviderError(error)
-                  ? error.safeReason
-                  : lastError.message || 'Model provider request failed.',
-              })
+            for (const attemptedProvider of attemptOrder) {
+              const configured = isConfiguredProvider(attemptedProvider)
 
-              console.error('[Chat API] Provider attempt failed', {
-                publicModelId: validatedModel,
-                providerAttempted: attemptedProvider,
-                configured,
-                status: isAzureTextProviderError(error) ? error.status : null,
-                safeReason: isAzureTextProviderError(error) ? error.safeReason : lastError.message,
-                imageRequest: hasCurrentImageAttachments,
-              })
+              try {
+                if (attemptedProvider === 'google') {
+                  providerStream = await streamGeminiResponse(validatedModel, inputMessages, systemPrompt, temperature, maxTokens)
+                } else if (attemptedProvider === 'anthropic') {
+                  providerStream = await streamBedrockResponse(validatedModel, inputMessages, systemPrompt, temperature, maxTokens)
+                } else if (attemptedProvider === 'azure-gpt54') {
+                  providerStream = await streamAzureGpt54Response(inputMessages, systemPrompt, temperature, maxTokens)
+                } else {
+                  providerStream = await streamAzureDeepSeekResponse(inputMessages, systemPrompt, temperature, maxTokens)
+                }
 
-              if (hasCurrentImageAttachments && attemptedProvider === 'azure-gpt54') {
-                lastError = mapImageUnderstandingProviderError(error)
-                providerAttempts[providerAttempts.length - 1].safeReason = lastError.message
+                resolvedProvider = attemptedProvider
+                localAttempts.push({
+                  provider: attemptedProvider,
+                  configured,
+                  attempted: true,
+                  succeeded: true,
+                  status: null,
+                  safeReason: null,
+                })
+                break
+              } catch (error: any) {
+                lastError = error instanceof Error ? error : new Error(String(error))
+                localAttempts.push({
+                  provider: attemptedProvider,
+                  configured,
+                  attempted: true,
+                  succeeded: false,
+                  status: isAzureTextProviderError(error) ? error.status : null,
+                  safeReason: isAzureTextProviderError(error)
+                    ? error.safeReason
+                    : lastError.message || 'Model provider request failed.',
+                })
+
+                console.error('[Chat API] Provider attempt failed', {
+                  publicModelId: validatedModel,
+                  providerAttempted: attemptedProvider,
+                  configured,
+                  status: isAzureTextProviderError(error) ? error.status : null,
+                  safeReason: isAzureTextProviderError(error) ? error.safeReason : lastError.message,
+                  imageRequest: hasCurrentImageAttachments,
+                  continuationCount,
+                })
+
+                if (hasCurrentImageAttachments && attemptedProvider === 'azure-gpt54') {
+                  lastError = mapImageUnderstandingProviderError(error)
+                  localAttempts[localAttempts.length - 1].safeReason = lastError.message
+                }
+
+                if (!allowFallback) {
+                  throw lastError
+                }
               }
             }
+
+            if (!providerStream || !resolvedProvider) {
+              if (allowFallback) {
+                providerAttempts.push(...localAttempts)
+                throw buildNoProviderAvailableError(providerAttempts)
+              }
+              throw lastError || new Error('Model provider request failed.')
+            }
+
+            if (allowFallback) {
+              providerAttempts.push(...localAttempts)
+            }
+
+            return { stream: providerStream, provider: resolvedProvider }
           }
-
-          if (!providerStream || !finalProviderUsed) {
-            const finalError = buildNoProviderAvailableError(providerAttempts)
-            console.error('[Chat API] No chat provider available for request', {
-              publicModelId: validatedModel,
-              preferredProvider: providerAttemptOrder[0] || selectedModel.provider,
-              fallbackProviderAttempted: providerAttempts.find((attempt) => attempt.provider !== providerAttemptOrder[0])?.provider || null,
-              finalProviderUsed: null,
-              finalStatus: 'failed',
-              safeReason: finalError.message,
-              attempts: providerAttempts,
-            })
-            throw finalError
-          }
-
-          console.log('[Chat API] Provider resolved for request', {
-            publicModelId: validatedModel,
-            preferredProvider: providerAttemptOrder[0] || selectedModel.provider,
-            fallbackProviderAttempted: providerAttempts.find((attempt) => attempt.provider !== finalProviderUsed)?.provider || null,
-            finalProviderUsed,
-            finalStatus: 'streaming',
-            attempts: providerAttempts,
-          })
-
-          // Read from provider and forward to client
-          const reader = providerStream.getReader()
-          const providerDecoder = new TextDecoder()
 
           while (true) {
-            const { done, value } = await reader.read()
-            if (done) break
+            let providerStream: ReadableStream
+            let provider: ChatProviderAttempt['provider']
 
-            const text = providerDecoder.decode(value, { stream: true })
-            const outgoingText = identitySanitizer.push(text)
-            if (!outgoingText) continue
-
-            // Track actual content (skip keepalive whitespace for DB storage)
-            if (!contentStarted) {
-              const trimmed = outgoingText.trimStart()
-              if (trimmed.length > 0) {
-                contentStarted = true
-                fullResponse += trimmed
+            try {
+              const resolved = await openProviderStream(
+                finalProviderUsed ? [finalProviderUsed] : providerAttemptOrder,
+                currentMessagesForModel,
+                !finalProviderUsed
+              )
+              providerStream = resolved.stream
+              provider = resolved.provider
+            } catch (error: any) {
+              if (finalProviderUsed && fullResponse.trim()) {
+                console.warn('[Chat API] Auto-continuation stopped after provider failure', {
+                  publicModelId: validatedModel,
+                  provider: finalProviderUsed,
+                  continuationCount,
+                  message: error?.message || 'Unknown continuation failure',
+                })
+                break
               }
-            } else {
-              fullResponse += outgoingText
+              throw error
             }
 
-            // Forward sanitized content to client.
-            controller.enqueue(encoder.encode(outgoingText))
+            if (!finalProviderUsed) {
+              finalProviderUsed = provider
+              console.log('[Chat API] Provider resolved for request', {
+                publicModelId: validatedModel,
+                preferredProvider: providerAttemptOrder[0] || selectedModel.provider,
+                fallbackProviderAttempted: providerAttempts.find((attempt) => attempt.provider !== finalProviderUsed)?.provider || null,
+                finalProviderUsed,
+                finalStatus: 'streaming',
+                attempts: providerAttempts,
+              })
+            } else {
+              console.log('[Chat API] Auto-continuing on same provider', {
+                publicModelId: validatedModel,
+                provider: finalProviderUsed,
+                continuationCount,
+              })
+            }
 
-            // Periodically save partial content for recovery (every 800ms)
-            // Each save is awaited sequentially to prevent race conditions
-            if (contentStarted && conversationId && assistantMessageId && Date.now() - lastSaveTime > 800) {
-              lastSaveTime = Date.now()
-              const partialContent = sanitizeDatabaseText(fullResponse)
-              if (partialContent.length > lastSavedLength) {
-                // Await the previous partial save before starting a new one
-                if (pendingPartialSave) {
-                  await pendingPartialSave
+            const reader = providerStream.getReader()
+            const providerDecoder = new TextDecoder()
+
+            while (true) {
+              const { done, value } = await reader.read()
+              if (done) break
+
+              const text = providerDecoder.decode(value, { stream: true })
+              const outgoingText = identitySanitizer.push(text)
+              if (!outgoingText) continue
+
+              if (!contentStarted) {
+                const trimmed = outgoingText.trimStart()
+                if (trimmed.length > 0) {
+                  contentStarted = true
+                  fullResponse += trimmed
                 }
-                lastSavedLength = partialContent.length
-                pendingPartialSave = db.from('messages')
-                  .update({ content: partialContent, updated_at: new Date().toISOString() })
-                  .eq('id', assistantMessageId)
-                  .then(({ error: partialErr }: any) => {
-                    if (partialErr) console.error('[Chat API] Partial save failed:', partialErr.message)
-                  })
-                  .catch((e: any) => console.error('[Chat API] Partial save exception:', e.message))
+              } else {
+                fullResponse += outgoingText
               }
-            }
-          }
 
-          const finalOutgoingText = identitySanitizer.flush()
-          if (finalOutgoingText) {
-            if (!contentStarted) {
-              const trimmed = finalOutgoingText.trimStart()
-              if (trimmed.length > 0) {
-                contentStarted = true
-                fullResponse += trimmed
+              controller.enqueue(encoder.encode(outgoingText))
+
+              if (contentStarted && conversationId && assistantMessageId && Date.now() - lastSaveTime > 800) {
+                lastSaveTime = Date.now()
+                const partialContent = sanitizeDatabaseText(fullResponse)
+                if (partialContent.length > lastSavedLength) {
+                  if (pendingPartialSave) {
+                    await pendingPartialSave
+                  }
+                  lastSavedLength = partialContent.length
+                  pendingPartialSave = db.from('messages')
+                    .update({ content: partialContent, updated_at: new Date().toISOString() })
+                    .eq('id', assistantMessageId)
+                    .then(({ error: partialErr }: any) => {
+                      if (partialErr) console.error('[Chat API] Partial save failed:', partialErr.message)
+                    })
+                    .catch((e: any) => console.error('[Chat API] Partial save exception:', e.message))
+                }
               }
-            } else {
-              fullResponse += finalOutgoingText
             }
-            controller.enqueue(encoder.encode(finalOutgoingText))
+
+            const finalOutgoingText = identitySanitizer.flush()
+            if (finalOutgoingText) {
+              if (!contentStarted) {
+                const trimmed = finalOutgoingText.trimStart()
+                if (trimmed.length > 0) {
+                  contentStarted = true
+                  fullResponse += trimmed
+                }
+              } else {
+                fullResponse += finalOutgoingText
+              }
+              controller.enqueue(encoder.encode(finalOutgoingText))
+            }
+
+            if (!shouldAutoContinueResponse({
+              response: fullResponse,
+              userPrompt: latestUserMessage.content,
+              longTask,
+              continuationCount,
+            })) {
+              break
+            }
+
+            continuationCount += 1
+            currentMessagesForModel = buildContinuationMessages(messagesForModel, fullResponse)
           }
 
           // Mark stream as done so no more partial saves can race
