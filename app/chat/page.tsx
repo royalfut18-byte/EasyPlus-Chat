@@ -159,9 +159,12 @@ CODE_HERE
 \`\`\`
 
 Rules:
+- The artifact block must be complete: include the opening tag, the full payload, and the closing tag.
+- Put only the artifact payload inside the artifact block. Do not place explanations, apologies, or status text inside the wrapper.
 - Use language values: html, tsx, jsx, javascript, typescript, css, python, markdown, json, svg, text, docx, xlsx, pptx, gdoc, gsheet, gslides, canva.
 - Default to artifact:html with a full single-file HTML document, inline CSS, and inline JS so it opens as a live side-panel preview.
 - For visual, interactive, playable, game, quiz, calculator, dashboard, timetable, planner, landing page, website, widget, form, or browser-app requests, use artifact:html by default with complete browser-playable HTML/CSS/JS.
+- For interactive HTML artifacts, ensure every visible control actually works. Define all handlers, include the required JavaScript, and mentally test click, tap, keyboard, and restart flows before responding.
 - If the user asks for a React-style interactive artifact, convert it into a single-file html artifact unless they explicitly ask for source-only TSX/JSX code.
 - Only use artifact:python or Pygame when the user explicitly asks for Python, Pygame, or a Python script.
 - Only use artifact:docx, artifact:xlsx, artifact:pptx, artifact:gdoc, artifact:gsheet, or artifact:gslides when the user explicitly asks for that exact Office/Google file type.

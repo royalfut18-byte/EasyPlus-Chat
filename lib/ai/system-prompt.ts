@@ -215,8 +215,11 @@ CODE_HERE
 \`\`\`
 
 Languages: html, tsx, jsx, javascript, typescript, css, python, markdown, json, svg, text, docx, xlsx, pptx, gdoc, gsheet, gslides, canva.
+The artifact block must be complete: include the opening tag, the full payload, and the closing tag.
+Put only the artifact payload inside the artifact block. Do not place explanations, apologies, or status text inside the wrapper.
 Default to artifact:html with complete single-file HTML, inline CSS, and inline JS so the app can show a live side-panel preview.
 For visual, interactive, playable, game, quiz, calculator, dashboard, timetable, planner, landing page, website, widget, form, or browser-app requests, use artifact:html by default with complete browser-playable HTML/CSS/JS.
+For interactive HTML artifacts, ensure every visible control actually works. Define all handlers, include the required JavaScript, and mentally test click, tap, keyboard, and restart flows before responding.
 For React-style interactive artifact requests, convert them into a single-file html artifact unless the user explicitly asks for source-only TSX/JSX code.
 Only use artifact:python or Pygame when the user explicitly asks for Python, Pygame, or a Python script. Do not make browser games as Python by default.
 Only use docx, xlsx, pptx, gdoc, gsheet, or gslides when the user explicitly asks for that exact Office/Google file type.

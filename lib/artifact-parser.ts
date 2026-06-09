@@ -1,6 +1,7 @@
 import type { Artifact } from '@/types/models'
 import { getGeneratedFileLabel, isGeneratedFileArtifactLanguage } from '@/lib/generated-files'
 import { decodePossiblyEscapedText, parseGeneratedZipFromResponse } from '@/lib/generated-zip'
+import { buildArtifactFallback } from '@/lib/artifact-fallback'
 
 const BUILDABLE_KEYWORDS = [
   'make', 'build', 'create', 'design', 'code', 'website', 'landing page',
@@ -17,7 +18,7 @@ const SUPPORTED_LANGUAGES = new Set([
   'docx', 'xlsx', 'pptx', 'gdoc', 'gsheet', 'gslides', 'canva', 'pdf'
 ])
 
-type ArtifactExtractionMethod = 'wrapper' | 'artifact_fence' | 'legacy_wrapper' | 'fenced_code' | 'raw_html' | 'inline_artifact' | 'none'
+type ArtifactExtractionMethod = 'wrapper' | 'artifact_fence' | 'legacy_wrapper' | 'fenced_code' | 'raw_html' | 'inline_artifact' | 'wrapper_recovery' | 'prompt_fallback' | 'none'
 
 type ArtifactParseDiagnostics = {
   artifactIntentDetected: boolean
@@ -351,9 +352,42 @@ function validateArtifact(
     const expectsInteractivity = /\b(interactive|quiz|calculator|flashcard|game|timeline|study tool)\b/i.test(String(userPrompt || ''))
       || /<(button|input|select|textarea|form)\b/i.test(nextArtifact.code)
       || /\bon(?:click|change|submit|input|keydown|keyup)\s*=/i.test(nextArtifact.code)
+      || /\b(addEventListener|requestAnimationFrame|canvas)\b/i.test(nextArtifact.code)
+
+    if (expectsInteractivity && nextArtifact.code.length < 600) {
+      errors.push('Interactive HTML artifact is too short to be a complete working app.')
+    }
 
     if (expectsInteractivity && !/<script\b/i.test(nextArtifact.code) && missingHandlers.length > 0) {
       errors.push('Interactive HTML artifact is missing the JavaScript needed for its handlers.')
+    }
+
+    if (
+      expectsInteractivity &&
+      /<(button|canvas|input|select|textarea|form)\b/i.test(nextArtifact.code) &&
+      !/(<script\b|addEventListener\s*\(|onclick\s*=|onchange\s*=|onsubmit\s*=|oninput\s*=)/i.test(nextArtifact.code)
+    ) {
+      errors.push('Interactive HTML artifact has controls but no working interaction code.')
+    }
+  }
+
+  if (errors.length > 0 && (artifact.language === 'html' || artifact.language === 'canva')) {
+    const fallback = buildArtifactFallback(userPrompt, artifact.language)
+    if (fallback) {
+      nextArtifact = {
+        ...nextArtifact,
+        title: fallback.title,
+        language: fallback.language,
+        code: fallback.code,
+        repaired: true,
+        validationError: null,
+        validationErrors: [],
+        extractionMethod: 'prompt_fallback',
+      }
+      diagnostics.repairAttempted = true
+      diagnostics.repairSucceeded = true
+      diagnostics.validationPassed = true
+      return { artifact: nextArtifact, diagnostics }
     }
   }
 
@@ -411,6 +445,46 @@ function parseEasyPlusArtifactWrapper(content: string): { fullMatch: string; lan
     title: titleMatch?.[1] || 'Generated Artifact',
     code,
   }
+}
+
+function parseEasyPlusArtifactWrapperStart(content: string): { fullMatch: string; language: string; title: string; remainder: string } | null {
+  const match = content.match(/<EASYPLUS_ARTIFACT\b([^>]*)>/i)
+  if (!match || match.index == null) return null
+
+  const attrs = match[1] || ''
+  const typeMatch = attrs.match(/\btype\s*=\s*["']([^"']+)["']/i)
+  const titleMatch = attrs.match(/\btitle\s*=\s*["']([^"']+)["']/i)
+
+  return {
+    fullMatch: match[0],
+    language: typeMatch?.[1] || 'html',
+    title: titleMatch?.[1] || 'Generated Artifact',
+    remainder: content.slice(match.index + match[0].length).trim(),
+  }
+}
+
+function extractCodeFromMalformedWrapper(language: Artifact['language'] | null, remainder: string): string | null {
+  const trimmed = decodePossiblyEscapedText(remainder).trim()
+  if (!trimmed) return null
+
+  const closingIndex = trimmed.search(/<\/EASYPLUS_ARTIFACT>/i)
+  const payload = closingIndex >= 0 ? trimmed.slice(0, closingIndex).trim() : trimmed
+  if (!payload) return null
+
+  const htmlDocument = extractHtmlDocument(payload)
+  if (htmlDocument) return htmlDocument
+
+  const htmlFragment = extractHtmlLikeFragment(payload)
+  if (htmlFragment) return htmlFragment
+
+  const fence = payload.match(/```\s*(html|svg|markdown|md|jsx|tsx|javascript|typescript|css|json|text)?[^\n`]*\r?\n([\s\S]*?)```/i)
+  if (fence?.[2]?.trim()) return fence[2].trim()
+
+  if ((language === 'docx' || language === 'gdoc' || language === 'pdf' || language === 'xlsx' || language === 'gsheet') && payload.length > 30) {
+    return payload
+  }
+
+  return null
 }
 
 function parseInlineArtifactBlock(content: string): { fullMatch: string; language: string; title: string; code: string } | null {
@@ -496,6 +570,36 @@ export function parseArtifactFromResponse(
       cleanContent: buildCleanContent(content, wrappedArtifact.fullMatch, validated.artifact),
       artifact: validated.artifact,
       diagnostics: validated.diagnostics,
+    }
+  }
+
+  const wrapperStart = parseEasyPlusArtifactWrapperStart(content)
+  if (wrapperStart) {
+    const recoveredCode = extractCodeFromMalformedWrapper(normalizeLanguage(wrapperStart.language), wrapperStart.remainder)
+    if (recoveredCode) {
+      const artifact = createArtifact(
+        inferLanguageFromCode(recoveredCode, wrapperStart.language),
+        wrapperStart.title,
+        recoveredCode,
+        'wrapper_recovery'
+      )
+      const validated = validateArtifact(artifact, userPrompt, 'wrapper_recovery')
+      return {
+        cleanContent: buildCleanContent(content, content, validated.artifact),
+        artifact: validated.artifact,
+        diagnostics: validated.diagnostics,
+      }
+    }
+
+    const fallback = buildArtifactFallback(userPrompt, normalizeLanguage(wrapperStart.language))
+    if (fallback) {
+      const artifact = createArtifact(fallback.language, fallback.title, fallback.code, 'prompt_fallback')
+      const validated = validateArtifact(artifact, userPrompt, 'prompt_fallback')
+      return {
+        cleanContent: buildCleanContent(content, content, validated.artifact),
+        artifact: validated.artifact,
+        diagnostics: validated.diagnostics,
+      }
     }
   }
 
@@ -595,6 +699,17 @@ export function parseArtifactFromResponse(
       const validated = validateArtifact(artifact, userPrompt, 'raw_html')
       return {
         cleanContent: buildCleanContent(content, htmlFragment, validated.artifact),
+        artifact: validated.artifact,
+        diagnostics: validated.diagnostics,
+      }
+    }
+
+    const fallback = buildArtifactFallback(userPrompt, 'html')
+    if (fallback) {
+      const artifact = createArtifact(fallback.language, fallback.title, fallback.code, 'prompt_fallback')
+      const validated = validateArtifact(artifact, userPrompt, 'prompt_fallback')
+      return {
+        cleanContent: buildCleanContent(content, content, validated.artifact),
         artifact: validated.artifact,
         diagnostics: validated.diagnostics,
       }
