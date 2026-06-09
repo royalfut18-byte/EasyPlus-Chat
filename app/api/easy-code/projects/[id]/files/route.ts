@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
-import { bytesOf, getEasyCodeFiles, getEasyCodeProject, inferLanguage, requireEasyCodeUser, validateEasyCodePath } from '@/lib/easy-code.server'
+import { bytesOf, EASY_CODE_MAX_PROJECT_FILES, getEasyCodeFiles, getEasyCodeProject, inferLanguage, requireEasyCodeUser, validateEasyCodePath } from '@/lib/easy-code.server'
 
 export const runtime = 'nodejs'
 
@@ -34,6 +34,11 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const body = await request.json().catch(() => null)
     const path = validateEasyCodePath(body?.path)
     const content = typeof body?.content === 'string' ? body.content : ''
+    const existingFiles = await getEasyCodeFiles(user.id, id)
+    const alreadyExists = existingFiles.some((file) => file.path.toLowerCase() === path.toLowerCase())
+    if (!alreadyExists && existingFiles.length >= EASY_CODE_MAX_PROJECT_FILES) {
+      return NextResponse.json({ error: 'This Easy Code project has reached the file limit.' }, { status: 400 })
+    }
     if (bytesOf(content) > 220_000) return NextResponse.json({ error: 'File is too large.' }, { status: 400 })
     const language = typeof body?.language === 'string' ? body.language.slice(0, 40) : inferLanguage(path)
 

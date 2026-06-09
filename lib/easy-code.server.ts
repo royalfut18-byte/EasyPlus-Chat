@@ -32,6 +32,7 @@ const EASY_CODE_STATIC_FILES = ['index.html', 'styles.css', 'script.js', 'README
 type EasyCodeAiProvider = 'azure-gpt54' | 'azure-deepseek' | 'fallback'
 type EasyCodeAiPhase = 'create' | 'edit' | 'repair'
 type EasyCodePromptType = 'static-site' | 'app' | 'script' | 'other'
+type EasyCodeLocalFallbackKind = 'static-site' | 'react-app' | 'node-app' | 'python-app'
 
 export interface EasyCodeAiDiagnostics {
   provider: EasyCodeAiProvider
@@ -445,6 +446,20 @@ function inferEasyCodePromptType(prompt: string, files: Array<Pick<EasyCodeFile,
   }
   if (/\b(app|dashboard|saas|platform|react|next\.?js|vite|node|python|api)\b/.test(text)) return 'app'
   return 'other'
+}
+
+function inferEasyCodeLocalFallbackKind(prompt: string): EasyCodeLocalFallbackKind {
+  const text = prompt.toLowerCase()
+  if (isStaticLandingPageRequest(prompt) || /\b(landing page|website|web site|webpage|homepage|portfolio|product page)\b/.test(text)) {
+    return 'static-site'
+  }
+  if (/\b(python|flask|fastapi|django|streamlit|pygame)\b/.test(text)) {
+    return 'python-app'
+  }
+  if (/\b(node|express|backend|server|rest api|api)\b/.test(text) && !/\b(react|next\.?js|vite|frontend)\b/.test(text)) {
+    return 'node-app'
+  }
+  return 'react-app'
 }
 
 function getEasyCodeProviderConfigurationSummary() {
@@ -2698,6 +2713,405 @@ ${summary}
   }
 }
 
+function createGuaranteedReactAppFallback(prompt: string, title = inferStaticSiteTitle(prompt), reason = 'AI generation was unavailable, so'): EasyCodeAiResult {
+  const safeTitle = title.replace(/[^a-zA-Z0-9\s-]/g, '').trim() || 'Easy Code App'
+  const slug = safeTitle.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'easy-code-app'
+  const summary = `${reason} Easy Code created a React starter workspace you can run locally and keep refining.`
+  const packageJson = `{
+  "name": "${slug}",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.1",
+    "vite": "^5.4.10"
+  }
+}
+`
+  const viteConfig = `import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
+
+export default defineConfig({
+  plugins: [react()],
+})
+`
+  const indexHtml = `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>${escapeHtml(safeTitle)}</title>
+    <meta name="description" content="${escapeHtml(prompt.slice(0, 140))}" />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>
+`
+  const appJsx = `import './styles.css'
+
+const focusAreas = [
+  'Clear product positioning',
+  'Proof points and feature framing',
+  'Actionable next steps for follow-up edits',
+]
+
+export default function App() {
+  return (
+    <div className="page-shell">
+      <header className="hero">
+        <p className="eyebrow">React starter</p>
+        <h1>${safeTitle}</h1>
+        <p className="lead">
+          This local fallback keeps the project usable even when provider generation fails.
+          It is structured for fast iteration instead of leaving you with an empty workspace.
+        </p>
+        <div className="actions">
+          <a className="button primary" href="#roadmap">Review roadmap</a>
+          <a className="button secondary" href="#notes">Edit content</a>
+        </div>
+      </header>
+
+      <main className="content-grid">
+        <section className="card">
+          <p className="section-label">Prompt</p>
+          <h2>Requested project</h2>
+          <p>${escapeHtml(prompt)}</p>
+        </section>
+
+        <section className="card" id="roadmap">
+          <p className="section-label">Build next</p>
+          <h2>Immediate focus areas</h2>
+          <ul className="list">
+            {focusAreas.map((item) => <li key={item}>{item}</li>)}
+          </ul>
+        </section>
+
+        <section className="card" id="notes">
+          <p className="section-label">Starter notes</p>
+          <h2>How to extend this app</h2>
+          <p>Replace this shell with real routes, feature modules, API calls, or domain logic based on your product requirements.</p>
+        </section>
+      </main>
+    </div>
+  )
+}
+`
+  const mainJsx = `import React from 'react'
+import ReactDOM from 'react-dom/client'
+import App from './App'
+
+ReactDOM.createRoot(document.getElementById('root')).render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>,
+)
+`
+  const stylesCss = `:root {
+  color-scheme: dark;
+  font-family: "Segoe UI", sans-serif;
+  background: #09111d;
+  color: #f7f9fc;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at top left, rgba(43, 152, 255, 0.3), transparent 30%),
+    linear-gradient(180deg, #08111b 0%, #0e1a2a 100%);
+}
+
+a { color: inherit; text-decoration: none; }
+
+.page-shell {
+  width: min(1100px, calc(100% - 2rem));
+  margin: 0 auto;
+  padding: 3rem 0 4rem;
+}
+
+.hero,
+.card {
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 28px;
+  background: rgba(8, 16, 28, 0.76);
+  backdrop-filter: blur(14px);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.28);
+}
+
+.hero {
+  padding: 2.5rem;
+}
+
+.eyebrow,
+.section-label {
+  display: inline-flex;
+  border-radius: 999px;
+  padding: 0.45rem 0.8rem;
+  background: rgba(95, 182, 255, 0.14);
+  color: #d8efff;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+h1,
+h2 {
+  margin: 1rem 0 0.75rem;
+  line-height: 1;
+}
+
+h1 { font-size: clamp(2.8rem, 8vw, 4.8rem); }
+h2 { font-size: 1.5rem; }
+
+.lead,
+.card p,
+.list {
+  color: #b3c2d7;
+  line-height: 1.7;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.9rem;
+  margin-top: 1.4rem;
+}
+
+.button {
+  border-radius: 999px;
+  padding: 0.9rem 1.2rem;
+  font-weight: 700;
+}
+
+.primary {
+  background: linear-gradient(135deg, #7ee3ff, #43a3ff);
+  color: #05111c;
+}
+
+.secondary {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.content-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.card {
+  padding: 1.5rem;
+}
+
+.list {
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
+@media (max-width: 860px) {
+  .content-grid {
+    grid-template-columns: 1fr;
+  }
+}
+`
+  const readme = `# ${safeTitle}
+
+${summary}
+
+## Stack
+
+- React
+- Vite
+
+## Run locally
+
+1. npm install
+2. npm run dev
+
+## Files
+
+- index.html
+- src/main.jsx
+- src/App.jsx
+- src/styles.css
+- vite.config.js
+
+Use this starter as a reliable base, then keep refining the product structure inside Easy Code.
+`
+
+  return {
+    summary,
+    title: safeTitle,
+    framework: 'react',
+    previewType: 'unsupported',
+    instructions: ['Run `npm install`.', 'Start the app with `npm run dev`.'],
+    files: [
+      { path: 'package.json', language: 'json', content: packageJson, operation: 'create' },
+      { path: 'vite.config.js', language: 'javascript', content: viteConfig, operation: 'create' },
+      { path: 'index.html', language: 'html', content: indexHtml, operation: 'create' },
+      { path: 'src/main.jsx', language: 'jsx', content: mainJsx, operation: 'create' },
+      { path: 'src/App.jsx', language: 'jsx', content: appJsx, operation: 'create' },
+      { path: 'src/styles.css', language: 'css', content: stylesCss, operation: 'create' },
+      { path: 'README.md', language: 'markdown', content: readme, operation: 'create' },
+    ],
+  }
+}
+
+function createGuaranteedNodeAppFallback(prompt: string, title = inferStaticSiteTitle(prompt), reason = 'AI generation was unavailable, so'): EasyCodeAiResult {
+  const safeTitle = title.replace(/[^a-zA-Z0-9\s-]/g, '').trim() || 'Easy Code Server'
+  const slug = safeTitle.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'easy-code-server'
+  const summary = `${reason} Easy Code created a Node starter you can run locally and extend.`
+  const packageJson = `{
+  "name": "${slug}",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js"
+  }
+}
+`
+  const serverJs = `import http from 'node:http'
+
+const port = Number(process.env.PORT || 3001)
+
+const server = http.createServer((request, response) => {
+  const body = {
+    name: ${JSON.stringify(safeTitle)},
+    message: 'Easy Code created a reliable Node fallback starter.',
+    prompt: ${JSON.stringify(prompt)},
+    path: request.url,
+    method: request.method,
+    generatedAt: new Date().toISOString(),
+  }
+
+  response.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' })
+  response.end(JSON.stringify(body, null, 2))
+})
+
+server.listen(port, () => {
+  console.log('${safeTitle} running on http://localhost:' + port)
+})
+`
+  const envExample = `PORT=3001
+`
+  const readme = `# ${safeTitle}
+
+${summary}
+
+## Run locally
+
+1. Copy \`.env.example\` to \`.env\` if needed.
+2. npm run dev
+
+## What this starter gives you
+
+- A working HTTP server with zero external runtime dependencies
+- A JSON health response you can evolve into routes, controllers, or an API layer
+- A stable fallback instead of a failed Easy Code project
+`
+
+  return {
+    summary,
+    title: safeTitle,
+    framework: 'node',
+    previewType: 'unsupported',
+    instructions: ['Run `npm run dev` to start the local server.', 'Replace the placeholder JSON route with real endpoints.'],
+    files: [
+      { path: 'package.json', language: 'json', content: packageJson, operation: 'create' },
+      { path: '.env.example', language: 'text', content: envExample, operation: 'create' },
+      { path: 'src/server.js', language: 'javascript', content: serverJs, operation: 'create' },
+      { path: 'README.md', language: 'markdown', content: readme, operation: 'create' },
+    ],
+  }
+}
+
+function createGuaranteedPythonAppFallback(prompt: string, title = inferStaticSiteTitle(prompt), reason = 'AI generation was unavailable, so'): EasyCodeAiResult {
+  const safeTitle = title.replace(/[^a-zA-Z0-9\s-]/g, '').trim() || 'Easy Code Python App'
+  const summary = `${reason} Easy Code created a Python starter you can run immediately and adapt.`
+  const mainPy = `from dataclasses import dataclass, asdict
+import json
+
+
+@dataclass
+class ProjectPlan:
+    title: str
+    prompt: str
+    status: str
+    next_steps: list[str]
+
+
+def build_plan() -> ProjectPlan:
+    return ProjectPlan(
+        title=${JSON.stringify(safeTitle)},
+        prompt=${JSON.stringify(prompt)},
+        status="starter_ready",
+        next_steps=[
+            "Replace this plan with domain logic.",
+            "Split features into modules once the shape is clear.",
+            "Add tests around the first real workflow.",
+        ],
+    )
+
+
+if __name__ == "__main__":
+    print(json.dumps(asdict(build_plan()), indent=2))
+`
+  const requirements = `# Add runtime packages here if this project grows beyond the starter.
+`
+  const readme = `# ${safeTitle}
+
+${summary}
+
+## Run locally
+
+1. python main.py
+
+## What this starter gives you
+
+- A working Python entrypoint
+- A structured data model for the generated project plan
+- A safe fallback you can extend into scripts, automations, or an API backend
+`
+
+  return {
+    summary,
+    title: safeTitle,
+    framework: 'python',
+    previewType: 'unsupported',
+    instructions: ['Run `python main.py`.', 'Replace the starter plan object with your actual workflow.'],
+    files: [
+      { path: 'main.py', language: 'python', content: mainPy, operation: 'create' },
+      { path: 'requirements.txt', language: 'text', content: requirements, operation: 'create' },
+      { path: 'README.md', language: 'markdown', content: readme, operation: 'create' },
+    ],
+  }
+}
+
+function createGuaranteedProjectFallback(prompt: string, reason = 'AI generation was unavailable, so'): EasyCodeAiResult {
+  const title = inferStaticSiteTitle(prompt)
+  const kind = inferEasyCodeLocalFallbackKind(prompt)
+  if (kind === 'static-site') return createGuaranteedStaticWebsiteFallback(prompt, title, reason)
+  if (kind === 'python-app') return createGuaranteedPythonAppFallback(prompt, title, reason)
+  if (kind === 'node-app') return createGuaranteedNodeAppFallback(prompt, title, reason)
+  return createGuaranteedReactAppFallback(prompt, title, reason)
+}
+
 export function sanitizeEasyCodePrompt(input: unknown): string {
   if (typeof input !== 'string') return ''
   return input.replace(/\s+/g, ' ').trim().slice(0, EASY_CODE_MAX_PROMPT_LENGTH)
@@ -3932,20 +4346,33 @@ export async function runEasyCodeInitialGeneration(userId: string, projectId: st
       fallbackReason: hadSuccessfulAiResponse ? message : null,
       finalGenerationMode: 'failed',
     })
-    const allowStaticFallback = staticLandingPage && errorCategory !== 'save_failed' && !hadSuccessfulAiResponse
-    if (allowStaticFallback) {
+    const allowLocalFallback = errorCategory !== 'save_failed' && (
+      !hadSuccessfulAiResponse ||
+      errorCategory === 'invalid_json' ||
+      errorCategory === 'generation_incomplete' ||
+      errorCategory === 'no_usable_content' ||
+      errorCategory === 'provider_not_configured' ||
+      errorCategory === 'provider_auth' ||
+      errorCategory === 'deployment_not_found' ||
+      errorCategory === 'provider_busy' ||
+      errorCategory === 'provider_unavailable' ||
+      errorCategory === 'timeout' ||
+      errorCategory === 'unknown'
+    )
+    if (allowLocalFallback) {
       try {
         const db = await getDb()
         const fallbackReason = getEasyCodeFallbackSummaryLead(error)
-        const fallbackResult = createGuaranteedStaticWebsiteFallback(cleanPrompt, inferStaticSiteTitle(cleanPrompt), fallbackReason)
+        const fallbackResult = createGuaranteedProjectFallback(cleanPrompt, fallbackReason)
         const fallbackFiles = fallbackResult.files.map(file => file.path)
+        const fallbackKind = fallbackResult.framework === 'html' ? 'static_site' : 'generic'
         const fallbackDiagnostics = [
           ...errorDiagnostics,
           buildEasyCodeProviderDiagnostics('fallback', 'create', null, error, {
             fallbackUsed: true,
             safeReason: getEasyCodeSafeReason(error),
             timeoutHit: isTimeoutError(error),
-            safeCode: 'static_fallback_used',
+            safeCode: 'local_scaffold_fallback_used',
           }),
         ]
         const fallbackOutcome = buildEasyCodeGenerationOutcome(fallbackDiagnostics, {
@@ -3953,9 +4380,9 @@ export async function runEasyCodeInitialGeneration(userId: string, projectId: st
           fallbackReason: message,
           finalGenerationMode: 'provider_fallback',
         })
-        recordEasyCodeFallbackUsage(fallbackResult.summary, 'static_fallback_used')
+        recordEasyCodeFallbackUsage(fallbackResult.summary, 'local_scaffold_fallback_used')
 
-        console.warn('[Easy Code] Static fallback starting', {
+        console.warn('[Easy Code] Local fallback starting', {
           projectId,
           phase: 'create',
           promptType,
@@ -3976,15 +4403,15 @@ export async function runEasyCodeInitialGeneration(userId: string, projectId: st
           status: 'generating',
           phase: 'saving_files',
           error: null,
-          metadata: withEasyCodeDiagnostics(buildEasyCodeProgress('saving_files', fallbackFiles, null, 'static_site'), fallbackDiagnostics, 'fallback', fallbackOutcome),
+          metadata: withEasyCodeDiagnostics(buildEasyCodeProgress('saving_files', fallbackFiles, null, fallbackKind), fallbackDiagnostics, 'fallback', fallbackOutcome),
         })
         await applyEasyCodeAiResult(userId, projectId, fallbackResult)
         const savedFiles = await getEasyCodeFiles(userId, projectId)
-        const readiness = getEasyCodeReadiness(savedFiles, { ...project, framework: 'html' })
-        const missingStarterFiles = getMissingStaticStarterFiles(savedFiles)
+        const readiness = getEasyCodeReadiness(savedFiles, { ...project, framework: fallbackResult.framework || project.framework })
+        const missingStarterFiles = fallbackResult.framework === 'html' ? getMissingStaticStarterFiles(savedFiles) : []
         const savedPaths = savedFiles.map((file) => file.path.toLowerCase())
 
-        console.info('[Easy Code] Static fallback saved files', {
+        console.info('[Easy Code] Local fallback saved files', {
           projectId,
           phase: 'create',
           promptType,
@@ -4027,7 +4454,7 @@ export async function runEasyCodeInitialGeneration(userId: string, projectId: st
           error: null,
           metadata: {
             ...withEasyCodeDiagnostics(
-              buildEasyCodeProgress('complete', fallbackFiles, null, 'static_site'),
+              buildEasyCodeProgress('complete', fallbackFiles, null, fallbackKind),
               fallbackDiagnostics,
               'fallback',
               fallbackOutcome
@@ -4035,7 +4462,7 @@ export async function runEasyCodeInitialGeneration(userId: string, projectId: st
             warning: fallbackResult.summary,
           },
           title: fallbackResult.title || project.title,
-          framework: 'html',
+          framework: fallbackResult.framework || project.framework,
           lastGeneratedAt: new Date().toISOString(),
         })
 
@@ -4044,7 +4471,7 @@ export async function runEasyCodeInitialGeneration(userId: string, projectId: st
           getEasyCodeFiles(userId, projectId),
           getEasyCodeMessages(userId, projectId),
         ])
-        console.info('[Easy Code] Status set ready after static fallback', {
+        console.info('[Easy Code] Status set ready after local fallback', {
           projectId,
           phase: 'create',
           promptType,
@@ -4057,7 +4484,7 @@ export async function runEasyCodeInitialGeneration(userId: string, projectId: st
         })
         return { project: freshProject, files: freshFiles, messages: freshMessages, aiResult: fallbackResult, fallbackUsed: true, diagnostics: fallbackDiagnostics, providerUsed: 'fallback' }
       } catch (fallbackError: any) {
-        console.error('[Easy Code] Static fallback failed', {
+        console.error('[Easy Code] Local fallback failed', {
           projectId,
           message: fallbackError?.message,
           originalMessage: message,
@@ -4461,6 +4888,75 @@ export async function runEasyCodeEdit(userId: string, projectId: string, instruc
   } catch (error: any) {
     const errorDiagnostics: EasyCodeAiDiagnostics[] = Array.isArray(error?.easyCodeDiagnostics) ? error.easyCodeDiagnostics : []
     const safeReason = getEasyCodeSafeReason(error)
+    const errorCategory = categorizeEasyCodeError(error)
+    const allowStaticFallback = staticProjectEdit && errorCategory !== 'save_failed'
+    if (allowStaticFallback) {
+      try {
+        const fallbackReason = getEasyCodeFallbackSummaryLead(error)
+        const fallbackResult = buildFallbackStaticEdit(files, cleanInstruction, fallbackReason)
+        const fallbackDiagnostics = [
+          ...errorDiagnostics,
+          buildEasyCodeProviderDiagnostics('fallback', 'edit', null, error, {
+            fallbackUsed: true,
+            safeReason: getEasyCodeSafeReason(error),
+            timeoutHit: isTimeoutError(error),
+            safeCode: 'local_static_edit_fallback_used',
+          }),
+        ]
+        await updateEasyCodeGenerationState(userId, projectId, {
+          status: 'generating',
+          phase: 'saving_files',
+          error: null,
+          metadata: withEasyCodeDiagnostics(
+            buildEasyCodeProgress('saving_files', fallbackResult.files.map(file => file.path), null, 'static_site'),
+            fallbackDiagnostics,
+            'fallback'
+          ),
+        })
+        await applyEasyCodeAiResult(userId, projectId, fallbackResult)
+        await db.from('easy_code_messages').insert({
+          project_id: projectId,
+          user_id: userId,
+          role: 'assistant',
+          content: fallbackResult.summary,
+          metadata: {
+            instructions: fallbackResult.instructions,
+            changedFiles: fallbackResult.files.map(file => ({ path: file.path, operation: file.operation })),
+            previewType: fallbackResult.previewType,
+            fallbackUsed: true,
+            fallbackReason,
+            generationDiagnostics: {
+              providerUsed: 'fallback',
+              attempts: fallbackDiagnostics,
+            },
+          },
+        })
+        await updateEasyCodeGenerationState(userId, projectId, {
+          status: 'ready',
+          phase: 'complete',
+          error: null,
+          metadata: withEasyCodeDiagnostics(
+            buildEasyCodeProgress('complete', fallbackResult.files.map(file => file.path), null, 'static_site'),
+            fallbackDiagnostics,
+            'fallback'
+          ),
+          lastGeneratedAt: new Date().toISOString(),
+        })
+        recordEasyCodeFallbackUsage(fallbackResult.summary, 'local_static_edit_fallback_used')
+        const [freshProject, freshFiles, freshMessages] = await Promise.all([
+          getEasyCodeProject(userId, projectId),
+          getEasyCodeFiles(userId, projectId),
+          getEasyCodeMessages(userId, projectId),
+        ])
+        return { project: freshProject, files: freshFiles, messages: freshMessages, aiResult: fallbackResult, diagnostics: fallbackDiagnostics, providerUsed: 'fallback' }
+      } catch (fallbackError: any) {
+        console.error('[Easy Code] Static edit fallback failed', {
+          projectId,
+          message: fallbackError?.message,
+          originalMessage: error?.message,
+        })
+      }
+    }
     const message = safeReason === 'timed out'
       ? 'timed out'
       : safeReason === 'provider not configured'
@@ -4491,7 +4987,7 @@ export async function runEasyCodeEdit(userId: string, projectId: string, instruc
       promptType,
       message,
       timeoutHit: isTimeoutError(error),
-      errorCategory: categorizeEasyCodeError(error),
+      errorCategory,
       fallbackUsed: false,
       existingFilesPreserved: true,
       finalStatus: 'ready',

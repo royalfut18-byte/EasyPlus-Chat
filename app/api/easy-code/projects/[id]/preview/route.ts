@@ -13,6 +13,14 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
     const project = await getEasyCodeProject(user.id, id)
     if (!project) return NextResponse.json({ error: 'Project not found.' }, { status: 404 })
     const files = await getEasyCodeFiles(user.id, id)
+    const previewEligible = project.framework === 'html' || (
+      files.some((file) => file.path.toLowerCase() === 'index.html') &&
+      files.some((file) => file.path.toLowerCase() === 'styles.css') &&
+      files.some((file) => file.path.toLowerCase() === 'script.js')
+    )
+    if (!previewEligible) {
+      return NextResponse.json({ previewType: 'unsupported', message: 'Preview is unavailable for this project type.' })
+    }
     const html = buildStaticPreviewHtml(files)
     if (!html) {
       return NextResponse.json({ previewType: 'unsupported', message: 'Preview is unavailable for this project type.' })

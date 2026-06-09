@@ -103,7 +103,11 @@ export function EasyCodeWorkspaceClient({
 
   const selectedFile = useMemo(() => files.find(file => file.path === selectedPath) || null, [files, selectedPath])
   const hasUnsavedChanges = selectedFile ? draft !== selectedFile.content : false
-  const hasStaticPreview = files.some(file => file.path.toLowerCase() === 'index.html')
+  const hasStaticPreview = project.framework === 'html' || (
+    files.some(file => file.path.toLowerCase() === 'index.html') &&
+    files.some(file => file.path.toLowerCase() === 'styles.css') &&
+    files.some(file => file.path.toLowerCase() === 'script.js')
+  )
   const meaningfulFiles = files.filter(file => file.path.toLowerCase() !== 'readme.md' && file.content.trim().length > 0)
   const latestAssistant = [...messages].reverse().find(message => message.role === 'assistant')
   const generationStatus = project.generation_status || (files.length > 0 ? 'ready' : 'idle')
