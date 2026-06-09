@@ -338,7 +338,7 @@ export async function streamAzureDeepSeekResponse(
             .map((message) => ({ role: message.role, content: message.content || '' })),
         ],
         temperature,
-        max_tokens: Math.min(maxTokens, 4096),
+        max_tokens: Math.min(maxTokens, 8192),
         stream: true,
       }),
       signal: controller.signal,

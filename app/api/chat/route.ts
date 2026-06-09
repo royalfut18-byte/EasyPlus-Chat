@@ -235,6 +235,55 @@ function mergeMessageAttachments(
   return merged.length > 0 ? merged : undefined
 }
 
+function isTransformationRequest(message: string): boolean {
+  const lower = String(message || '').toLowerCase()
+  if (!lower.trim()) return false
+
+  const transformSignals = [
+    'rewrite',
+    'restructure',
+    'reword',
+    'edit this',
+    'change this essay',
+    'continue this',
+    'finish this essay',
+    'turn this into',
+    'use these bodies',
+    'fix this essay',
+    'improve this essay',
+  ]
+
+  const explicitResearchSignals = [
+    'find quotes',
+    'find statistics',
+    'research',
+    'look up',
+    'search for',
+    'use sources',
+    'with sources',
+    'with citations',
+    'latest',
+    'current',
+  ]
+
+  const hasTransformSignal = transformSignals.some((signal) => lower.includes(signal))
+  const hasEssayStructureSignal =
+    /\bb1\b|\bb2\b|\bb3\b|\bb4\b/.test(lower) ||
+    lower.includes('body paragraph') ||
+    lower.includes('essay') ||
+    lower.includes('introduction') ||
+    lower.includes('conclusion')
+  const looksLikePastedDraft =
+    message.length > 900 ||
+    (message.match(/\n/g) || []).length >= 8
+
+  if (explicitResearchSignals.some((signal) => lower.includes(signal))) {
+    return false
+  }
+
+  return (hasTransformSignal && hasEssayStructureSignal) || (hasTransformSignal && looksLikePastedDraft)
+}
+
 export async function POST(request: NextRequest) {
   const startTime = Date.now()
   let stage = 'init'
@@ -496,8 +545,11 @@ export async function POST(request: NextRequest) {
 
     // Stage: Web search (respect reasoning profile)
     stage = 'web-search'
-    const shouldSearch = (webSearchEnabled === true && reasoningProfile.enableWebSearch !== false) ||
+    const transformationRequest = isTransformationRequest(latestUserMessage.content)
+    const shouldSearch = !transformationRequest && (
+      (webSearchEnabled === true && reasoningProfile.enableWebSearch !== false) ||
       (reasoningProfile.enableWebSearch && isTimeSensitiveQuery(latestUserMessage.content) && !!process.env.TAVILY_API_KEY)
+    )
 
     let webSearchPerformed = false
     let webSearchFailed = false

@@ -248,6 +248,14 @@ IMAGE ANALYSIS:
 - Example: if an attached hand image visibly shows six fingers, answer six fingers, not five.`
   }
 
+  prompt += `
+
+REWRITE AND EDIT RULES:
+- If the user provides their own essay, paragraph, notes, scaffold, or draft and asks you to rewrite, restructure, continue, or improve it, treat that as a transformation task.
+- For transformation tasks, follow the requested structure exactly and prioritise rewriting the supplied material before adding commentary.
+- Do not switch into web-research mode, source-hunting mode, or citation mode unless the user explicitly asks for new research, quotes, statistics, or sources.
+- If the task is long, finish as much of the requested rewrite as possible before adding any optional explanation.`
+
   return prompt
 }
 
