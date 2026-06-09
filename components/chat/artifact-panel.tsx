@@ -695,6 +695,111 @@ function normalizePresentationPreviewSpec(title: string, content: string): {
   }
 }
 
+function renderMarkdownTableHtml(lines: string[]): string {
+  const rows = lines
+    .filter(line => !isMarkdownTableSeparator(line))
+    .map(markdownTableCells)
+    .filter(row => row.length > 0)
+
+  if (!rows.length) return ''
+
+  const columnCount = Math.max(...rows.map(row => row.length), 1)
+  const normalizedRows = rows.map((row) => Array.from({ length: columnCount }, (_, index) => row[index] || ''))
+  const [headerRow, ...bodyRows] = normalizedRows
+  const headerHtml = `<thead><tr>${headerRow.map((cell) => `<th>${escapeXml(cell)}</th>`).join('')}</tr></thead>`
+  const bodyHtml = bodyRows.length > 0
+    ? `<tbody>${bodyRows.map((row) => `<tr>${row.map((cell) => `<td>${escapeXml(cell)}</td>`).join('')}</tr>`).join('')}</tbody>`
+    : ''
+
+  return `<div class="doc-table-wrap"><table class="doc-table">${headerHtml}${bodyHtml}</table></div>`
+}
+
+function renderMarkdownPreviewBlocks(content: string): string {
+  const lines = content.replace(/\r\n/g, '\n').split('\n')
+  const blocks: string[] = []
+  let index = 0
+
+  while (index < lines.length) {
+    const line = lines[index]
+    const trimmed = line.trim()
+
+    if (!trimmed) {
+      index += 1
+      continue
+    }
+
+    if (
+      isMarkdownTableRow(line) &&
+      index + 1 < lines.length &&
+      isMarkdownTableSeparator(lines[index + 1])
+    ) {
+      const tableLines = [line]
+      index += 1
+
+      while (index < lines.length && (isMarkdownTableRow(lines[index]) || isMarkdownTableSeparator(lines[index]))) {
+        tableLines.push(lines[index])
+        index += 1
+      }
+
+      blocks.push(renderMarkdownTableHtml(tableLines))
+      continue
+    }
+
+    if (/^###\s+/.test(trimmed)) {
+      blocks.push(`<h3>${escapeXml(trimmed.replace(/^###\s+/, ''))}</h3>`)
+      index += 1
+      continue
+    }
+
+    if (/^##\s+/.test(trimmed)) {
+      blocks.push(`<h2>${escapeXml(trimmed.replace(/^##\s+/, ''))}</h2>`)
+      index += 1
+      continue
+    }
+
+    if (/^#\s+/.test(trimmed)) {
+      blocks.push(`<h1>${escapeXml(trimmed.replace(/^#\s+/, ''))}</h1>`)
+      index += 1
+      continue
+    }
+
+    if (/^[-*]\s+/.test(trimmed)) {
+      const items: string[] = []
+      while (index < lines.length && /^[-*]\s+/.test(lines[index].trim())) {
+        items.push(`<li>${escapeXml(lines[index].trim().replace(/^[-*]\s+/, ''))}</li>`)
+        index += 1
+      }
+      blocks.push(`<ul>${items.join('')}</ul>`)
+      continue
+    }
+
+    const paragraphLines = [trimmed]
+    index += 1
+    while (index < lines.length) {
+      const candidate = lines[index].trim()
+      if (
+        !candidate ||
+        /^#{1,3}\s+/.test(candidate) ||
+        /^[-*]\s+/.test(candidate) ||
+        (
+          isMarkdownTableRow(lines[index]) &&
+          index + 1 < lines.length &&
+          isMarkdownTableSeparator(lines[index + 1])
+        )
+      ) {
+        break
+      }
+
+      paragraphLines.push(candidate)
+      index += 1
+    }
+
+    blocks.push(`<p>${escapeXml(paragraphLines.join('\n')).replace(/\n/g, '<br />')}</p>`)
+  }
+
+  return blocks.join('\n')
+}
+
 function createMarkdownPreviewHtml(title: string, content: string): string {
   const documentSpec = normalizeDocumentPreviewSpec(title, content)
   if (documentSpec) {
@@ -746,21 +851,7 @@ function createMarkdownPreviewHtml(title: string, content: string): string {
     </style>`)
   }
 
-  const html = content
-    .split(/\n{2,}/)
-    .map(block => {
-      const trimmed = block.trim()
-      if (!trimmed) return ''
-      if (/^###\s+/.test(trimmed)) return `<h3>${escapeXml(trimmed.replace(/^###\s+/, ''))}</h3>`
-      if (/^##\s+/.test(trimmed)) return `<h2>${escapeXml(trimmed.replace(/^##\s+/, ''))}</h2>`
-      if (/^#\s+/.test(trimmed)) return `<h1>${escapeXml(trimmed.replace(/^#\s+/, ''))}</h1>`
-      if (/^[-*]\s+/m.test(trimmed)) {
-        const items = trimmed.split(/\n/).filter(Boolean).map(line => `<li>${escapeXml(line.replace(/^[-*]\s+/, ''))}</li>`).join('')
-        return `<ul>${items}</ul>`
-      }
-      return `<p>${escapeXml(trimmed).replace(/\n/g, '<br />')}</p>`
-    })
-    .join('\n')
+  const html = renderMarkdownPreviewBlocks(content)
 
   return createPreviewHtml(title, `<main class="markdown-preview">${html}</main><style>
     body { margin: 0; background: #0f172a; color: #e5e7eb; font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
@@ -768,6 +859,11 @@ function createMarkdownPreviewHtml(title: string, content: string): string {
     h1, h2, h3 { color: #fff; line-height: 1.2; margin: 1.2em 0 .5em; }
     h1 { font-size: 2.4rem; } h2 { font-size: 1.7rem; } h3 { font-size: 1.25rem; }
     p, li { font-size: 1rem; } ul { padding-left: 1.4rem; }
+    .doc-table-wrap { overflow-x: auto; margin: 1.25rem 0; border-radius: 14px; border: 1px solid rgba(148,163,184,.28); }
+    .doc-table { width: 100%; border-collapse: collapse; background: rgba(15,23,42,.72); }
+    .doc-table th, .doc-table td { padding: 12px 14px; border: 1px solid rgba(148,163,184,.2); text-align: left; vertical-align: top; }
+    .doc-table th { background: rgba(255,255,255,.08); color: #fff; font-weight: 700; }
+    .doc-table td { color: #dbeafe; }
   </style>`)
 }
 
