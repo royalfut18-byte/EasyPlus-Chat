@@ -597,6 +597,7 @@ export default function ChatPage() {
   const webSearchEnabledAtSendRef = useRef(false)
   const abortControllerRef = useRef<AbortController | null>(null)
   const selectedConversationIdRef = useRef<string | null>(null)
+  const pendingUrlConversationIdRef = useRef<string | null | undefined>(undefined)
   const conversationRequestSeqRef = useRef(0)
   const pendingResponsesRef = useRef<Record<string, PendingResponse>>({})
   const modelAvailabilityFetchStartedRef = useRef(false)
@@ -653,6 +654,11 @@ export default function ChatPage() {
       const { [conversationId]: __, ...remaining } = prev
       return remaining
     })
+  }
+
+  const replaceChatUrl = (targetProjectId?: string | null, targetConversationId?: string | null) => {
+    pendingUrlConversationIdRef.current = targetConversationId ?? null
+    router.replace(buildChatUrl(targetProjectId, targetConversationId), { scroll: false })
   }
 
   useEffect(() => {
@@ -733,6 +739,15 @@ export default function ChatPage() {
   }, [availableModelIdsForDefaults, currentConversation, isCreatingConversation, isLoading])
 
   useEffect(() => {
+    const normalizedQueryConversationId = queryConversationId || null
+
+    if (pendingUrlConversationIdRef.current !== undefined) {
+      if (normalizedQueryConversationId !== pendingUrlConversationIdRef.current) {
+        return
+      }
+      pendingUrlConversationIdRef.current = undefined
+    }
+
     if (!queryConversationId || conversations.length === 0) return
     if (selectedConversationIdRef.current === queryConversationId) return
     if (!conversations.some(conversation => conversation.id === queryConversationId)) return
@@ -1062,8 +1077,7 @@ export default function ChatPage() {
     if (!currentConversation && messages.length === 0 && generatedImages.length === 0) {
       setSelectedModel(getPreferredDefaultModelId(availableModelIdsForDefaults))
       setReasoningMode('instant')
-      const targetUrl = buildChatUrl(projectId || null, null)
-      router.replace(targetUrl, { scroll: false })
+      replaceChatUrl(projectId || null, null)
       return
     }
 
@@ -1080,7 +1094,7 @@ export default function ChatPage() {
     setImageConversationId(null)
     setSelectedModel(getPreferredDefaultModelId(availableModelIdsForDefaults))
     setReasoningMode('instant')
-    router.replace(buildChatUrl(projectId || null, null), { scroll: false })
+    replaceChatUrl(projectId || null, null)
   }
 
   const handleSelectConversation = async (id: string) => {
@@ -1098,7 +1112,7 @@ export default function ChatPage() {
 
     // IMMEDIATELY update UI
     setCurrentConversation(conv)
-    router.replace(buildChatUrl(conv.project_id || projectId || null, conv.id), { scroll: false })
+    replaceChatUrl(conv.project_id || projectId || null, conv.id)
     setSelectedModel(conv.model_used)
     setImageConversationId(conv.model_used === 'image-generation' ? conv.id : null)
     setReasoningMode(conv.reasoning_mode || 'instant')
@@ -1379,7 +1393,7 @@ export default function ChatPage() {
 
         // Mark this as the selected conversation
         selectedConversationIdRef.current = conversation!.id
-        router.replace(buildChatUrl(conversation!.project_id || projectId || null, conversation!.id), { scroll: false })
+        replaceChatUrl(conversation!.project_id || projectId || null, conversation!.id)
 
         // Update user message with real conversation ID
         const updatedUserMessage = { ...userMessage, conversation_id: conversation!.id }
