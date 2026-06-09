@@ -1004,6 +1004,7 @@ RULES FOR USING THESE RESULTS:
       hasSearchResults,
       hasImageAttachments: hasCurrentImageAttachments,
       memoryContext: fullContextPrompt || memoryContext,
+      latestUserMessage: latestUserMessage.content,
     })
 
     if (longTask) {
