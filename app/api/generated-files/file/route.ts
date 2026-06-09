@@ -38,8 +38,9 @@ export async function POST(request: NextRequest) {
       ? body.content
       : JSON.stringify(body?.content || {}, null, 2)
     const conversationId = safeString(body?.conversationId) || null
-    const projectId = safeString(body?.projectId) || null
+    const requestedProjectId = safeString(body?.projectId) || null
     const requestId = safeString(body?.requestId) || null
+    let projectId = requestedProjectId
 
     let assistantMessageId: string | null = null
     if (conversationId) {
@@ -55,9 +56,11 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'Conversation not found.' }, { status: 404 })
       }
 
-      if ((conversation.project_id || null) !== projectId) {
+      const conversationProjectId = conversation.project_id || null
+      if (requestedProjectId && conversationProjectId !== requestedProjectId) {
         return NextResponse.json({ error: 'Project does not match this conversation.' }, { status: 403 })
       }
+      projectId = requestedProjectId || conversationProjectId
 
       if (requestId) {
         const { data: assistantMessage } = await db
@@ -219,4 +222,3 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: safeMessage }, { status: 500 })
   }
 }
-

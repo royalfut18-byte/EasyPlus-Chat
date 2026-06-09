@@ -111,7 +111,7 @@ function toBullets(value: unknown): string[] {
 
   return String(value || '')
     .split(/\r?\n/)
-    .map(item => item.replace(/^[-*•]\s*/, '').trim())
+    .map(item => item.replace(/^[-*\u2022â€¢]\s*/, '').trim())
     .filter(Boolean)
 }
 
@@ -160,7 +160,7 @@ function normalizePresentationSpec(title: string, content: string): Presentation
   const slides = (blocks.length > 0 ? blocks : [content]).map((block, index) => {
     const lines = block.split(/\r?\n/).map(line => line.trim()).filter(Boolean)
     const heading = lines[0]?.replace(/^#+\s*/, '').replace(/^slide\s*\d+\s*[:.-]\s*/i, '') || `${title} ${index + 1}`
-    const bullets = lines.slice(1).map(line => line.replace(/^[-*•]\s*/, '').trim()).filter(Boolean)
+    const bullets = lines.slice(1).map(line => line.replace(/^[-*\u2022â€¢]\s*/, '').trim()).filter(Boolean)
     return {
       title: heading,
       bullets: bullets.length > 0 ? bullets : [block.trim()],
@@ -259,8 +259,8 @@ function normalizeDocumentSpec(title: string, content: string): DocumentSpec {
       continue
     }
 
-    if (/^[-*•]\s+/.test(line)) {
-      current.bullets.push(line.replace(/^[-*•]\s+/, '').trim())
+    if (/^[-*\u2022â€¢]\s+/.test(line)) {
+      current.bullets.push(line.replace(/^[-*\u2022â€¢]\s+/, '').trim())
       index += 1
       continue
     }
@@ -588,7 +588,7 @@ async function generatePdfFile(kind: GeneratedFileKind, title: string, content: 
       })
     })
     section.bullets.forEach((bullet) => {
-      wrapPdfText(`• ${bullet}`, 88).forEach((line, index, lines) => {
+      wrapPdfText(`- ${bullet}`, 88).forEach((line, index, lines) => {
         addLine(line, { gapAfter: index === lines.length - 1 ? 14 : 12 })
       })
     })

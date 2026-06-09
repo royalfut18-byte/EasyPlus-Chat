@@ -539,7 +539,7 @@ export function EasyCodeWorkspaceClient({
             </div>
 
             <div className="rounded-2xl border border-white/[0.07] bg-[#101010] p-3">
-              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500">What's next?</p>
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500">What&apos;s next?</p>
               <div className="mt-2 flex flex-wrap gap-2">
                 {suggestedNextSteps.map(suggestion => (
                   <button

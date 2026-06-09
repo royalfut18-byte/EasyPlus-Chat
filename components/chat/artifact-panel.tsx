@@ -564,7 +564,188 @@ function createCanvaHtml(title: string, content: string): string {
 </html>`)
 }
 
+function parsePreviewJson(content: string): Record<string, any> | null {
+  const trimmed = content.trim()
+  if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) return null
+
+  try {
+    const parsed = JSON.parse(trimmed)
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? parsed as Record<string, any>
+      : null
+  } catch {
+    return null
+  }
+}
+
+function toPreviewParagraphs(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value
+      .map(item => String(item || '').trim())
+      .filter(Boolean)
+  }
+
+  return String(value || '')
+    .split(/\n{2,}/)
+    .map(item => item.trim())
+    .filter(Boolean)
+}
+
+function toPreviewBullets(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value
+      .map(item => String(item || '').trim())
+      .filter(Boolean)
+  }
+
+  return String(value || '')
+    .split(/\r?\n/)
+    .map(item => item.replace(/^[-*\u2022â€¢]\s*/, '').trim())
+    .filter(Boolean)
+}
+
+function normalizeDocumentPreviewSpec(title: string, content: string): {
+  title: string
+  subtitle?: string
+  sections: Array<{
+    heading?: string
+    paragraphs: string[]
+    bullets: string[]
+    table?: {
+      headers: string[]
+      rows: string[][]
+    }
+  }>
+} | null {
+  const parsed = parsePreviewJson(content)
+  if (!parsed || !Array.isArray(parsed.sections)) return null
+
+  const sections = parsed.sections
+    .map((section) => {
+      const record = section && typeof section === 'object' && !Array.isArray(section)
+        ? section as Record<string, any>
+        : {}
+
+      const rawTable = record.table && typeof record.table === 'object' && !Array.isArray(record.table)
+        ? record.table as Record<string, any>
+        : null
+
+      const table = rawTable && Array.isArray(rawTable.headers) && Array.isArray(rawTable.rows)
+        ? {
+            headers: rawTable.headers.map((item: unknown) => String(item || '').trim()).filter(Boolean),
+            rows: rawTable.rows
+              .map((row: unknown) => Array.isArray(row) ? row.map((item) => String(item || '').trim()) : [])
+              .filter((row: string[]) => row.length > 0),
+          }
+        : undefined
+
+      return {
+        heading: String(record.heading || record.title || '').trim() || undefined,
+        paragraphs: toPreviewParagraphs(record.paragraphs || record.content),
+        bullets: toPreviewBullets(record.bullets),
+        table,
+      }
+    })
+    .filter((section) => section.heading || section.paragraphs.length > 0 || section.bullets.length > 0 || section.table)
+
+  if (!sections.length) return null
+
+  return {
+    title: String(parsed.title || title || 'Document').trim() || 'Document',
+    subtitle: String(parsed.subtitle || '').trim() || undefined,
+    sections,
+  }
+}
+
+function normalizePresentationPreviewSpec(title: string, content: string): {
+  title: string
+  subtitle?: string
+  slides: Array<{
+    title: string
+    bullets: string[]
+  }>
+} | null {
+  const parsed = parsePreviewJson(content)
+  if (!parsed || !Array.isArray(parsed.slides)) return null
+
+  const slides = parsed.slides
+    .map((slide, index) => {
+      const record = slide && typeof slide === 'object' && !Array.isArray(slide)
+        ? slide as Record<string, any>
+        : {}
+
+      const bullets = [
+        ...toPreviewBullets(record.bullets),
+        ...toPreviewParagraphs(record.paragraphs),
+      ].filter(Boolean)
+
+      return {
+        title: String(record.title || '').trim() || `Slide ${index + 1}`,
+        bullets,
+      }
+    })
+    .filter((slide) => slide.title || slide.bullets.length > 0)
+
+  if (!slides.length) return null
+
+  return {
+    title: String(parsed.title || title || 'Presentation').trim() || 'Presentation',
+    subtitle: String(parsed.subtitle || '').trim() || undefined,
+    slides,
+  }
+}
+
 function createMarkdownPreviewHtml(title: string, content: string): string {
+  const documentSpec = normalizeDocumentPreviewSpec(title, content)
+  if (documentSpec) {
+    const sectionsHtml = documentSpec.sections.map((section) => {
+      const paragraphs = section.paragraphs
+        .map((paragraph) => `<p>${escapeXml(paragraph).replace(/\n/g, '<br />')}</p>`)
+        .join('')
+      const bullets = section.bullets.length > 0
+        ? `<ul>${section.bullets.map((bullet) => `<li>${escapeXml(bullet)}</li>`).join('')}</ul>`
+        : ''
+      const tableSpec = section.table
+      const table = tableSpec && tableSpec.headers.length > 0
+        ? `<div class="doc-table-wrap"><table class="doc-table"><thead><tr>${tableSpec.headers.map((header) => `<th>${escapeXml(header)}</th>`).join('')}</tr></thead><tbody>${tableSpec.rows.map((row) => `<tr>${tableSpec.headers.map((_, index) => `<td>${escapeXml(row[index] || '')}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`
+        : ''
+
+      return `<section class="doc-section">
+        ${section.heading ? `<h2>${escapeXml(section.heading)}</h2>` : ''}
+        ${paragraphs}
+        ${bullets}
+        ${table}
+      </section>`
+    }).join('')
+
+    return createPreviewHtml(documentSpec.title, `<main class="document-preview">
+      <header class="document-hero">
+        <span class="document-kicker">Document Artifact</span>
+        <h1>${escapeXml(documentSpec.title)}</h1>
+        ${documentSpec.subtitle ? `<p>${escapeXml(documentSpec.subtitle)}</p>` : ''}
+      </header>
+      ${sectionsHtml}
+    </main><style>
+      body { margin: 0; background: #f3efe7; color: #1f2937; font-family: Georgia, 'Times New Roman', serif; }
+      .document-preview { max-width: 960px; margin: 0 auto; padding: 36px 20px 72px; }
+      .document-hero, .doc-section { background: rgba(255,255,255,.92); border: 1px solid rgba(148,163,184,.24); box-shadow: 0 18px 40px rgba(15,23,42,.08); }
+      .document-hero { padding: 36px; border-radius: 28px; margin-bottom: 24px; }
+      .document-kicker { display: inline-block; font: 700 12px/1.2 ui-sans-serif, system-ui, sans-serif; letter-spacing: .14em; text-transform: uppercase; color: #9a3412; margin-bottom: 12px; }
+      .document-hero h1 { margin: 0; font-size: clamp(32px, 4.8vw, 54px); line-height: 1.05; color: #111827; }
+      .document-hero p { margin: 14px 0 0; font: 500 17px/1.6 ui-sans-serif, system-ui, sans-serif; color: #475569; }
+      .doc-section { padding: 28px 30px; border-radius: 24px; margin-bottom: 18px; }
+      .doc-section h2 { margin: 0 0 14px; font-size: 28px; line-height: 1.15; color: #0f172a; }
+      .doc-section p { margin: 0 0 14px; font-size: 18px; line-height: 1.75; }
+      .doc-section ul { margin: 0 0 14px; padding-left: 1.35rem; }
+      .doc-section li { margin: 0 0 10px; font-size: 18px; line-height: 1.65; }
+      .doc-table-wrap { overflow-x: auto; margin-top: 12px; }
+      .doc-table { width: 100%; border-collapse: collapse; font: 500 15px/1.45 ui-sans-serif, system-ui, sans-serif; }
+      .doc-table th, .doc-table td { padding: 12px 14px; border: 1px solid rgba(148,163,184,.28); text-align: left; vertical-align: top; }
+      .doc-table th { background: #e2e8f0; color: #0f172a; font-weight: 700; }
+      .doc-table td { background: #fff; color: #334155; }
+    </style>`)
+  }
+
   const html = content
     .split(/\n{2,}/)
     .map(block => {
@@ -591,6 +772,44 @@ function createMarkdownPreviewHtml(title: string, content: string): string {
 }
 
 function createPresentationPreviewHtml(title: string, content: string): string {
+  const presentationSpec = normalizePresentationPreviewSpec(title, content)
+  if (presentationSpec) {
+    const slides = presentationSpec.slides.map((slide, index) => {
+      const bullets = slide.bullets
+        .map(line => `<li>${escapeXml(line)}</li>`)
+        .join('')
+
+      return `<article class="slide-card">
+        <span class="slide-kicker">Slide ${index + 1}</span>
+        <h2>${escapeXml(slide.title)}</h2>
+        ${bullets ? `<ul>${bullets}</ul>` : '<p>No slide content provided.</p>'}
+      </article>`
+    }).join('')
+
+    return createPreviewHtml(presentationSpec.title, `<main class="deck-preview">
+      <section class="deck-hero">
+        <span>Presentation Artifact</span>
+        <h1>${escapeXml(presentationSpec.title)}</h1>
+        <p>${presentationSpec.slides.length} slide${presentationSpec.slides.length === 1 ? '' : 's'} ready for preview and PPTX download.${presentationSpec.subtitle ? ` ${escapeXml(presentationSpec.subtitle)}` : ''}</p>
+      </section>
+      <section class="slides">${slides}</section>
+    </main>
+    <style>
+      body { margin: 0; background: #09090f; color: #f8fafc; font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
+      .deck-preview { min-height: 100vh; padding: 32px; background: radial-gradient(circle at top left, rgba(168,85,247,.28), transparent 36%), #09090f; }
+      .deck-hero { max-width: 980px; margin: 0 auto 24px; padding: 28px; border: 1px solid rgba(255,255,255,.12); border-radius: 28px; background: rgba(255,255,255,.06); box-shadow: 0 24px 90px rgba(0,0,0,.35); }
+      .deck-hero span { color: #c4b5fd; text-transform: uppercase; letter-spacing: .16em; font-size: 12px; font-weight: 800; }
+      .deck-hero h1 { margin: 10px 0; font-size: clamp(32px, 5vw, 60px); letter-spacing: -.04em; }
+      .deck-hero p { margin: 0; color: #cbd5e1; }
+      .slides { max-width: 980px; margin: 0 auto; display: grid; gap: 18px; }
+      .slide-card { min-height: 280px; padding: 30px; border-radius: 26px; border: 1px solid rgba(255,255,255,.12); background: linear-gradient(135deg, rgba(124,58,237,.28), rgba(236,72,153,.14)); box-shadow: 0 18px 70px rgba(0,0,0,.28); }
+      .slide-kicker { color: #f0abfc; font-size: 12px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; }
+      .slide-card h2 { margin: 12px 0 18px; font-size: clamp(26px, 4vw, 42px); line-height: 1.05; }
+      .slide-card li, .slide-card p { color: #e2e8f0; font-size: 18px; line-height: 1.55; }
+      .slide-card ul { display: grid; gap: 10px; padding-left: 1.25rem; }
+    </style>`)
+  }
+
   const slideBlocks = content
     .split(/\n\s*---+\s*\n/)
     .map(block => block.trim())
@@ -600,7 +819,7 @@ function createPresentationPreviewHtml(title: string, content: string): string {
     const lines = block.split(/\n/).map(line => line.trim()).filter(Boolean)
     const heading = lines[0]?.replace(/^#+\s*/, '').replace(/^slide\s*\d+\s*[:.-]\s*/i, '') || `Slide ${index + 1}`
     const bullets = lines.slice(1)
-      .map(line => line.replace(/^[-*•]\s*/, ''))
+      .map(line => line.replace(/^[-*\u2022â€¢]\s*/, ''))
       .filter(Boolean)
       .map(line => `<li>${escapeXml(line)}</li>`)
       .join('')
@@ -810,7 +1029,7 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
     setRefreshKey(k => k + 1)
     setIsPreviewLoading(previewable)
     setPreviewRuntimeError(null)
-  }, [artifact?.id, artifact?.language, artifact?.validationError])
+  }, [artifact])
 
   useEffect(() => {
     if (!isOpen) return
