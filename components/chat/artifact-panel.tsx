@@ -294,7 +294,98 @@ function documentBodyXml(content: string): string {
   return blocks.join('')
 }
 
+function parseDelimitedLine(line: string, delimiter: string): string[] {
+  const cells: string[] = []
+  let current = ''
+  let inQuotes = false
+
+  for (let index = 0; index < line.length; index += 1) {
+    const char = line[index]
+
+    if (char === '"') {
+      const next = line[index + 1]
+      if (inQuotes && next === '"') {
+        current += '"'
+        index += 1
+        continue
+      }
+
+      inQuotes = !inQuotes
+      continue
+    }
+
+    if (char === delimiter && !inQuotes) {
+      cells.push(current.trim())
+      current = ''
+      continue
+    }
+
+    current += char
+  }
+
+  cells.push(current.trim())
+  return cells
+}
+
+function normalizeSpreadsheetPreviewSpec(title: string, content: string): {
+  title: string
+  headers: string[]
+  rows: string[][]
+} | null {
+  const parsed = parsePreviewJson(content)
+  if (!parsed) return null
+
+  const headersSource = Array.isArray(parsed.headers)
+    ? parsed.headers
+    : Array.isArray(parsed.columns)
+      ? parsed.columns
+      : null
+
+  const rowsSource = Array.isArray(parsed.rows)
+    ? parsed.rows
+    : null
+
+  const firstSheet = Array.isArray(parsed.sheets) && parsed.sheets.length > 0 && parsed.sheets[0] && typeof parsed.sheets[0] === 'object'
+    ? parsed.sheets[0] as Record<string, any>
+    : null
+
+  const headers = headersSource
+    ? headersSource.map((item: unknown) => String(item || '').trim()).filter(Boolean)
+    : Array.isArray(firstSheet?.headers)
+      ? firstSheet.headers.map((item: unknown) => String(item || '').trim()).filter(Boolean)
+      : Array.isArray(firstSheet?.columns)
+        ? firstSheet.columns.map((item: unknown) => String(item || '').trim()).filter(Boolean)
+        : []
+
+  const rowSource = rowsSource
+    || (Array.isArray(firstSheet?.rows) ? firstSheet.rows : null)
+
+  const rows = (rowSource || [])
+    .map((row: unknown) => Array.isArray(row) ? row.map((item) => String(item || '').trim()) : [])
+    .filter((row: string[]) => row.length > 0)
+
+  if (!headers.length && !rows.length) return null
+
+  return {
+    title: String(parsed.title || firstSheet?.name || title || 'Sheet').trim() || 'Sheet',
+    headers,
+    rows,
+  }
+}
+
 function parseDelimitedRows(content: string): string[][] {
+  const spreadsheetSpec = normalizeSpreadsheetPreviewSpec('', content)
+  if (spreadsheetSpec) {
+    const normalizedRows = spreadsheetSpec.rows.map((row) => {
+      if (spreadsheetSpec.headers.length === 0) return row
+      return Array.from({ length: spreadsheetSpec.headers.length }, (_, index) => row[index] || '')
+    })
+
+    return spreadsheetSpec.headers.length > 0
+      ? [spreadsheetSpec.headers, ...normalizedRows]
+      : normalizedRows
+  }
+
   const trimmed = content.trim()
   const lines = trimmed.split(/\r?\n/).map(line => line.trim()).filter(Boolean)
   const tableLines = lines.filter(line => line.includes('|'))
@@ -308,7 +399,7 @@ function parseDelimitedRows(content: string): string[][] {
 
   return lines.map(line => {
     const delimiter = line.includes('\t') ? '\t' : ','
-    return line.split(delimiter).map(cell => cell.trim())
+    return parseDelimitedLine(line, delimiter)
   })
 }
 
@@ -952,27 +1043,27 @@ function createPresentationPreviewHtml(title: string, content: string): string {
 }
 
 function createTablePreviewHtml(title: string, content: string): string {
-  const rows = content
-    .split(/\n/)
-    .map(line => line.trim())
-    .filter(line => line && !/^\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)+\|?$/.test(line))
-    .map(line => {
-      if (line.includes('|')) {
-        return line.replace(/^\||\|$/g, '').split('|').map(cell => cell.trim())
-      }
-      return line.split(',').map(cell => cell.trim())
-    })
-    .filter(row => row.length > 0)
+  const spreadsheetSpec = normalizeSpreadsheetPreviewSpec(title, content)
+  const rows = spreadsheetSpec
+    ? [
+        ...(spreadsheetSpec.headers.length > 0 ? [spreadsheetSpec.headers] : []),
+        ...spreadsheetSpec.rows.map((row) => (
+          spreadsheetSpec.headers.length > 0
+            ? Array.from({ length: spreadsheetSpec.headers.length }, (_, index) => row[index] || '')
+            : row
+        )),
+      ]
+    : parseDelimitedRows(content)
 
   const tableRows = rows.map((row, rowIndex) => {
     const tag = rowIndex === 0 ? 'th' : 'td'
     return `<tr>${row.map(cell => `<${tag}>${escapeXml(cell)}</${tag}>`).join('')}</tr>`
   }).join('')
 
-  return createPreviewHtml(title, `<main class="table-preview">
+  return createPreviewHtml(spreadsheetSpec?.title || title, `<main class="table-preview">
     <section class="table-card">
       <span>Data Artifact</span>
-      <h1>${escapeXml(title)}</h1>
+      <h1>${escapeXml(spreadsheetSpec?.title || title)}</h1>
       <div class="table-wrap">
         <table>${tableRows || `<tr><td>${escapeXml(content)}</td></tr>`}</table>
       </div>

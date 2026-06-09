@@ -147,15 +147,22 @@ function inferLanguageFromCode(code: string, fallback?: string): Artifact['langu
 function normalizeArtifactCode(language: Artifact['language'], code: string): string {
   const decoded = decodePossiblyEscapedText(code).replace(/\r\n/g, '\n').trim()
 
-  if (language === 'html' || language === 'canva') {
+  if (language === 'html' || language === 'canva') return decoded
+  if (language === 'text' || language === 'markdown') return decoded
+  if (language === 'json' || language === 'svg') return decoded
+  if (
+    language === 'docx' ||
+    language === 'gdoc' ||
+    language === 'xlsx' ||
+    language === 'gsheet' ||
+    language === 'pptx' ||
+    language === 'gslides' ||
+    language === 'pdf'
+  ) {
     return decoded
   }
 
-  if (language === 'text' || language === 'markdown') {
-    return decoded
-  }
-
-  return code.trim()
+  return decoded
 }
 
 function createArtifact(

@@ -166,10 +166,11 @@ Rules:
 - Only use artifact:python or Pygame when the user explicitly asks for Python, Pygame, or a Python script.
 - Only use artifact:docx, artifact:xlsx, artifact:pptx, artifact:gdoc, artifact:gsheet, or artifact:gslides when the user explicitly asks for that exact Office/Google file type.
 - Do not choose Word/docx for generic requests like "make something", "make an artifact", "make a document", "write this up", or "create a page".
-- For explicit Microsoft Word documents, use artifact:docx:Title and put clean markdown/plain text inside. The app will convert it into a downloadable .docx file.
-- For explicit Excel or Google Sheets, use artifact:xlsx:Title or artifact:gsheet:Title and put CSV/markdown-table content inside. The app will convert it into a downloadable .xlsx file.
+- For explicit Microsoft Word documents, use artifact:docx:Title and prefer structured JSON content with sections, paragraphs, bullets, and tables. Markdown/plain text is allowed only as a fallback. The app will convert it into a downloadable .docx file.
+- For explicit Excel or Google Sheets, use artifact:xlsx:Title or artifact:gsheet:Title and prefer structured JSON tabular content such as {"title":"...","headers":["..."],"rows":[["..."]]} or {"title":"...","sheets":[{"name":"Sheet 1","headers":["..."],"rows":[["..."]]}]}. Acceptable fallback formats are CSV, TSV, or markdown-table content. The app will convert it into a downloadable .xlsx file.
 - For explicit PowerPoint or Google Slides, use artifact:pptx:Title or artifact:gslides:Title and separate slides with --- lines. The app will convert it into a downloadable .pptx file.
-- For explicit Google Docs, use artifact:gdoc:Title and put clean markdown/plain text inside. The app will convert it into a downloadable .docx file.
+- For explicit Google Docs, use artifact:gdoc:Title and prefer structured JSON content with sections, paragraphs, bullets, and tables. Markdown/plain text is allowed only as a fallback. The app will convert it into a downloadable .docx file.
+- When the user asks for a logbook, tracker, timetable, checklist, study planner, markbook, comparison chart, or any tabular document, prefer real tables instead of paragraph-only formatting.
 - For Canva-style designs, use artifact:canva:Title and put complete HTML/CSS inside. The app previews and downloads it as .html because Canva has no open native file format.
 - Do NOT output raw HTML outside the artifact block.
 - Do NOT include secrets, API keys, or env vars.
@@ -209,11 +210,14 @@ If the user asks to add slides, improve visuals, change tone, add sections, or m
 - Inside the block, output structured JSON or clean markdown only.
 - Preferred JSON schema:
   {"title":"...","subtitle":"optional","sections":[{"heading":"...","paragraphs":["..."],"bullets":["..."],"table":{"headers":["..."],"rows":[["..."]]}}]}
+- If the content is naturally tabular, include real table data in the \`table\` field instead of flattening it into paragraphs.
+- Preserve concise, printable formatting suitable for a final downloadable document.
 - Create a real document structure, not fake binary, base64, or markdown renamed as .docx.`
       : `- Return exactly one \`artifact:pdf:Title\` block.
 - Inside the block, output structured JSON or clean markdown only.
 - Preferred JSON schema:
   {"title":"...","subtitle":"optional","sections":[{"heading":"...","paragraphs":["..."],"bullets":["..."]}]}
+- If the content includes schedules, mark breakdowns, logs, or comparisons, use tables where appropriate instead of prose-only sections.
 - Create a real document/report structure, not fake binary, base64, or HTML renamed as .pdf.
 - If the user asked for a downloadable report/export, structure it for a polished PDF.`
 
