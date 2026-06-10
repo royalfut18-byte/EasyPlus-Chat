@@ -35,7 +35,12 @@ import { parsePageRangeRequest } from '@/lib/ai/document-requests'
 import { buildGeneratedZipPreview, hideGeneratedZipManifestFromDisplay, parseGeneratedZipFromResponse, type GeneratedZipFile, type GeneratedZipManifest } from '@/lib/generated-zip'
 import { createGeneratedFileAttachment } from '@/lib/generated-file-client'
 import { detectGeneratedFileIntent, getGeneratedFileLabel, getGeneratedFileMimeType, isGeneratedFileArtifactLanguage, type GeneratedFileIntent } from '@/lib/generated-files'
-import { getAcceptedChatAttachmentExtensions, inferChatAttachmentMimeType, isSupportedChatAttachment } from '@/lib/chat-attachments'
+import {
+  getAcceptedChatAttachmentExtensions,
+  inferChatAttachmentMimeType,
+  isSupportedChatAttachment,
+  MAX_CHAT_ATTACHMENTS,
+} from '@/lib/chat-attachments'
 import type { Conversation, Message, ChatAttachment, Artifact, ReasoningMode } from '@/types/models'
 
 const DEFAULT_PANEL_WIDTH = 560
@@ -2527,7 +2532,7 @@ export default function ChatPage() {
   const HERO_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp']
   const HERO_ALLOWED_EXTENSIONS = getAcceptedChatAttachmentExtensions()
   const HERO_MAX_FILE_SIZE = heroMaxUploadMB * 1024 * 1024
-  const HERO_MAX_FILES = 30
+  const HERO_MAX_FILES = MAX_CHAT_ATTACHMENTS
 
   function getHeroFileKey(file: File | ChatAttachment): string {
     return `${file.name}|${file.size}`
