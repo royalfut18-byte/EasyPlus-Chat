@@ -3311,7 +3311,11 @@ export default function ChatPage() {
               ) : (
                 <>
                   {displayedMessages.map((message) => {
-                    const parsedArtifactResponse = message.role === 'assistant' && message.content && !message.artifact
+                    const needsArtifactDisplayRecovery = message.role === 'assistant' && message.content && (
+                      !message.artifact ||
+                      !message.displayContent
+                    )
+                    const parsedArtifactResponse = needsArtifactDisplayRecovery
                       ? parseArtifactFromResponse(message.content, true, '')
                       : null
                     const rawArtifactForMessage =
@@ -3319,8 +3323,8 @@ export default function ChatPage() {
                       parsedArtifactResponse?.artifact ||
                       (artifactMessageId === message.id ? activeArtifact : null)
                     const artifactForMessage = hydrateArtifactWithAttachment(rawArtifactForMessage, message.attachments)
-                    const contentForMessage = parsedArtifactResponse?.artifact
-                      ? parsedArtifactResponse.cleanContent
+                    const contentForMessage = rawArtifactForMessage
+                      ? (message.displayContent || parsedArtifactResponse?.cleanContent || hideGeneratedZipManifestFromDisplay(message.content))
                       : hideGeneratedZipManifestFromDisplay(message.content)
 
                     return (

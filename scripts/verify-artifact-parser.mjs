@@ -124,4 +124,35 @@ assert(embeddedHtmlResult.artifact, 'Expected embedded HTML artifact to parse')
 assert(embeddedHtmlResult.artifact.language === 'html', 'Expected embedded HTML artifact language to be html')
 assert(embeddedHtmlResult.artifact.title === 'Inventory Control Panel', 'Expected embedded HTML artifact title to be recovered')
 
+const currentArtifactResponse = `
+Here is the artifact with notes:
+
+- Includes a responsive layout
+- Includes working keyboard shortcuts
+
+<EASYPLUS_ARTIFACT type="html" title="Study Planner">
+<!DOCTYPE html>
+<html>
+  <body>
+    <main><h1>Study Planner</h1><button onclick="toggleDone()">Done</button></main>
+    <script>function toggleDone(){document.body.dataset.done='true'}</script>
+  </body>
+</html>
+</EASYPLUS_ARTIFACT>
+`
+
+const currentArtifactResult = parseArtifactFromResponse(currentArtifactResponse, true, 'Build me a study planner')
+assert(currentArtifactResult.artifact, 'Expected current EASYPLUS artifact response to parse')
+assert(currentArtifactResult.cleanContent.includes('- Includes a responsive layout'), 'Expected explanation bullets to stay in cleanContent')
+assert(!currentArtifactResult.cleanContent.includes('<EASYPLUS_ARTIFACT'), 'Expected artifact wrapper to be removed from cleanContent')
+assert(
+  /I created \*\*.*\*\* for you\.|Artifact generation hit a validation issue for \*\*.*\*\*\./.test(currentArtifactResult.cleanContent),
+  'Expected cleaned artifact status summary to be present'
+)
+
+const oldArtifactDisplayContent = currentArtifactResult.cleanContent.trim() || `I created an artifact for you: **${currentArtifactResult.artifact.title}**.`
+assert(oldArtifactDisplayContent.includes('Includes working keyboard shortcuts'), 'Expected recovered old artifact display content to preserve explanation text')
+assert(!oldArtifactDisplayContent.includes('<!DOCTYPE html>'), 'Expected recovered old artifact display content to hide raw artifact payload')
+
 console.log('PASS artifact parser recovers noisy embedded artifact outputs and malformed wrappers')
+console.log('PASS current and recovered artifact display content strips wrappers and preserves explanation formatting')

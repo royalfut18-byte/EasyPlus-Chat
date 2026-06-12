@@ -380,7 +380,7 @@ function parseArtifactsFromMessages(
 
     if (message.role === 'assistant' && message.content && !message.artifact) {
       // Try to parse artifact from old message
-      const { artifact } = parseArtifactFromResponse(
+      const { artifact, cleanContent } = parseArtifactFromResponse(
         message.content,
         true,
         ''
@@ -390,6 +390,8 @@ function parseArtifactsFromMessages(
         if (process.env.NODE_ENV !== 'production') {
           console.log('[Chat] Found artifact in old message:', artifact.title)
         }
+
+        const finalContent = cleanContent.trim() || `I created an artifact for you: **${artifact.title}**.`
 
         // Save to localStorage (browser only)
         try {
@@ -404,6 +406,7 @@ function parseArtifactsFromMessages(
         processed.push({
           ...message,
           artifact,
+          displayContent: finalContent,
         })
       } else {
         processed.push(message)

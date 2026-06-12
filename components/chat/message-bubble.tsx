@@ -50,6 +50,80 @@ const STATUS_CONFIG: Record<string, { dotColor: string; iconColor: string; subti
   'Creating artifact...': { dotColor: 'bg-purple-400', iconColor: 'text-purple-400', subtitle: 'Preparing preview panel' },
 }
 
+const assistantMarkdownComponents = {
+  h1: ({ children }: any) => <h1 className="text-xl md:text-2xl font-bold mt-4 md:mt-6 mb-3 md:mb-4 text-white">{children}</h1>,
+  h2: ({ children }: any) => <h2 className="text-lg md:text-xl font-bold mt-4 md:mt-5 mb-2 md:mb-3 text-white">{children}</h2>,
+  h3: ({ children }: any) => <h3 className="text-base md:text-lg font-semibold mt-3 md:mt-4 mb-2 text-white">{children}</h3>,
+  h4: ({ children }: any) => <h4 className="text-sm md:text-base font-semibold mt-3 mb-2 text-gray-200">{children}</h4>,
+  p: ({ children }: any) => <p className="mb-3 whitespace-pre-wrap break-words md:mb-4 leading-6 md:leading-7 text-gray-100 last:mb-0">{children}</p>,
+  ul: ({ children }: any) => <ul className="mb-3 md:mb-4 ml-4 md:ml-6 space-y-1.5 md:space-y-2 list-disc text-gray-100">{children}</ul>,
+  ol: ({ children }: any) => <ol className="mb-3 md:mb-4 ml-4 md:ml-6 space-y-1.5 md:space-y-2 list-decimal text-gray-100">{children}</ol>,
+  li: ({ children }: any) => <li className="leading-6 md:leading-7">{children}</li>,
+  blockquote: ({ children }: any) => (
+    <blockquote className="border-l-4 border-primary/50 pl-4 py-2 my-4 italic text-gray-300 bg-white/5 rounded-r">
+      {children}
+    </blockquote>
+  ),
+  a: ({ href, children }: any) => (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="text-blue-400 hover:text-blue-300 underline underline-offset-2 transition-colors"
+    >
+      {children}
+    </a>
+  ),
+  table: ({ children }: any) => (
+    <div className="my-4 overflow-x-auto rounded-lg border border-white/[0.10]">
+      <table className="w-full border-collapse">
+        {children}
+      </table>
+    </div>
+  ),
+  thead: ({ children }: any) => <thead className="bg-white/[0.06]">{children}</thead>,
+  tbody: ({ children }: any) => <tbody>{children}</tbody>,
+  tr: ({ children }: any) => <tr className="border-b border-white/[0.08] last:border-0">{children}</tr>,
+  th: ({ children }: any) => (
+    <th className="border-r border-white/[0.08] px-4 py-2 text-left font-semibold text-white last:border-0">
+      {children}
+    </th>
+  ),
+  td: ({ children }: any) => (
+    <td className="border-r border-white/[0.08] px-4 py-2 text-gray-200 last:border-0">
+      {children}
+    </td>
+  ),
+  code({ inline, className, children, ...props }: any) {
+    const match = /language-(\w+)/.exec(className || '')
+    return !inline && match ? (
+      <div className="my-4 overflow-hidden rounded-lg border border-white/[0.08] bg-[#1f1f1f]">
+        <SyntaxHighlighter
+          style={vscDarkPlus}
+          language={match[1]}
+          PreTag="div"
+          customStyle={{
+            margin: 0,
+            borderRadius: '0',
+            fontSize: '0.875rem',
+            padding: '1rem',
+          }}
+          {...props}
+        >
+          {String(children).replace(/\n$/, '')}
+        </SyntaxHighlighter>
+      </div>
+    ) : (
+      <code className={cn('rounded bg-white/[0.08] px-1.5 py-0.5 font-mono text-xs text-blue-200', className)} {...props}>
+        {children}
+      </code>
+    )
+  },
+  strong: ({ children }: any) => <strong className="font-semibold text-white">{children}</strong>,
+  em: ({ children }: any) => <em className="italic text-gray-200">{children}</em>,
+  hr: () => <hr className="my-6 border-white/[0.10]" />,
+}
+
 export function MessageBubble({ role, content, model, onRegenerate, attachments, hasArtifact, artifact, onOpenArtifact, statusLabel, onRequestOcr }: MessageBubbleProps) {
   const isUser = role === 'user'
   const [ocrRanges, setOcrRanges] = useState<Record<number, string>>({})
@@ -366,33 +440,7 @@ export function MessageBubble({ role, content, model, onRegenerate, attachments,
               <ReactMarkdown
                 remarkPlugins={[remarkGfm, [remarkMath, { singleDollarTextMath: true }]]}
                 rehypePlugins={[rehypeKatex]}
-                components={{
-                  h1: ({ children }) => <h1 className="mb-3 mt-5 text-xl font-semibold text-white md:text-2xl">{children}</h1>,
-                  h2: ({ children }) => <h2 className="mb-2.5 mt-4 text-lg font-semibold text-white md:text-xl">{children}</h2>,
-                  h3: ({ children }) => <h3 className="mb-2 mt-3 text-base font-semibold text-white md:text-lg">{children}</h3>,
-                  p: ({ children }) => <p className="mb-3 whitespace-pre-wrap break-words leading-7 text-gray-100 last:mb-0">{children}</p>,
-                  strong: ({ children }) => <strong className="font-semibold text-white">{children}</strong>,
-                  table: ({ children }) => (
-                    <div className="my-4 overflow-x-auto rounded-lg border border-white/[0.10]">
-                      <table className="w-full border-collapse">
-                        {children}
-                      </table>
-                    </div>
-                  ),
-                  thead: ({ children }) => <thead className="bg-white/[0.06]">{children}</thead>,
-                  tbody: ({ children }) => <tbody>{children}</tbody>,
-                  tr: ({ children }) => <tr className="border-b border-white/[0.08] last:border-0">{children}</tr>,
-                  th: ({ children }) => (
-                    <th className="border-r border-white/[0.08] px-4 py-2 text-left font-semibold text-white last:border-0">
-                      {children}
-                    </th>
-                  ),
-                  td: ({ children }) => (
-                    <td className="border-r border-white/[0.08] px-4 py-2 text-gray-200 last:border-0">
-                      {children}
-                    </td>
-                  ),
-                }}
+                components={assistantMarkdownComponents}
               >
                 {safeContent}
               </ReactMarkdown>
@@ -424,79 +472,7 @@ export function MessageBubble({ role, content, model, onRegenerate, attachments,
             <ReactMarkdown
               remarkPlugins={[remarkGfm, [remarkMath, { singleDollarTextMath: true }]]}
               rehypePlugins={[rehypeKatex]}
-              components={{
-                h1: ({ children }) => <h1 className="text-xl md:text-2xl font-bold mt-4 md:mt-6 mb-3 md:mb-4 text-white">{children}</h1>,
-                h2: ({ children }) => <h2 className="text-lg md:text-xl font-bold mt-4 md:mt-5 mb-2 md:mb-3 text-white">{children}</h2>,
-                h3: ({ children }) => <h3 className="text-base md:text-lg font-semibold mt-3 md:mt-4 mb-2 text-white">{children}</h3>,
-                h4: ({ children }) => <h4 className="text-sm md:text-base font-semibold mt-3 mb-2 text-gray-200">{children}</h4>,
-                p: ({ children }) => <p className="mb-3 whitespace-pre-wrap break-words md:mb-4 leading-6 md:leading-7 text-gray-100 last:mb-0">{children}</p>,
-                ul: ({ children }) => <ul className="mb-3 md:mb-4 ml-4 md:ml-6 space-y-1.5 md:space-y-2 list-disc text-gray-100">{children}</ul>,
-                ol: ({ children }) => <ol className="mb-3 md:mb-4 ml-4 md:ml-6 space-y-1.5 md:space-y-2 list-decimal text-gray-100">{children}</ol>,
-                li: ({ children }) => <li className="leading-6 md:leading-7">{children}</li>,
-                blockquote: ({ children }) => (
-                  <blockquote className="border-l-4 border-primary/50 pl-4 py-2 my-4 italic text-gray-300 bg-white/5 rounded-r">
-                    {children}
-                  </blockquote>
-                ),
-                a: ({ href, children }) => (
-                  <a
-                    href={href}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-blue-400 hover:text-blue-300 underline underline-offset-2 transition-colors"
-                  >
-                    {children}
-                  </a>
-                ),
-                table: ({ children }) => (
-                  <div className="my-4 overflow-x-auto rounded-lg border border-white/[0.10]">
-                    <table className="w-full border-collapse">
-                      {children}
-                    </table>
-                  </div>
-                ),
-                thead: ({ children }) => <thead className="bg-white/[0.06]">{children}</thead>,
-                tbody: ({ children }) => <tbody>{children}</tbody>,
-                tr: ({ children }) => <tr className="border-b border-white/[0.08] last:border-0">{children}</tr>,
-                th: ({ children }) => (
-                  <th className="border-r border-white/[0.08] px-4 py-2 text-left font-semibold text-white last:border-0">
-                    {children}
-                  </th>
-                ),
-                td: ({ children }) => (
-                  <td className="border-r border-white/[0.08] px-4 py-2 text-gray-200 last:border-0">
-                    {children}
-                  </td>
-                ),
-                code({ node, inline, className, children, ...props }: any) {
-                  const match = /language-(\w+)/.exec(className || '')
-                  return !inline && match ? (
-                    <div className="my-4 overflow-hidden rounded-lg border border-white/[0.08] bg-[#1f1f1f]">
-                      <SyntaxHighlighter
-                        style={vscDarkPlus}
-                        language={match[1]}
-                        PreTag="div"
-                        customStyle={{
-                          margin: 0,
-                          borderRadius: '0',
-                          fontSize: '0.875rem',
-                          padding: '1rem',
-                        }}
-                        {...props}
-                      >
-                        {String(children).replace(/\n$/, '')}
-                      </SyntaxHighlighter>
-                    </div>
-                  ) : (
-                    <code className={cn('rounded bg-white/[0.08] px-1.5 py-0.5 font-mono text-xs text-blue-200', className)} {...props}>
-                      {children}
-                    </code>
-                  )
-                },
-                strong: ({ children }) => <strong className="font-semibold text-white">{children}</strong>,
-                em: ({ children }) => <em className="italic text-gray-200">{children}</em>,
-                hr: () => <hr className="my-6 border-white/[0.10]" />,
-              }}
+              components={assistantMarkdownComponents}
             >
               {safeContent}
             </ReactMarkdown>
