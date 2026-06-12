@@ -18,7 +18,17 @@ const SUPPORTED_LANGUAGES = new Set([
   'docx', 'xlsx', 'pptx', 'gdoc', 'gsheet', 'gslides', 'canva', 'pdf'
 ])
 
-type ArtifactExtractionMethod = 'wrapper' | 'artifact_fence' | 'legacy_wrapper' | 'fenced_code' | 'raw_html' | 'inline_artifact' | 'wrapper_recovery' | 'prompt_fallback' | 'none'
+type ArtifactExtractionMethod =
+  | 'wrapper'
+  | 'artifact_fence'
+  | 'legacy_wrapper'
+  | 'fenced_code'
+  | 'raw_html'
+  | 'inline_artifact'
+  | 'embedded_artifact'
+  | 'wrapper_recovery'
+  | 'prompt_fallback'
+  | 'none'
 
 type ArtifactParseDiagnostics = {
   artifactIntentDetected: boolean
@@ -204,6 +214,123 @@ function extractHtmlLikeFragment(content: string): string | null {
   if (/^<(main|section|div|article|button|form|svg|style|script|canvas)\b/i.test(trimmed)) {
     return trimmed
   }
+  return null
+}
+
+function sanitizeArtifactTitle(rawTitle: string | undefined): string {
+  const cleaned = String(rawTitle || '')
+    .replace(/^[\s"'`([{]+/, '')
+    .replace(/[\s"'`)\]}:,-]+$/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+
+  if (!cleaned) return 'Generated Artifact'
+  return cleaned.slice(0, 120)
+}
+
+function findBalancedStructuredBlock(content: string): string | null {
+  const trimmed = decodePossiblyEscapedText(content).trim()
+  if (!trimmed) return null
+
+  const firstChar = trimmed[0]
+  const matching = firstChar === '{'
+    ? '}'
+    : firstChar === '['
+      ? ']'
+      : null
+
+  if (!matching) return null
+
+  let depth = 0
+  let inString = false
+  let escapeNext = false
+
+  for (let i = 0; i < trimmed.length; i += 1) {
+    const char = trimmed[i]
+
+    if (escapeNext) {
+      escapeNext = false
+      continue
+    }
+
+    if (char === '\\') {
+      if (inString) escapeNext = true
+      continue
+    }
+
+    if (char === '"') {
+      inString = !inString
+      continue
+    }
+
+    if (inString) continue
+
+    if (char === firstChar) depth += 1
+    if (char === matching) {
+      depth -= 1
+      if (depth === 0) {
+        return trimmed.slice(0, i + 1).trim()
+      }
+    }
+  }
+
+  return null
+}
+
+function findEarliestPayloadIndex(content: string): number {
+  const markers = [
+    content.search(/```/),
+    content.search(/<!DOCTYPE\s+html\b/i),
+    content.search(/<html[\s>]/i),
+    content.search(/<(main|section|div|article|button|form|svg|style|script|canvas)\b/i),
+    content.indexOf('{'),
+    content.indexOf('['),
+  ].filter((index) => index >= 0)
+
+  return markers.length > 0 ? Math.min(...markers) : -1
+}
+
+function trimArtifactNoise(text: string): string {
+  return text
+    .replace(/^\s*(open file|download|open preview|preview|pdf document preview|generated file[s]?|ocr first \d+ pages|ocr selected pages)\s*:?/gim, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+}
+
+function extractBestPayload(language: Artifact['language'] | null, remainder: string): string | null {
+  const trimmed = trimArtifactNoise(remainder)
+  if (!trimmed) return null
+
+  const fence = trimmed.match(/```\s*(html|svg|markdown|md|jsx|tsx|javascript|typescript|css|json|text)?[^\n`]*\r?\n([\s\S]*?)```/i)
+  if (fence?.[2]?.trim()) return fence[2].trim()
+
+  const structured = findBalancedStructuredBlock(trimmed)
+  if (structured) return structured
+
+  const htmlDocument = extractHtmlDocument(trimmed)
+  if (htmlDocument) return htmlDocument
+
+  const htmlFragment = extractHtmlLikeFragment(trimmed)
+  if (htmlFragment) return htmlFragment
+
+  if (
+    language === 'docx' ||
+    language === 'gdoc' ||
+    language === 'pdf' ||
+    language === 'xlsx' ||
+    language === 'gsheet' ||
+    language === 'pptx' ||
+    language === 'gslides' ||
+    language === 'markdown' ||
+    language === 'text'
+  ) {
+    const structuredStart = findEarliestPayloadIndex(trimmed)
+    if (structuredStart > 0) {
+      return trimmed.slice(structuredStart).trim()
+    }
+    if (trimmed.length > 30) return trimmed
+  }
+
   return null
 }
 
@@ -471,20 +598,7 @@ function extractCodeFromMalformedWrapper(language: Artifact['language'] | null, 
   const payload = closingIndex >= 0 ? trimmed.slice(0, closingIndex).trim() : trimmed
   if (!payload) return null
 
-  const htmlDocument = extractHtmlDocument(payload)
-  if (htmlDocument) return htmlDocument
-
-  const htmlFragment = extractHtmlLikeFragment(payload)
-  if (htmlFragment) return htmlFragment
-
-  const fence = payload.match(/```\s*(html|svg|markdown|md|jsx|tsx|javascript|typescript|css|json|text)?[^\n`]*\r?\n([\s\S]*?)```/i)
-  if (fence?.[2]?.trim()) return fence[2].trim()
-
-  if ((language === 'docx' || language === 'gdoc' || language === 'pdf' || language === 'xlsx' || language === 'gsheet') && payload.length > 30) {
-    return payload
-  }
-
-  return null
+  return extractBestPayload(language, payload)
 }
 
 function parseInlineArtifactBlock(content: string): { fullMatch: string; language: string; title: string; code: string } | null {
@@ -528,12 +642,53 @@ function parseInlineArtifactBlock(content: string): { fullMatch: string; languag
 
   if (!code) return null
 
+  const extractedCode = extractBestPayload(normalizeLanguage(language), code)
+  if (!extractedCode) return null
+
   return {
     fullMatch: content.slice(startIndex).trim(),
     language,
-    title: title || 'Generated Artifact',
-    code,
+    title: sanitizeArtifactTitle(title),
+    code: extractedCode,
   }
+}
+
+function parseEmbeddedArtifactBlock(content: string): { fullMatch: string; language: string; title: string; code: string } | null {
+  const pattern = /artifact\s*[:\-]\s*([a-z0-9+#.-]+)\s*:/ig
+  let match: RegExpExecArray | null = null
+  let best: { fullMatch: string; language: string; title: string; code: string } | null = null
+
+  while ((match = pattern.exec(content)) !== null) {
+    const language = match[1]
+    if (!normalizeLanguage(language)) continue
+
+    const startIndex = match.index
+    const rest = content.slice(startIndex + match[0].length)
+    if (!rest.trim()) continue
+
+    const payloadIndex = findEarliestPayloadIndex(rest)
+    const title = sanitizeArtifactTitle(
+      payloadIndex >= 0
+        ? rest.slice(0, payloadIndex)
+        : rest.split(/\r?\n/, 1)[0]
+    )
+    const payloadSource = payloadIndex >= 0 ? rest.slice(payloadIndex) : rest
+    const code = extractBestPayload(normalizeLanguage(language), payloadSource)
+    if (!code) continue
+
+    const candidate = {
+      fullMatch: content.slice(startIndex).trim(),
+      language,
+      title,
+      code,
+    }
+
+    if (!best || candidate.code.length > best.code.length) {
+      best = candidate
+    }
+  }
+
+  return best
 }
 
 export function parseArtifactFromResponse(
@@ -628,6 +783,22 @@ export function parseArtifactFromResponse(
     const validated = validateArtifact(artifact, userPrompt, 'inline_artifact')
     return {
       cleanContent: buildCleanContent(content, inlineArtifact.fullMatch, validated.artifact),
+      artifact: validated.artifact,
+      diagnostics: validated.diagnostics,
+    }
+  }
+
+  const embeddedArtifact = parseEmbeddedArtifactBlock(content)
+  if (embeddedArtifact) {
+    const artifact = createArtifact(
+      inferLanguageFromCode(embeddedArtifact.code, embeddedArtifact.language),
+      embeddedArtifact.title,
+      embeddedArtifact.code,
+      'embedded_artifact'
+    )
+    const validated = validateArtifact(artifact, userPrompt, 'embedded_artifact')
+    return {
+      cleanContent: buildCleanContent(content, embeddedArtifact.fullMatch, validated.artifact),
       artifact: validated.artifact,
       diagnostics: validated.diagnostics,
     }

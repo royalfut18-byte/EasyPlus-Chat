@@ -201,6 +201,9 @@ function buildArtifactSection(): string {
     '- The artifact block must be complete and contain only the payload.',
     '- For interactive requests, default to complete single-file HTML with inline CSS and JS.',
     '- Every visible control in an interactive artifact must actually work.',
+    '- Do not output anything after the closing artifact block.',
+    '- Do not emit preview chrome or file-manager text such as "Preview:", "Open Preview", "Open file", "Download", "generated file", or "OCR selected pages".',
+    '- For pdf/docx/pptx/gdoc/gsheet/gslides artifacts, return only the actual document or slide payload, preferably as clean JSON or markdown content that can be converted into the file.',
     '- Do not output raw HTML outside the artifact block.',
     '- Do not include secrets, keys, or unsafe file paths.',
   ].join('\n')

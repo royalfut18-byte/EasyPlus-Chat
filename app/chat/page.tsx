@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo, useRef } from 'react'
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
@@ -174,10 +174,13 @@ CODE_HERE
 Rules:
 - The artifact block must be complete: include the opening tag, the full payload, and the closing tag.
 - Put only the artifact payload inside the artifact block. Do not place explanations, apologies, or status text inside the wrapper.
-- Use language values: html, tsx, jsx, javascript, typescript, css, python, markdown, json, svg, text, docx, xlsx, pptx, gdoc, gsheet, gslides, canva.
+- Use language values: html, tsx, jsx, javascript, typescript, css, python, markdown, json, svg, text, docx, xlsx, pptx, gdoc, gsheet, gslides, canva, pdf.
 - Default to artifact:html with a full single-file HTML document, inline CSS, and inline JS so it opens as a live side-panel preview.
 - For visual, interactive, playable, game, quiz, calculator, dashboard, timetable, planner, landing page, website, widget, form, or browser-app requests, use artifact:html by default with complete browser-playable HTML/CSS/JS.
 - For interactive HTML artifacts, ensure every visible control actually works. Define all handlers, include the required JavaScript, and mentally test click, tap, keyboard, and restart flows before responding.
+- Do not output anything after the closing artifact block.
+- Do not emit preview chrome or file-manager text such as "Preview:", "Open Preview", "Open file", "Download", "generated file", or "OCR selected pages".
+- For pdf/docx/pptx/gdoc/gsheet/gslides artifacts, return only the document payload as clean JSON or markdown content that can be converted into the real file.
 - If the user asks for a React-style interactive artifact, convert it into a single-file html artifact unless they explicitly ask for source-only TSX/JSX code.
 - Only use artifact:python or Pygame when the user explicitly asks for Python, Pygame, or a Python script.
 - Only use artifact:docx, artifact:xlsx, artifact:pptx, artifact:gdoc, artifact:gsheet, or artifact:gslides when the user explicitly asks for that exact Office/Google file type.
@@ -661,13 +664,38 @@ export default function ChatPage() {
     })
   }
 
-  const replaceChatUrl = (targetProjectId?: string | null, targetConversationId?: string | null) => {
+  const replaceChatUrl = useCallback((targetProjectId?: string | null, targetConversationId?: string | null) => {
     pendingUrlConversationIdRef.current = targetConversationId ?? null
     router.replace(buildChatUrl(targetProjectId, targetConversationId), { scroll: false })
-  }
+  }, [router])
 
   useEffect(() => {
-    loadUserProfile()
+    let active = true
+
+    const loadProfile = async () => {
+      try {
+        const {
+          data: { user },
+          error: userError,
+        } = await supabase.auth.getUser()
+
+        if (!active) return
+
+        if (userError || !user) {
+          window.location.assign('/login')
+          return
+        }
+
+        const profile = await ensureProfile(supabase, user.id)
+        if (!active) return
+        setUserProfile(profile)
+        setSessionLoadError(false)
+      } catch {
+        if (active) setSessionLoadError(true)
+      }
+    }
+
+    void loadProfile()
 
     // Load panel width from localStorage
     try {
@@ -683,7 +711,10 @@ export default function ChatPage() {
     }
 
     // Don't restore any artifact on page load - wait for conversation selection
-  }, [])
+    return () => {
+      active = false
+    }
+  }, [supabase])
 
   useEffect(() => {
     if (userProfile || sessionLoadError) return
@@ -692,10 +723,82 @@ export default function ChatPage() {
   }, [sessionLoadError, userProfile])
 
   useEffect(() => {
-    loadConversations()
-    loadActiveProject()
-    handleNewChat()
-  }, [projectId])
+    let active = true
+
+    const loadConversationLists = async () => {
+      try {
+        const currentUrl = projectId ? `/api/conversations?projectId=${encodeURIComponent(projectId)}` : '/api/conversations'
+        const [currentResponse, normalResponse, sidebarResponse] = await Promise.all([
+          fetch(currentUrl, { signal: AbortSignal.timeout(10000) }),
+          projectId ? fetch('/api/conversations', { signal: AbortSignal.timeout(10000) }) : Promise.resolve(null),
+          fetch('/api/projects?view=sidebar', { signal: AbortSignal.timeout(10000) }),
+        ])
+
+        if (!active) return
+
+        const currentData = currentResponse.ok ? await currentResponse.json() : []
+        if (!active) return
+
+        setConversations(currentData)
+        setNormalConversations(normalResponse?.ok ? await normalResponse.json() : currentData)
+
+        if (sidebarResponse.ok) {
+          const sidebarData = await sidebarResponse.json()
+          if (!active) return
+          const projectConversations = (sidebarData.conversations || []) as Conversation[]
+          setSidebarProjects((sidebarData.projects || []).map((project: ActiveProject) => ({
+            id: project.id,
+            name: project.name,
+            conversations: projectConversations.filter(conversation => conversation.project_id === project.id),
+          })))
+        }
+      } catch {
+        if (!active) return
+        setConversations([])
+        if (!projectId) setNormalConversations([])
+      }
+    }
+
+    const loadProject = async () => {
+      if (!projectId) {
+        if (active) setActiveProject(null)
+        return
+      }
+
+      try {
+        const response = await fetch(`/api/projects/${projectId}`)
+        if (!active) return
+        if (!response.ok) {
+          setActiveProject(null)
+          return
+        }
+        const data = await response.json()
+        if (!active) return
+        setActiveProject(data.project || null)
+      } catch {
+        if (active) setActiveProject(null)
+      }
+    }
+
+    void loadConversationLists()
+    void loadProject()
+
+    ++conversationRequestSeqRef.current
+    selectedConversationIdRef.current = null
+    setCurrentConversation(null)
+    setMessages([])
+    setActiveArtifact(null)
+    setIsArtifactOpen(false)
+    setArtifactMessageId(null)
+    setGeneratedImages([])
+    setImageConversationId(null)
+    setSelectedModel(getPreferredDefaultModelId(availableModelIdsForDefaults))
+    setReasoningMode('instant')
+    replaceChatUrl(projectId || null, null)
+    return () => {
+      active = false
+    }
+  }, [availableModelIdsForDefaults, projectId, replaceChatUrl])
 
   useEffect(() => {
     if (
@@ -744,22 +847,6 @@ export default function ChatPage() {
   }, [availableModelIdsForDefaults, currentConversation, isCreatingConversation, isLoading])
 
   useEffect(() => {
-    const normalizedQueryConversationId = queryConversationId || null
-
-    if (pendingUrlConversationIdRef.current !== undefined) {
-      if (normalizedQueryConversationId !== pendingUrlConversationIdRef.current) {
-        return
-      }
-      pendingUrlConversationIdRef.current = undefined
-    }
-
-    if (!queryConversationId || conversations.length === 0) return
-    if (selectedConversationIdRef.current === queryConversationId) return
-    if (!conversations.some(conversation => conversation.id === queryConversationId)) return
-    handleSelectConversation(queryConversationId)
-  }, [queryConversationId, conversations])
-
-  useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
@@ -784,7 +871,7 @@ export default function ChatPage() {
     return () => controller.abort()
   }, [imageConversationId, selectedModel])
 
-  const loadUserProfile = async () => {
+  const loadUserProfile = useCallback(async () => {
     try {
       const {
         data: { user },
@@ -802,9 +889,9 @@ export default function ChatPage() {
     } catch (error) {
       setSessionLoadError(true)
     }
-  }
+  }, [supabase])
 
-  const loadConversations = async () => {
+  const loadConversations = useCallback(async () => {
     try {
       const currentUrl = projectId ? `/api/conversations?projectId=${encodeURIComponent(projectId)}` : '/api/conversations'
       const [currentResponse, normalResponse, sidebarResponse] = await Promise.all([
@@ -830,9 +917,9 @@ export default function ChatPage() {
       setConversations([])
       if (!projectId) setNormalConversations([])
     }
-  }
+  }, [projectId])
 
-  const loadActiveProject = async () => {
+  const loadActiveProject = useCallback(async () => {
     if (!projectId) {
       setActiveProject(null)
       return
@@ -849,9 +936,9 @@ export default function ChatPage() {
     } catch {
       setActiveProject(null)
     }
-  }
+  }, [projectId])
 
-  const loadConversationMessages = async (conversationId: string, requestSeq: number) => {
+  const loadConversationMessages = useCallback(async (conversationId: string, requestSeq: number) => {
     // Create new abort controller for this request
     const controller = new AbortController()
     abortControllerRef.current = controller
@@ -1042,7 +1129,7 @@ export default function ChatPage() {
         setIsLoadingConversation(false)
       }
     }
-  }
+  }, [])
 
   const generateSmartTitle = async (conversationId: string, _currentTitle: string) => {
 
@@ -1078,7 +1165,7 @@ export default function ChatPage() {
     }
   }
 
-  const handleNewChat = () => {
+  const handleNewChat = useCallback(() => {
     if (!currentConversation && messages.length === 0 && generatedImages.length === 0) {
       setSelectedModel(getPreferredDefaultModelId(availableModelIdsForDefaults))
       setReasoningMode('instant')
@@ -1100,9 +1187,9 @@ export default function ChatPage() {
     setSelectedModel(getPreferredDefaultModelId(availableModelIdsForDefaults))
     setReasoningMode('instant')
     replaceChatUrl(projectId || null, null)
-  }
+  }, [availableModelIdsForDefaults, currentConversation, generatedImages.length, messages.length, projectId, replaceChatUrl])
 
-  const handleSelectConversation = async (id: string) => {
+  const handleSelectConversation = useCallback(async (id: string) => {
     const conv = conversations.find((c) => c.id === id)
     if (!conv) return
 
@@ -1166,7 +1253,23 @@ export default function ChatPage() {
         return processMessages([...prev, placeholder], id)
       })
     }
-  }
+  }, [conversations, loadConversationMessages, projectId, replaceChatUrl])
+
+  useEffect(() => {
+    const normalizedQueryConversationId = queryConversationId || null
+
+    if (pendingUrlConversationIdRef.current !== undefined) {
+      if (normalizedQueryConversationId !== pendingUrlConversationIdRef.current) {
+        return
+      }
+      pendingUrlConversationIdRef.current = undefined
+    }
+
+    if (!queryConversationId || conversations.length === 0) return
+    if (selectedConversationIdRef.current === queryConversationId) return
+    if (!conversations.some(conversation => conversation.id === queryConversationId)) return
+    void handleSelectConversation(queryConversationId)
+  }, [conversations, handleSelectConversation, queryConversationId])
 
   const handleSidebarSelectConversation = (id: string, targetProjectId?: string | null) => {
     if ((targetProjectId || null) !== (projectId || null)) {

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft, CheckCircle2, Circle, Code2, Copy, Download, Eye, File, FilePlus, FolderOpen, Loader2, MessageSquare, Monitor, RefreshCw, Save, Send, Sparkles, Trash2 } from 'lucide-react'
@@ -136,7 +136,7 @@ export function EasyCodeWorkspaceClient({
     setMobileTab('code')
   }
 
-  const syncProjectData = (data: any) => {
+  const syncProjectData = useCallback((data: any) => {
     if (data.project) setProject(data.project)
     const nextFiles: EasyCodeFile[] = data.files || []
     setFiles(nextFiles)
@@ -148,15 +148,15 @@ export function EasyCodeWorkspaceClient({
       setSelectedPath(nextSelected.path)
       setDraft(nextSelected.content)
     }
-  }
+  }, [selectedPath])
 
-  const refreshProject = async () => {
+  const refreshProject = useCallback(async () => {
     const response = await fetch(`/api/easy-code/projects/${project.id}`, { cache: 'no-store' })
     const data = await response.json().catch(() => ({}))
     if (response.ok) syncProjectData(data)
-  }
+  }, [project.id, syncProjectData])
 
-  const generateInitialProject = async () => {
+  const generateInitialProject = useCallback(async () => {
     if (initialGenerationStartedRef.current) return
     initialGenerationStartedRef.current = true
     setIsGenerating(true)
@@ -178,7 +178,7 @@ export function EasyCodeWorkspaceClient({
     } finally {
       setIsGenerating(false)
     }
-  }
+  }, [project.id, refreshProject, syncProjectData])
 
   useEffect(() => {
     if (
@@ -188,7 +188,7 @@ export function EasyCodeWorkspaceClient({
     ) {
       generateInitialProject()
     }
-  }, [files.length, generationStatus, project.generation_phase])
+  }, [files.length, generateInitialProject, generationStatus, project.generation_phase])
 
   useEffect(() => {
     if (generationStatus !== 'generating') return
@@ -196,7 +196,7 @@ export function EasyCodeWorkspaceClient({
       refreshProject().catch(() => {})
     }, 1500)
     return () => window.clearInterval(timer)
-  }, [generationStatus, project.id, selectedPath])
+  }, [generationStatus, refreshProject])
 
   const retryGeneration = () => {
     initialGenerationStartedRef.current = false

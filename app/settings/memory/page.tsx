@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Brain, Trash2, Edit3, Check, X, ArrowLeft, AlertTriangle } from 'lucide-react'
@@ -24,19 +24,9 @@ export default function MemorySettingsPage() {
   const [editText, setEditText] = useState('')
   const [showClearConfirm, setShowClearConfirm] = useState(false)
   const router = useRouter()
-  const supabase = createClient()
+  const supabase = useMemo(() => createClient(), [])
 
-  useEffect(() => {
-    checkAuth()
-    loadMemories()
-  }, [])
-
-  const checkAuth = async () => {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) router.push('/login')
-  }
-
-  const loadMemories = async () => {
+  const loadMemories = useCallback(async () => {
     try {
       setIsLoading(true)
       const response = await fetch('/api/memories')
@@ -50,7 +40,33 @@ export default function MemorySettingsPage() {
     } finally {
       setIsLoading(false)
     }
-  }
+  }, [])
+
+  useEffect(() => {
+    let active = true
+
+    const loadPage = async () => {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!active) return
+
+      if (!user) {
+        router.push('/login')
+        return
+      }
+
+      await loadMemories()
+    }
+
+    loadPage().catch(() => {
+      if (active) {
+        setIsLoading(false)
+      }
+    })
+
+    return () => {
+      active = false
+    }
+  }, [loadMemories, router, supabase])
 
   const deleteMemory = async (id: string) => {
     try {
