@@ -382,6 +382,35 @@ function preferRenderableArtifact(
   return parsedArtifact
 }
 
+function recoverArtifactFromMessage(
+  message: Message,
+  fallbackPrompt = ''
+): { artifact: Artifact | null; cleanContent: string | null } {
+  if (message.role !== 'assistant' || !message.content) {
+    return { artifact: null, cleanContent: null }
+  }
+
+  const {
+    cleanContent: zipCleanContent,
+    manifest: generatedZipManifest,
+  } = parseGeneratedZipFromResponse(message.content)
+  const generatedZipAttachment = message.attachments?.find((attachment) =>
+    attachment.generated && attachment.mimeType === 'application/zip'
+  )
+  const zipPreviewArtifact = generatedZipManifest
+    ? createGeneratedZipPreviewArtifact(generatedZipManifest, generatedZipAttachment, fallbackPrompt)
+    : null
+  const parsedArtifactResponse = parseArtifactFromResponse(zipCleanContent, true, fallbackPrompt)
+  const artifact = preferRenderableArtifact(parsedArtifactResponse.artifact, zipPreviewArtifact)
+
+  return {
+    artifact,
+    cleanContent: artifact
+      ? (parsedArtifactResponse.cleanContent || zipCleanContent || message.content)
+      : zipCleanContent,
+  }
+}
+
 function mergeAttachments(
   existing: ChatAttachment[] | null | undefined,
   ...incomingGroups: Array<Array<ChatAttachment | null | undefined> | null | undefined>
@@ -3367,16 +3396,16 @@ export default function ChatPage() {
                       !message.artifact ||
                       !message.displayContent
                     )
-                    const parsedArtifactResponse = needsArtifactDisplayRecovery
-                      ? parseArtifactFromResponse(message.content, true, '')
+                    const recoveredArtifactResponse = needsArtifactDisplayRecovery
+                      ? recoverArtifactFromMessage(message)
                       : null
                     const rawArtifactForMessage =
                       message.artifact ||
-                      parsedArtifactResponse?.artifact ||
+                      recoveredArtifactResponse?.artifact ||
                       (artifactMessageId === message.id ? activeArtifact : null)
                     const artifactForMessage = hydrateArtifactWithAttachment(rawArtifactForMessage, message.attachments)
                     const contentForMessage = rawArtifactForMessage
-                      ? (message.displayContent || parsedArtifactResponse?.cleanContent || hideGeneratedZipManifestFromDisplay(message.content))
+                      ? (message.displayContent || recoveredArtifactResponse?.cleanContent || hideGeneratedZipManifestFromDisplay(message.content))
                       : hideGeneratedZipManifestFromDisplay(message.content)
 
                     return (

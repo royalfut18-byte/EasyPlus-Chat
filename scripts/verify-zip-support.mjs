@@ -82,6 +82,13 @@ assert(
   'Chat page ZIP instructions must require generated_zip manifests'
 )
 
+assert(
+  chatPageSource.includes('recoverArtifactFromMessage') &&
+  chatPageSource.includes('createGeneratedZipPreviewArtifact(generatedZipManifest, generatedZipAttachment'),
+  'Chat page must recover ZIP-backed artifacts when rendering previous assistant messages'
+)
+
 console.log('PASS ZIP project requests are routed into generated_zip mode while read-only ZIP questions stay normal')
 console.log('PASS chat/system prompts include explicit ZIP generation and ZIP reading guidance')
 console.log('PASS saved ZIP responses rebuild artifact previews during conversation reload')
+console.log('PASS previous assistant messages recover ZIP-backed artifacts during render')
