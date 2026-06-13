@@ -1,5 +1,6 @@
 import type { Message, Artifact } from '@/types/models'
 import { parseArtifactFromResponse } from '../artifact-parser'
+import { createGeneratedZipPreviewArtifact, parseGeneratedZipFromResponse } from '../generated-zip'
 
 function stripThinkingTags(text: string): string {
   return text.replace(/<thinking>[\s\S]*?<\/thinking>\s*/g, '').replace(/<thinking>[\s\S]*$/g, '')
@@ -379,9 +380,39 @@ function parseArtifactsFromMessages(
     if (!message) continue
 
     if (message.role === 'assistant' && message.content && !message.artifact) {
+      const {
+        cleanContent: zipCleanContent,
+        manifest: generatedZipManifest,
+      } = parseGeneratedZipFromResponse(message.content)
+      const generatedZipAttachment = message.attachments?.find((attachment) =>
+        attachment.generated && attachment.mimeType === 'application/zip'
+      )
+      const zipPreviewArtifact = generatedZipManifest
+        ? createGeneratedZipPreviewArtifact(generatedZipManifest, generatedZipAttachment)
+        : null
+
+      if (zipPreviewArtifact) {
+        const finalContent = zipCleanContent.trim() || `I created **${zipPreviewArtifact.title}** for you.`
+
+        try {
+          const artifactData = JSON.stringify(zipPreviewArtifact)
+          localStorage.setItem(`easyplus:artifact:${conversationId}:${message.id}`, artifactData)
+          localStorage.setItem(`easyplus:artifact:${conversationId}:latest`, artifactData)
+        } catch (e) {
+          console.error('[Chat] Failed to save ZIP artifact:', e)
+        }
+
+        processed.push({
+          ...message,
+          artifact: zipPreviewArtifact,
+          displayContent: finalContent,
+        })
+        continue
+      }
+
       // Try to parse artifact from old message
       const { artifact, cleanContent } = parseArtifactFromResponse(
-        message.content,
+        zipCleanContent,
         true,
         ''
       )

@@ -32,7 +32,7 @@ import { detectArtifactIntent, detectArtifactRefinementIntent, detectZipProjectI
 import { sortMessagesChronologically, dedupeMessages, processMessages, processLoadedMessages, getStoredArtifact } from '@/lib/chat/message-utils'
 import { useR2Upload } from '@/hooks/use-r2-upload'
 import { parsePageRangeRequest } from '@/lib/ai/document-requests'
-import { buildGeneratedZipPreview, hideGeneratedZipManifestFromDisplay, parseGeneratedZipFromResponse, type GeneratedZipFile, type GeneratedZipManifest } from '@/lib/generated-zip'
+import { createGeneratedZipPreviewArtifact, hideGeneratedZipManifestFromDisplay, parseGeneratedZipFromResponse, type GeneratedZipFile, type GeneratedZipManifest, type GeneratedZipPreviewArtifact } from '@/lib/generated-zip'
 import { createGeneratedFileAttachment } from '@/lib/generated-file-client'
 import { detectGeneratedFileIntent, getGeneratedFileLabel, getGeneratedFileMimeType, isGeneratedFileArtifactLanguage, type GeneratedFileIntent } from '@/lib/generated-files'
 import {
@@ -254,6 +254,68 @@ ${refinementContext}
 ---`
 }
 
+function buildZipProjectInstructions(currentArtifact?: Artifact | null): string {
+  const zipArtifact = currentArtifact as (Artifact & { zipPreviewFiles?: GeneratedZipFile[] }) | null
+  const zipFileContext = zipArtifact?.zipPreviewFiles?.length
+    ? `
+
+CURRENT ZIP PROJECT CONTEXT:
+The user may be asking you to refine or rebuild the currently open ZIP-backed project preview.
+Return one full replacement generated_zip manifest containing every file that should exist in the downloadable package.
+Do not return only diffs, patch fragments, or partial file lists.
+
+Current files:
+${zipArtifact.zipPreviewFiles
+  .slice(0, 80)
+  .map((file) => `- ${file.path}`)
+  .join('\n')}
+`
+    : currentArtifact?.code
+      ? `
+
+CURRENT ARTIFACT CONTEXT:
+The user may want the current artifact turned into a downloadable multi-file project ZIP.
+If so, convert it into a complete generated_zip manifest with sensible filenames and full file contents.
+
+Current artifact title: ${currentArtifact.title}
+Current artifact language: ${currentArtifact.language}
+Current artifact source:
+\`\`\`${currentArtifact.language}
+${currentArtifact.code.slice(0, 24000)}
+\`\`\`
+`
+      : ''
+
+  return `[ZIP PROJECT MODE ENABLED]
+
+EasyPlus can create a real downloadable ZIP package from a generated_zip manifest.
+When the user asks for a downloadable code project, starter repo, codebase, all source files, or an updated ZIP, return:
+
+\`\`\`generated_zip
+{
+  "type": "generated_zip",
+  "filename": "project-name.zip",
+  "files": [
+    { "path": "index.html", "content": "<!DOCTYPE html>..." }
+  ]
+}
+\`\`\`
+
+Rules:
+- Return exactly one valid JSON manifest with \`type: "generated_zip"\`.
+- Include every file needed in the final package, not only the changed ones.
+- Use safe relative paths only. Never use absolute paths, backslashes, \`..\`, secrets, or environment keys.
+- Prefer practical web-project structures like \`index.html\`, \`styles.css\`, \`script.js\`, \`src/*\`, \`public/*\`, \`README.md\`, and config files when appropriate.
+- If the user uploaded a ZIP or asked to modify a codebase, preserve and update the existing structure unless they explicitly asked for a rebuild.
+- If the task is only to explain, review, or answer questions about an uploaded ZIP, answer normally and do not emit a manifest.
+- Do not output preview chrome or file-manager text such as "Preview:", "Open file", "Download", or "Generated files:".
+- The visible assistant text outside the manifest should be short and clear.
+
+${zipFileContext}
+
+---`
+}
+
 function hydrateArtifactWithAttachment(artifact: Artifact | null, attachments?: ChatAttachment[] | null): Artifact | null {
   if (!artifact || !attachments?.length) return artifact
 
@@ -290,6 +352,10 @@ function looksLikeStreamingArtifactPayload(content: string): boolean {
   return (
     trimmed.includes('<EASYPLUS_ARTIFACT') ||
     trimmed.includes('```artifact:') ||
+    trimmed.includes('```generated_zip') ||
+    trimmed.includes('```generated-zip') ||
+    trimmed.includes('```zip_manifest') ||
+    /"type"\s*:\s*"generated_zip"/i.test(trimmed) ||
     /^artifact\s*[:\-]\s*[a-z0-9+#.-]+\s*:/i.test(trimmed) ||
     trimmed.includes('ARTIFACT_BLOCK_START') ||
     /^```(?:html|svg|jsx|tsx|css|javascript|typescript|markdown|md)\b/i.test(trimmed) ||
@@ -299,44 +365,9 @@ function looksLikeStreamingArtifactPayload(content: string): boolean {
   )
 }
 
-type ZipPreviewArtifact = Artifact & {
-  zipPreviewFiles?: GeneratedZipFile[]
-  zipPreviewPath?: string
-}
-
-function createZipPreviewArtifact(
-  manifest: GeneratedZipManifest,
-  generatedAttachment: ChatAttachment | null,
-  userPrompt?: string
-): ZipPreviewArtifact | null {
-  const preview = buildGeneratedZipPreview(manifest)
-  if (!preview) return null
-
-  const fallbackTitle = preview.entryPath
-    .split('/')
-    .pop()
-    ?.replace(/\.(html?|xhtml)$/i, '')
-    ?.replace(/[-_]+/g, ' ')
-    .trim()
-  const title = userPrompt?.trim()
-    ? generateConversationTitle(userPrompt)
-    : fallbackTitle || manifest.filename.replace(/\.zip$/i, '') || 'Generated Website Preview'
-
-  return {
-    id: `artifact-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`,
-    title,
-    language: 'html',
-    code: preview.code,
-    generatedAttachment: generatedAttachment || undefined,
-    createdAt: new Date().toISOString(),
-    zipPreviewFiles: preview.files,
-    zipPreviewPath: preview.entryPath,
-  }
-}
-
 function preferRenderableArtifact(
   parsedArtifact: Artifact | null,
-  zipPreviewArtifact: ZipPreviewArtifact | null
+  zipPreviewArtifact: GeneratedZipPreviewArtifact | null
 ): Artifact | null {
   if (!parsedArtifact) return zipPreviewArtifact
   if (!zipPreviewArtifact) return parsedArtifact
@@ -1419,6 +1450,7 @@ export default function ChatPage() {
     const clientAssistantMessageId = crypto.randomUUID()
     const requestId = crypto.randomUUID()
     const requestGeneratedFileIntent = detectGeneratedFileIntent(trimmedContent)
+    const requestZipProjectMode = detectZipProjectIntent(trimmedContent)
     const requestArtifactMode = shouldRouteToArtifactMode(trimmedContent, {
       manualArtifactMode: artifactMode,
       generatedFileIntent: requestGeneratedFileIntent,
@@ -1441,6 +1473,7 @@ export default function ChatPage() {
     if (process.env.NODE_ENV !== 'production') {
       console.log('[Artifact] Routing decision', {
         artifactIntentDetected: requestArtifactMode,
+        zipProjectIntentDetected: requestZipProjectMode,
         refinementIntentDetected: detectArtifactRefinementIntent(trimmedContent, activeArtifact),
         generatedFileIntent: requestGeneratedFileIntent?.kind || null,
         manualArtifactMode: artifactMode,
@@ -1543,7 +1576,7 @@ export default function ChatPage() {
     // 6. Add assistant placeholder exactly once with correct timestamp
     const isLongTask = isLongTaskClient(trimmedContent, safeAttachments)
     const hasAttachments = safeAttachments && safeAttachments.length > 0
-    const loadingMarker = (requestArtifactMode || requestGeneratedFileIntent)
+    const loadingMarker = (requestArtifactMode || requestGeneratedFileIntent || requestZipProjectMode)
       ? ARTIFACT_LOADING_MARKER
       : isLongTask
         ? LONG_TASK_LOADING_MARKER
@@ -1552,6 +1585,8 @@ export default function ChatPage() {
     // Determine initial status label based on reasoning mode
     const initialStatusLabel = requestGeneratedFileIntent
       ? `Preparing ${requestGeneratedFileIntent.extension.toUpperCase()} file...`
+      : requestZipProjectMode
+        ? 'Creating ZIP package...'
       : requestArtifactMode
         ? 'Creating artifact...'
       : hasAttachments
@@ -1589,7 +1624,7 @@ export default function ChatPage() {
       requestId,
       startedAt: assistantCreatedAt,
       model: modelToUse,
-      mode: (requestArtifactMode || requestGeneratedFileIntent) ? 'artifact' : 'normal',
+      mode: (requestArtifactMode || requestGeneratedFileIntent || requestZipProjectMode) ? 'artifact' : 'normal',
       status: 'thinking',
       loadingMarker,
     })
@@ -1626,6 +1661,12 @@ export default function ChatPage() {
         messagesToSend.unshift({
           role: 'user',
           content: buildGeneratedFileInstructions(requestGeneratedFileIntent, activeArtifact),
+          attachments: undefined,
+        })
+      } else if (requestZipProjectMode) {
+        messagesToSend.unshift({
+          role: 'user',
+          content: buildZipProjectInstructions(activeArtifact),
           attachments: undefined,
         })
       } else if (requestArtifactMode) {
@@ -1754,6 +1795,7 @@ export default function ChatPage() {
         const shouldSuppressStreamingContent =
           requestArtifactMode ||
           !!requestGeneratedFileIntent ||
+          requestZipProjectMode ||
           looksLikeStreamingArtifactPayload(displayContent)
 
         // Keep artifact/file generation responses out of the visible chat bubble until final parsing completes.
@@ -1804,7 +1846,7 @@ export default function ChatPage() {
         ? await createGeneratedZip(generatedZipManifest, sendConversationId, projectId, requestId)
         : null
       const zipPreviewArtifact = generatedZipManifest
-        ? createZipPreviewArtifact(generatedZipManifest, generatedZipAttachment, lastUserPromptRef.current)
+        ? createGeneratedZipPreviewArtifact(generatedZipManifest, generatedZipAttachment, lastUserPromptRef.current)
         : null
       const withGeneratedOutputs = (
         message: Message,
@@ -2326,6 +2368,7 @@ export default function ChatPage() {
     const requestId = crypto.randomUUID()
     const clientAssistantMessageId = crypto.randomUUID()
     const requestGeneratedFileIntent = detectGeneratedFileIntent(trimmedContent)
+    const requestZipProjectMode = detectZipProjectIntent(trimmedContent)
     const requestArtifactMode = shouldRouteToArtifactMode(trimmedContent, {
       manualArtifactMode: artifactMode,
       generatedFileIntent: requestGeneratedFileIntent,
@@ -2336,7 +2379,7 @@ export default function ChatPage() {
     const modelToUse = currentConversation.model_used || selectedModel
     const isLongTask = isLongTaskClient(trimmedContent, userMessage.attachments)
     const hasAttachments = !!userMessage.attachments?.length
-    const loadingMarker = (requestArtifactMode || requestGeneratedFileIntent)
+    const loadingMarker = (requestArtifactMode || requestGeneratedFileIntent || requestZipProjectMode)
       ? ARTIFACT_LOADING_MARKER
       : isLongTask
         ? LONG_TASK_LOADING_MARKER
@@ -2344,6 +2387,8 @@ export default function ChatPage() {
 
     const initialStatusLabel = requestGeneratedFileIntent
       ? `Preparing ${requestGeneratedFileIntent.extension.toUpperCase()} file...`
+      : requestZipProjectMode
+        ? 'Creating ZIP package...'
       : requestArtifactMode
         ? 'Creating artifact...'
       : hasAttachments
@@ -2399,7 +2444,7 @@ export default function ChatPage() {
       requestId,
       startedAt: assistantPlaceholder.created_at,
       model: modelToUse,
-      mode: (requestArtifactMode || requestGeneratedFileIntent) ? 'artifact' : 'normal',
+      mode: (requestArtifactMode || requestGeneratedFileIntent || requestZipProjectMode) ? 'artifact' : 'normal',
       status: 'thinking',
       loadingMarker,
     })
@@ -2428,6 +2473,12 @@ export default function ChatPage() {
         messagesToSend.unshift({
           role: 'user',
           content: buildGeneratedFileInstructions(requestGeneratedFileIntent, activeArtifact),
+          attachments: undefined,
+        })
+      } else if (requestZipProjectMode) {
+        messagesToSend.unshift({
+          role: 'user',
+          content: buildZipProjectInstructions(activeArtifact),
           attachments: undefined,
         })
       } else if (requestArtifactMode) {
@@ -2489,6 +2540,7 @@ export default function ChatPage() {
         const shouldSuppressStreamingContent =
           requestArtifactMode ||
           !!requestGeneratedFileIntent ||
+          requestZipProjectMode ||
           looksLikeStreamingArtifactPayload(displayContent)
         if (!shouldSuppressStreamingContent && displayContent && selectedConversationIdRef.current === conversationId) {
           setMessages((prev) =>
@@ -2517,7 +2569,7 @@ export default function ChatPage() {
         ? await createGeneratedZip(generatedZipManifest, conversationId, projectId, requestId)
         : null
       const zipPreviewArtifact = generatedZipManifest
-        ? createZipPreviewArtifact(generatedZipManifest, generatedZipAttachment, trimmedContent)
+        ? createGeneratedZipPreviewArtifact(generatedZipManifest, generatedZipAttachment, trimmedContent)
         : null
       const { artifact, cleanContent, diagnostics } = parseArtifactFromResponse(
         zipCleanContent,

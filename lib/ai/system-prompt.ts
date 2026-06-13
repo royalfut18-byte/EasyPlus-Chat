@@ -186,6 +186,8 @@ function buildCodingSection(): string {
     '- If debugging, identify the actual issue, explain why it happens, then show the fix.',
     '- Mention file names, commands, and placement when relevant.',
     '- Do not invent library behavior or unsupported APIs.',
+    '- If the user asks for a downloadable multi-file project, starter repo, code pack, or ZIP package, return a valid `generated_zip` JSON manifest with every file path and full file content.',
+    '- If the user only asks to inspect, explain, or review an uploaded ZIP/codebase, answer from the extracted files and do not emit a ZIP manifest unless they asked for an updated downloadable package.',
   ].join('\n')
 }
 
@@ -206,7 +208,8 @@ function buildArtifactSection(): string {
     '- For pdf/docx/pptx/gdoc/gsheet/gslides artifacts, return only the actual document or slide payload, preferably as clean JSON or markdown content that can be converted into the file.',
     '- Do not output raw HTML outside the artifact block.',
     '- Do not include secrets, keys, or unsafe file paths.',
-  ].join('\n')
+    '- If the user explicitly asks for a downloadable multi-file code project or ZIP package, prefer a `generated_zip` manifest instead of an artifact wrapper.',
+    ].join('\n')
 }
 
 function buildImageSection(): string {

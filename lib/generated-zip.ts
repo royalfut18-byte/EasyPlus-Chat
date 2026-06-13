@@ -1,3 +1,5 @@
+import type { Artifact, ChatAttachment } from '@/types/models'
+
 export const MAX_ZIP_FILES = 100
 export const MAX_ZIP_TOTAL_BYTES = 10 * 1024 * 1024
 export const MAX_ZIP_FILE_BYTES = 2 * 1024 * 1024
@@ -20,6 +22,11 @@ export interface GeneratedZipPreview {
   entryPath: string
   code: string
   files: GeneratedZipFile[]
+}
+
+export interface GeneratedZipPreviewArtifact extends Artifact {
+  zipPreviewFiles?: GeneratedZipFile[]
+  zipPreviewPath?: string
 }
 
 const BLOCKED_SEGMENTS = new Set([
@@ -260,6 +267,47 @@ export function buildGeneratedZipPreview(manifest: GeneratedZipManifest): Genera
     entryPath: htmlFile.path,
     code: previewHtml,
     files,
+  }
+}
+
+function createGeneratedZipTitle(manifest: GeneratedZipManifest, preview: GeneratedZipPreview, userPrompt?: string): string {
+  const normalizedPrompt = String(userPrompt || '').trim()
+  if (normalizedPrompt) {
+    return normalizedPrompt
+      .replace(/^(make|build|create|generate|turn|convert|update|package|give me|send me)\s+/i, '')
+      .replace(/\s+(as|into)\s+(a\s+)?zip(\s+file|\s+package)?$/i, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 80) || 'Generated Website Preview'
+  }
+
+  const fallbackTitle = preview.entryPath
+    .split('/')
+    .pop()
+    ?.replace(/\.(html?|xhtml)$/i, '')
+    ?.replace(/[-_]+/g, ' ')
+    .trim()
+
+  return fallbackTitle || manifest.filename.replace(/\.zip$/i, '') || 'Generated Website Preview'
+}
+
+export function createGeneratedZipPreviewArtifact(
+  manifest: GeneratedZipManifest,
+  generatedAttachment?: ChatAttachment | null,
+  userPrompt?: string
+): GeneratedZipPreviewArtifact | null {
+  const preview = buildGeneratedZipPreview(manifest)
+  if (!preview) return null
+
+  return {
+    id: `artifact-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`,
+    title: createGeneratedZipTitle(manifest, preview, userPrompt),
+    language: 'html',
+    code: preview.code,
+    generatedAttachment: generatedAttachment || undefined,
+    createdAt: new Date().toISOString(),
+    zipPreviewFiles: preview.files,
+    zipPreviewPath: preview.entryPath,
   }
 }
 

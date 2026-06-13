@@ -29,13 +29,19 @@ const ARTIFACT_INTENT_PATTERNS = [
   /\blanding page\b/i,
 ]
 
-const ZIP_PIPELINE_PATTERNS = [
-  /\bzip\b/i,
-  /\bdownloadable project\b/i,
-  /\bproject zip\b/i,
-  /\bzip website project\b/i,
-  /\bstarter project\b/i,
-  /\bcodebase\b/i,
+const ZIP_GENERATION_VERBS = /\b(make|create|build|generate|export|package|bundle|return|give me|send me|output|download|downloadable|deliver|turn .* into|convert|update|modify|refactor|fix)\b/i
+const ZIP_PROJECT_TARGETS = /\b(zip|zip file|zip package|downloadable zip|project zip|starter project|downloadable project|multi-file project|code pack|codebase|repo|repository|source code|full project|all files)\b/i
+const ZIP_PROJECT_SPECIAL_CASES = [
+  /\bupdated? zip\b/i,
+  /\bmodified zip\b/i,
+  /\breturn .*generated_zip\b/i,
+  /\bgive me .*all files\b/i,
+  /\bpackage .*as .*zip\b/i,
+  /\bexport .*as .*zip\b/i,
+]
+const ZIP_READ_ONLY_PATTERNS = [
+  /\b(read|analyse|analyze|explain|inspect|review|summari[sz]e|understand|look at|what(?:'s| is) in|open|check)\b.*\bzip\b/i,
+  /\bzip\b.*\b(read|analyse|analyze|explain|inspect|review|summari[sz]e|understand|look at|what(?:'s| is) in|open|check)\b/i,
 ]
 
 const EASY_CODE_PATTERNS = [
@@ -46,7 +52,15 @@ const EASY_CODE_PATTERNS = [
 export function detectZipProjectIntent(message: string): boolean {
   const text = String(message || '').trim()
   if (!text) return false
-  return ZIP_PIPELINE_PATTERNS.some((pattern) => pattern.test(text))
+  if (ZIP_READ_ONLY_PATTERNS.some((pattern) => pattern.test(text)) && !ZIP_GENERATION_VERBS.test(text)) {
+    return false
+  }
+
+  if (ZIP_PROJECT_SPECIAL_CASES.some((pattern) => pattern.test(text))) {
+    return true
+  }
+
+  return ZIP_GENERATION_VERBS.test(text) && ZIP_PROJECT_TARGETS.test(text)
 }
 
 export function detectArtifactRefinementIntent(message: string, currentArtifact?: Artifact | null): boolean {
