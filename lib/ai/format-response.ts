@@ -1,7 +1,11 @@
-const CODE_BLOCK_PLACEHOLDER = '___CODE_BLOCK___'
-const ARTIFACT_BLOCK_PLACEHOLDER = '___ARTIFACT_BLOCK___'
-const CURRENCY_PLACEHOLDER = '___CURRENCY_'
-const CURRENCY_PLACEHOLDER_SUFFIX = '___'
+const PLACEHOLDER_START = '\uE000'
+const PLACEHOLDER_END = '\uE001'
+const INLINE_CODE_TAG = 'INLINE_CODE'
+const DISPLAY_MATH_TAG = 'DISPLAY_MATH'
+const INLINE_MATH_TAG = 'INLINE_MATH'
+const CODE_BLOCK_TAG = 'CODE_BLOCK'
+const ARTIFACT_BLOCK_TAG = 'ARTIFACT_BLOCK'
+const CURRENCY_TAG = 'CURRENCY'
 
 const CURRENCY_PATTERN = /(^|[^\\])\$((?:\d{1,3}(?:[,\s']\d{3})+|\d+)(?:\.\d+)?)(?=$|[\s);:!?}\]]|,(?!\d)|\.(?!\d))/g
 const INLINE_MATH_CANDIDATE_PATTERN = /\$((?:\d+(?:[.,]\d+)?)|(?:[A-Za-z])|(?:[^$\n]*\\[^$\n]*)|(?:[^$\n]*[=<>≈≤≥+\-*/×÷^_][^$\n]*))\$/g
@@ -9,6 +13,24 @@ const SIMPLE_INLINE_MATH_PATTERN = /^[A-Za-z0-9\s.,()/%=<>≈≤≥+\-*/×÷^_:]
 
 function escapeUnescapedDollarSigns(value: string): string {
   return value.replace(/(^|[^\\])\$/g, '$1\\$')
+}
+
+function createPlaceholder(tag: string, index: number): string {
+  return `${PLACEHOLDER_START}${tag}_${index}${PLACEHOLDER_END}`
+}
+
+function restorePlaceholders(
+  value: string,
+  tag: string,
+  items: string[],
+  transform?: (item: string) => string
+): string {
+  const pattern = new RegExp(`${PLACEHOLDER_START}${tag}_(\\d+)${PLACEHOLDER_END}`, 'g')
+  return value.replace(pattern, (match, indexText) => {
+    const item = items[Number.parseInt(indexText, 10)]
+    if (typeof item !== 'string') return match
+    return transform ? transform(item) : item
+  })
 }
 
 function looksLikeInlineMath(content: string): boolean {
@@ -48,20 +70,20 @@ export function cleanAssistantText(text: string): string {
   // Protect artifact blocks first
   cleaned = cleaned.replace(/```artifact:[^\n]*\n[\s\S]*?```/g, (match) => {
     artifactBlocks.push(match)
-    return `${ARTIFACT_BLOCK_PLACEHOLDER}${artifactBlocks.length - 1}`
+    return createPlaceholder(ARTIFACT_BLOCK_TAG, artifactBlocks.length - 1)
   })
 
   // Protect fenced code blocks
   cleaned = cleaned.replace(/```[\s\S]*?```/g, (match) => {
     codeBlocks.push(match)
-    return `${CODE_BLOCK_PLACEHOLDER}${codeBlocks.length - 1}`
+    return createPlaceholder(CODE_BLOCK_TAG, codeBlocks.length - 1)
   })
 
   // Protect inline code
   const inlineCodeBlocks: string[] = []
   cleaned = cleaned.replace(/`[^`\n]+`/g, (match) => {
     inlineCodeBlocks.push(match)
-    return `___INLINE_CODE___${inlineCodeBlocks.length - 1}`
+    return createPlaceholder(INLINE_CODE_TAG, inlineCodeBlocks.length - 1)
   })
 
   // Convert LaTeX-style delimiters to dollar-sign delimiters
@@ -74,7 +96,7 @@ export function cleanAssistantText(text: string): string {
   const displayMathBlocks: string[] = []
   cleaned = cleaned.replace(/\$\$[\s\S]*?\$\$/g, (match) => {
     displayMathBlocks.push(match)
-    return `___DISPLAY_MATH___${displayMathBlocks.length - 1}`
+    return createPlaceholder(DISPLAY_MATH_TAG, displayMathBlocks.length - 1)
   })
 
   // Protect inline math blocks ($...$) where content looks like LaTeX
@@ -83,7 +105,7 @@ export function cleanAssistantText(text: string): string {
   cleaned = cleaned.replace(INLINE_MATH_CANDIDATE_PATTERN, (match, content) => {
     if (looksLikeInlineMath(content)) {
       inlineMathBlocks.push(match)
-      return `___INLINE_MATH___${inlineMathBlocks.length - 1}`
+      return createPlaceholder(INLINE_MATH_TAG, inlineMathBlocks.length - 1)
     }
     return match
   })
@@ -92,7 +114,7 @@ export function cleanAssistantText(text: string): string {
   // "$140 deposit" stay as text while paired fragments like "$8.8$" render as math.
   cleaned = cleaned.replace(CURRENCY_PATTERN, (_match, prefix: string, amount: string) => {
     currencyBlocks.push(`$${amount}`)
-    return `${prefix}${CURRENCY_PLACEHOLDER}${currencyBlocks.length - 1}${CURRENCY_PLACEHOLDER_SUFFIX}`
+    return `${prefix}${createPlaceholder(CURRENCY_TAG, currencyBlocks.length - 1)}`
   })
 
   // Only safe fix: add space after period/comma before uppercase (sentence boundaries)
@@ -104,19 +126,16 @@ export function cleanAssistantText(text: string): string {
 
   // Restore protected content in correct order (reverse of protection)
   // Restore currency escaped for markdown so remark-math cannot parse it.
-  cleaned = cleaned.replace(new RegExp(`${CURRENCY_PLACEHOLDER}(\\d+)${CURRENCY_PLACEHOLDER_SUFFIX}`, 'g'), (match, i) => {
-    const currency = currencyBlocks[Number.parseInt(i, 10)]
-    return currency ? escapeUnescapedDollarSigns(currency) : match
-  })
+  cleaned = restorePlaceholders(cleaned, CURRENCY_TAG, currencyBlocks, escapeUnescapedDollarSigns)
 
   // Restore math
-  cleaned = cleaned.replace(/___INLINE_MATH___(\d+)/g, (match, i) => inlineMathBlocks[parseInt(i)] ?? match)
-  cleaned = cleaned.replace(/___DISPLAY_MATH___(\d+)/g, (match, i) => displayMathBlocks[parseInt(i)] ?? match)
+  cleaned = restorePlaceholders(cleaned, INLINE_MATH_TAG, inlineMathBlocks)
+  cleaned = restorePlaceholders(cleaned, DISPLAY_MATH_TAG, displayMathBlocks)
 
   // Restore code
-  cleaned = cleaned.replace(/___INLINE_CODE___(\d+)/g, (match, i) => inlineCodeBlocks[parseInt(i)] ?? match)
-  cleaned = cleaned.replace(new RegExp(`${CODE_BLOCK_PLACEHOLDER}(\\d+)`, 'g'), (match, i) => codeBlocks[parseInt(i)] ?? match)
-  cleaned = cleaned.replace(new RegExp(`${ARTIFACT_BLOCK_PLACEHOLDER}(\\d+)`, 'g'), (match, i) => artifactBlocks[parseInt(i)] ?? match)
+  cleaned = restorePlaceholders(cleaned, INLINE_CODE_TAG, inlineCodeBlocks)
+  cleaned = restorePlaceholders(cleaned, CODE_BLOCK_TAG, codeBlocks)
+  cleaned = restorePlaceholders(cleaned, ARTIFACT_BLOCK_TAG, artifactBlocks)
 
   return cleaned
 }

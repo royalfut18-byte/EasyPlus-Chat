@@ -59,12 +59,24 @@ I = \int_0^{\pi/2} x\,dx
 $$.`
 const numericInlineMath = 'The widths are $8.8$ m, $7.1$ m, and rainfall was $20$ mm.'
 const compactEquationMath = String.raw`Volume uses $241.875 \times 0.02$ and the symbol $A$.`
+const adjacentDigitsAfterMath = 'The symbol is $A$2,000 and the estimate is $B$170.'
+const bulletListWithMath = [
+  'What the search results do show is:',
+  '',
+  '- Demand could be strong.',
+  '- The valuation still looks expensive.',
+  '',
+  'If SpaceX goes to US$200/share:',
+  'A$2,000 investment would be worth about A$2,486.',
+].join('\n')
 
 const exactResult = renderMarkdown(exactResponse)
 const mixedResult = renderMarkdown(mixedCurrencyAndMath)
 const latexResult = renderMarkdown(latexMath)
 const numericResult = renderMarkdown(numericInlineMath)
 const compactEquationResult = renderMarkdown(compactEquationMath)
+const adjacentDigitsResult = renderMarkdown(adjacentDigitsAfterMath)
+const bulletListResult = renderMarkdown(bulletListWithMath)
 
 for (const amount of ['$140', '$25.50', '$191', '$446', '$612', '$752']) {
   assert(exactResult.html.includes(amount), `Missing ${amount} in rendered exact response`)
@@ -80,7 +92,16 @@ assert(!numericResult.html.includes('$8.8$'), 'Rendered numeric inline math shou
 assert(!numericResult.html.includes('$20$'), 'Rendered unit values should not show literal dollar signs')
 assert(numericResult.html.includes('katex'), 'Expected numeric inline math to render through KaTeX')
 assert(compactEquationResult.html.includes('katex'), 'Expected compact equation fragments to render through KaTeX')
+assert(!adjacentDigitsResult.cleaned.includes('___INLINE_MATH___'), 'No inline math placeholders should leak into cleaned text')
+assert(!adjacentDigitsResult.cleaned.includes('\uE000'), 'No bounded placeholder sentinels should leak into cleaned text')
+assert(adjacentDigitsResult.html.includes('2,000'), 'Adjacent digits after inline math should survive rendering')
+assert(adjacentDigitsResult.html.includes('170'), 'Trailing digits after inline math should survive rendering')
+assert(bulletListResult.html.includes('<ul>'), 'Bullet lists should render as lists')
+assert(bulletListResult.html.includes('US$200/share'), 'Currency-prefixed share prices should remain visible as text')
+assert(bulletListResult.html.includes('A$2,000'), 'AUD currency values should remain visible as text')
+assert(!bulletListResult.html.includes('INLINE_MATH'), 'No placeholder text should appear in rendered HTML')
 
 console.log('PASS exact currency response renders $140, $25.50, $191, $446, $612, $752')
 console.log('PASS mixed currency and math renders $100,000 as text and $A = P(1+r)^n$ as KaTeX')
 console.log('PASS numeric inline math like $8.8$ m and $20$ mm renders without visible dollar signs')
+console.log('PASS placeholder restoration does not corrupt adjacent digits or markdown bullet lists')
