@@ -763,11 +763,16 @@ export default function ChatPage() {
   const conversationRequestSeqRef = useRef(0)
   const pendingResponsesRef = useRef<Record<string, PendingResponse>>({})
   const modelAvailabilityFetchStartedRef = useRef(false)
+  const availableModelIdsForDefaultsRef = useRef<string[] | null>(null)
   const router = useRouter()
   const searchParams = useSearchParams()
   const projectId = searchParams.get('projectId')
   const queryConversationId = searchParams.get('conversationId')
   const supabase = useMemo(() => createClient(), [])
+
+  useEffect(() => {
+    availableModelIdsForDefaultsRef.current = availableModelIdsForDefaults
+  }, [availableModelIdsForDefaults])
 
   const applyAutoReasoningModeUpgrade = (nextMode: ReasoningMode, conversationId?: string | null) => {
     setReasoningMode(nextMode)
@@ -976,13 +981,21 @@ export default function ChatPage() {
     setArtifactMessageId(null)
     setGeneratedImages([])
     setImageConversationId(null)
-    setSelectedModel(getPreferredDefaultModelId(availableModelIdsForDefaults))
+    setSelectedModel(getPreferredDefaultModelId(availableModelIdsForDefaultsRef.current))
     setReasoningMode('instant')
-    replaceChatUrl(projectId || null, null)
+
+    const routeConversationId = typeof window !== 'undefined'
+      ? new URLSearchParams(window.location.search).get('conversationId')
+      : null
+
+    if (!routeConversationId) {
+      replaceChatUrl(projectId || null, null)
+    }
+
     return () => {
       active = false
     }
-  }, [availableModelIdsForDefaults, projectId, replaceChatUrl])
+  }, [projectId, replaceChatUrl])
 
   useEffect(() => {
     if (
