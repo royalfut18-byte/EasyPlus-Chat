@@ -593,6 +593,7 @@ const PREVIEW_BRIDGE_SCRIPT = `
   var signalReady = function () { report('ready', null); };
   document.addEventListener('DOMContentLoaded', signalReady, { once: true });
   window.addEventListener('load', signalReady, { once: true });
+})();
 </script>`
 
 function injectPreviewBridge(html: string): string {
@@ -1654,7 +1655,7 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
                 onClick={() => iframeRef.current?.focus()}
               >
                 {isPreviewLoading && !previewBlocked && (
-                  <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/80 text-slate-700">
+                  <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-white/80 text-slate-700">
                     <div className="flex items-center gap-2 text-sm font-medium">
                       <Loader2 className="h-4 w-4 animate-spin" />
                       Loading preview
@@ -1666,7 +1667,8 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
                   key={refreshKey}
                   srcDoc={getPreviewSrcDoc(artifact)}
                   title={artifact.title}
-                  sandbox="allow-scripts allow-forms allow-popups allow-modals allow-downloads"
+                  sandbox="allow-scripts allow-forms allow-popups allow-modals allow-downloads allow-pointer-lock"
+                  allow="autoplay; clipboard-write; fullscreen"
                   className="w-full h-full border-0 bg-white pointer-events-auto"
                   style={{
                     minHeight: previewDevice !== 'desktop' ? '600px' : undefined,
