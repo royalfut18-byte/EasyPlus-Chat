@@ -29,6 +29,8 @@ export const EASY_CODE_MAX_ZIP_BYTES = 12 * 1024 * 1024
 const EASY_CODE_CREATE_TIMEOUT_MS = 90_000
 const EASY_CODE_EDIT_TIMEOUT_MS = 90_000
 const EASY_CODE_REPAIR_TIMEOUT_MS = 45_000
+const EASY_CODE_STATIC_CREATE_MAX_TOKENS = 6000
+const EASY_CODE_STATIC_REPAIR_MAX_TOKENS = 5200
 const EASY_CODE_STATIC_FILES = ['index.html', 'styles.css', 'script.js', 'README.md'] as const
 
 type EasyCodeAiProvider = 'azure-gpt54' | 'azure-deepseek' | 'google' | 'fallback'
@@ -735,7 +737,7 @@ Requirements:
 - do not output markdown fences
 - do not output prose outside JSON`,
       },
-    ], 3200, {
+    ], EASY_CODE_STATIC_REPAIR_MAX_TOKENS, {
       timeoutMs: EASY_CODE_CREATE_TIMEOUT_MS,
       phase: 'repair',
       projectId: input.projectId,
@@ -3262,11 +3264,227 @@ export function validateEasyCodePath(path: unknown): string {
   return clean
 }
 
+const EASY_CODE_RESULT_META_KEYS = new Set([
+  'summary',
+  'files',
+  'operations',
+  'instructions',
+  'previewType',
+  'title',
+  'framework',
+])
+
+function isLikelyEasyCodePathKey(key: unknown): key is string {
+  if (typeof key !== 'string') return false
+  const trimmed = key.trim()
+  if (!trimmed || EASY_CODE_RESULT_META_KEYS.has(trimmed)) return false
+  if (trimmed.includes('\n') || trimmed.includes('\r')) return false
+  try {
+    const validated = validateEasyCodePath(trimmed)
+    return validated.includes('.') || validated.includes('/') || validated.startsWith('.')
+  } catch {
+    return false
+  }
+}
+
+function normalizeEasyCodeObjectFiles(raw: unknown): any[] {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return []
+
+  const files: any[] = []
+
+  for (const [key, value] of Object.entries(raw)) {
+    if (!isLikelyEasyCodePathKey(key)) continue
+    const path = validateEasyCodePath(key)
+
+    if (typeof value === 'string') {
+      files.push({
+        path,
+        language: inferLanguage(path),
+        content: value,
+        operation: 'create',
+      })
+      continue
+    }
+
+    if (!value || typeof value !== 'object' || Array.isArray(value)) continue
+
+    const operation = ['create', 'update', 'delete', 'rename'].includes((value as any)?.operation)
+      ? (value as any).operation as EasyCodeOperation
+      : 'create'
+    const content =
+      typeof (value as any)?.content === 'string'
+        ? (value as any).content
+        : typeof (value as any)?.code === 'string'
+          ? (value as any).code
+          : typeof (value as any)?.value === 'string'
+            ? (value as any).value
+            : ''
+
+    files.push({
+      path,
+      language: typeof (value as any)?.language === 'string' ? (value as any).language : inferLanguage(path),
+      content,
+      operation,
+      newPath: typeof (value as any)?.newPath === 'string' ? (value as any).newPath : undefined,
+    })
+  }
+
+  return files
+}
+
+function decodeEasyCodeJsonStringValue(rawValue: string): string | null {
+  try {
+    return JSON.parse(`"${rawValue
+      .replace(/\r/g, '\\r')
+      .replace(/\n/g, '\\n')
+      .replace(/\t/g, '\\t')}"`)
+  } catch {
+    return null
+  }
+}
+
+function extractEasyCodeJsonLikeStringValues(text: string): Map<string, string> {
+  const values = new Map<string, string>()
+  const propertyRegex = /"((?:\\.|[^"\\])+)\"\s*:\s*"((?:\\.|[^"\\])*)"/g
+
+  for (const match of text.matchAll(propertyRegex)) {
+    const rawKey = match[1]
+    const rawValue = match[2]
+    const key = decodeEasyCodeJsonStringValue(rawKey)
+    const value = decodeEasyCodeJsonStringValue(rawValue)
+    if (!key || value == null) continue
+    values.set(key, value)
+  }
+
+  return values
+}
+
+function extractEasyCodeFenceFiles(text: string): EasyCodeAiFile[] {
+  const files = new Map<string, EasyCodeAiFile>()
+  const fencePatterns = [
+    /(?:^|\r?\n)\s*(?:[-*#>\s]*)?FILE:\s*([^\r\n]+?)\s*\r?\n```[^\n`]*\r?\n([\s\S]*?)```/gi,
+    /(?:^|\r?\n)\s*(?:[-*#>\s]*)?([./\w-]+\.[a-z0-9_-]+)\s*\r?\n```[^\n`]*\r?\n([\s\S]*?)```/gi,
+  ]
+
+  for (const pattern of fencePatterns) {
+    for (const match of text.matchAll(pattern)) {
+      const rawPath = match[1]?.trim()
+      const content = match[2]
+      if (!rawPath || typeof content !== 'string') continue
+      try {
+        const path = validateEasyCodePath(rawPath)
+        files.set(path.toLowerCase(), {
+          path,
+          language: inferLanguage(path),
+          content: content.trim(),
+          operation: 'create',
+        })
+      } catch {
+        continue
+      }
+    }
+  }
+
+  return Array.from(files.values())
+}
+
+function recoverEasyCodeAiResultFromText(text: string): EasyCodeAiResult | null {
+  const jsonLikeValues = extractEasyCodeJsonLikeStringValues(text)
+  const recoveredFiles = new Map<string, EasyCodeAiFile>()
+
+  for (const [key, value] of jsonLikeValues.entries()) {
+    if (!isLikelyEasyCodePathKey(key)) continue
+    const path = validateEasyCodePath(key)
+    recoveredFiles.set(path.toLowerCase(), {
+      path,
+      language: inferLanguage(path),
+      content: value,
+      operation: 'create',
+    })
+  }
+
+  for (const file of extractEasyCodeFenceFiles(text)) {
+    recoveredFiles.set(file.path.toLowerCase(), file)
+  }
+
+  if (recoveredFiles.size === 0) return null
+
+  const instructionsValue = jsonLikeValues.get('instructions')
+  const previewTypeValue = jsonLikeValues.get('previewType')
+  const frameworkValue = jsonLikeValues.get('framework')
+  const titleValue = jsonLikeValues.get('title')
+  const summaryValue = jsonLikeValues.get('summary')
+
+  return normalizeAiResult({
+    summary: summaryValue || 'Recovered the Easy Code project from malformed AI output.',
+    title: titleValue,
+    framework: frameworkValue,
+    previewType: previewTypeValue,
+    instructions: typeof instructionsValue === 'string' && instructionsValue.trim()
+      ? instructionsValue
+        .split(/\r?\n|•| - /)
+        .map((item) => item.trim())
+        .filter(Boolean)
+        .slice(0, 10)
+      : [],
+    files: Array.from(recoveredFiles.values()),
+  })
+}
+
+function extractBalancedJsonObject(text: string): string | null {
+  let start = -1
+  let depth = 0
+  let inString = false
+  let escaped = false
+
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index]
+
+    if (inString) {
+      if (escaped) {
+        escaped = false
+        continue
+      }
+      if (char === '\\') {
+        escaped = true
+        continue
+      }
+      if (char === '"') inString = false
+      continue
+    }
+
+    if (char === '"') {
+      inString = true
+      continue
+    }
+
+    if (char === '{') {
+      if (depth === 0) start = index
+      depth += 1
+      continue
+    }
+
+    if (char !== '}' || depth === 0) continue
+    depth -= 1
+    if (depth === 0 && start >= 0) {
+      return text.slice(start, index + 1)
+    }
+  }
+
+  return null
+}
+
 export function normalizeAiResult(raw: any): EasyCodeAiResult {
   const files = Array.isArray(raw?.files)
     ? raw.files
+    : normalizeEasyCodeObjectFiles(raw?.files).length > 0
+      ? normalizeEasyCodeObjectFiles(raw.files)
     : Array.isArray(raw?.operations)
       ? raw.operations
+      : normalizeEasyCodeObjectFiles(raw?.operations).length > 0
+        ? normalizeEasyCodeObjectFiles(raw.operations)
+        : normalizeEasyCodeObjectFiles(raw).length > 0
+          ? normalizeEasyCodeObjectFiles(raw)
       : []
   const cleanFiles = files.slice(0, EASY_CODE_MAX_FILES_PER_AI_CALL).map((file: any) => {
     const operation = ['create', 'update', 'delete', 'rename'].includes(file?.operation)
@@ -3656,7 +3874,7 @@ Requirements:
 - if possible include styles.css, script.js, and README.md
 - return JSON only`,
       },
-    ], 3200, {
+    ], EASY_CODE_STATIC_REPAIR_MAX_TOKENS, {
       timeoutMs: EASY_CODE_CREATE_TIMEOUT_MS,
       phase: 'repair',
       projectId: input.projectId,
@@ -3729,9 +3947,11 @@ function extractJson(text: string): string {
   if (trimmed.startsWith('{') && trimmed.endsWith('}')) return trimmed
   const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1]
   if (fenced) return fenced.trim()
+  const balanced = extractBalancedJsonObject(trimmed)
+  if (balanced) return balanced.trim()
   const start = trimmed.indexOf('{')
   const end = trimmed.lastIndexOf('}')
-  if (start >= 0 && end > start) return trimmed.slice(start, end + 1)
+  if (start >= 0 && end > start) return trimmed.slice(start, end + 1).trim()
   throw new Error('The AI returned invalid file data. Try again.')
 }
 
@@ -3908,6 +4128,17 @@ async function parseEasyCodeJson(
     })
     return { aiResult: result, diagnostics: priorDiagnostics }
   } catch (parseError: any) {
+    const locallyRecovered = recoverEasyCodeAiResultFromText(text)
+    if (locallyRecovered) {
+      console.info('[Easy Code] Local malformed-output recovery succeeded', {
+        projectId: projectId || null,
+        jsonParseSuccess: false,
+        repairAttempted: false,
+        repairSuccess: false,
+        fileCount: locallyRecovered.files.length,
+      })
+      return { aiResult: locallyRecovered, diagnostics: priorDiagnostics }
+    }
     console.warn('[Easy Code] JSON parse failed, attempting one repair pass', {
       projectId: projectId || null,
       jsonParseSuccess: false,
@@ -3939,6 +4170,18 @@ async function parseEasyCodeJson(
       })
       return { aiResult: result, diagnostics: [...priorDiagnostics, ...repaired.diagnostics] }
     } catch (repairError: any) {
+      const locallyRecovered = recoverEasyCodeAiResultFromText(repaired.content)
+      if (locallyRecovered) {
+        console.info('[Easy Code] Local recovery succeeded after repair output stayed malformed', {
+          projectId: projectId || null,
+          jsonParseSuccess: false,
+          repairAttempted: true,
+          repairPassSuccess: false,
+          repairSuccess: false,
+          fileCount: locallyRecovered.files.length,
+        })
+        return { aiResult: locallyRecovered, diagnostics: [...priorDiagnostics, ...repaired.diagnostics] }
+      }
       ;(repairError as any).easyCodeSourceText = text
       ;(repairError as any).easyCodeRepairText = repaired.content
       console.error('[Easy Code] JSON repair failed', {
@@ -4732,7 +4975,7 @@ ${fileContext || 'None'}`
   const raw = await callEasyCodeJsonProvider([
     { role: 'system', content: system },
     { role: 'user', content: user },
-  ], staticLandingPage ? 2600 : input.mode === 'create' ? 8000 : 7000, {
+  ], staticLandingPage ? EASY_CODE_STATIC_CREATE_MAX_TOKENS : input.mode === 'create' ? 8000 : 7000, {
     timeoutMs: staticLandingPage ? EASY_CODE_CREATE_TIMEOUT_MS : input.mode === 'edit' ? EASY_CODE_EDIT_TIMEOUT_MS : EASY_CODE_CREATE_TIMEOUT_MS,
     phase: getEasyCodePhase(input.mode),
     projectId: input.projectId,
