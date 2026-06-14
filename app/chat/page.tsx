@@ -346,6 +346,100 @@ function shouldRouteToArtifactMode(
   return options.manualArtifactMode || detectArtifactIntent(message, options.currentArtifact)
 }
 
+type AutoReasoningUpgradeReason = 'artifact' | 'generated-file' | 'zip-project' | 'long-task'
+
+function resolveRequestReasoningMode(options: {
+  selectedMode: ReasoningMode
+  artifactMode: boolean
+  generatedFileIntent: GeneratedFileIntent | null
+  zipProjectMode: boolean
+  isLongTask: boolean
+}): { mode: ReasoningMode; autoUpgradeReason: AutoReasoningUpgradeReason | null } {
+  if (options.selectedMode !== 'instant') {
+    return { mode: options.selectedMode, autoUpgradeReason: null }
+  }
+
+  if (options.generatedFileIntent) {
+    return { mode: 'thinking', autoUpgradeReason: 'generated-file' }
+  }
+
+  if (options.zipProjectMode) {
+    return { mode: 'thinking', autoUpgradeReason: 'zip-project' }
+  }
+
+  if (options.artifactMode) {
+    return { mode: 'thinking', autoUpgradeReason: 'artifact' }
+  }
+
+  if (options.isLongTask) {
+    return { mode: 'thinking', autoUpgradeReason: 'long-task' }
+  }
+
+  return { mode: options.selectedMode, autoUpgradeReason: null }
+}
+
+function getInitialStatusLabel(options: {
+  generatedFileIntent: GeneratedFileIntent | null
+  zipProjectMode: boolean
+  artifactMode: boolean
+  hasAttachments: boolean
+  webSearchEnabled: boolean
+  isLongTask: boolean
+  reasoningMode: ReasoningMode
+  autoUpgradeReason: AutoReasoningUpgradeReason | null
+}): string {
+  if (options.autoUpgradeReason === 'generated-file') {
+    const extension = options.generatedFileIntent?.extension?.toUpperCase() || 'file'
+    return `Switched to Thinking mode for better ${extension} generation...`
+  }
+
+  if (options.autoUpgradeReason === 'zip-project') {
+    return 'Switched to Thinking mode for better ZIP generation...'
+  }
+
+  if (options.autoUpgradeReason === 'artifact') {
+    return 'Switched to Thinking mode for better artifact generation...'
+  }
+
+  if (options.autoUpgradeReason === 'long-task') {
+    return 'Switched to Thinking mode for a larger task...'
+  }
+
+  if (options.generatedFileIntent) {
+    return `Preparing ${options.generatedFileIntent.extension.toUpperCase()} file...`
+  }
+
+  if (options.zipProjectMode) {
+    return 'Creating ZIP package...'
+  }
+
+  if (options.artifactMode) {
+    return 'Creating artifact...'
+  }
+
+  if (options.hasAttachments) {
+    return 'Reading attached files...'
+  }
+
+  if (options.webSearchEnabled) {
+    return 'Searching the web...'
+  }
+
+  if (options.isLongTask) {
+    return 'Working through a larger task...'
+  }
+
+  if (options.reasoningMode === 'extended') {
+    return 'Deep reasoning...'
+  }
+
+  if (options.reasoningMode === 'instant') {
+    return 'Responding...'
+  }
+
+  return 'Thinking...'
+}
+
 function looksLikeStreamingArtifactPayload(content: string): boolean {
   const trimmed = content.trimStart()
   if (!trimmed) return false
@@ -674,6 +768,36 @@ export default function ChatPage() {
   const projectId = searchParams.get('projectId')
   const queryConversationId = searchParams.get('conversationId')
   const supabase = useMemo(() => createClient(), [])
+
+  const applyAutoReasoningModeUpgrade = (nextMode: ReasoningMode, conversationId?: string | null) => {
+    setReasoningMode(nextMode)
+
+    if (!conversationId) return
+
+    setCurrentConversation((prev) => (
+      prev?.id === conversationId
+        ? { ...prev, reasoning_mode: nextMode }
+        : prev
+    ))
+    setConversations((prev) => prev.map((conversation) => (
+      conversation.id === conversationId
+        ? { ...conversation, reasoning_mode: nextMode }
+        : conversation
+    )))
+    setNormalConversations((prev) => prev.map((conversation) => (
+      conversation.id === conversationId
+        ? { ...conversation, reasoning_mode: nextMode }
+        : conversation
+    )))
+    setSidebarProjects((prev) => prev.map((project) => ({
+      ...project,
+      conversations: project.conversations.map((conversation) => (
+        conversation.id === conversationId
+          ? { ...conversation, reasoning_mode: nextMode }
+          : conversation
+      )),
+    })))
+  }
 
   const resolveGeneratedFileArtifact = async (
     artifact: Artifact,
@@ -1486,7 +1610,18 @@ export default function ChatPage() {
       currentArtifact: activeArtifact,
     })
     const requestWebSearchEnabled = webSearchEnabled
-    const requestReasoningMode = reasoningMode
+    const isLongTask = isLongTaskClient(trimmedContent, safeAttachments)
+    const { mode: requestReasoningMode, autoUpgradeReason } = resolveRequestReasoningMode({
+      selectedMode: reasoningMode,
+      artifactMode: requestArtifactMode,
+      generatedFileIntent: requestGeneratedFileIntent,
+      zipProjectMode: requestZipProjectMode,
+      isLongTask,
+    })
+
+    if (requestReasoningMode !== reasoningMode) {
+      applyAutoReasoningModeUpgrade(requestReasoningMode, currentConversation?.id)
+    }
 
     const sentAt = new Date()
     const userCreatedAt = sentAt.toISOString()
@@ -1603,32 +1738,23 @@ export default function ChatPage() {
     const sendConversationId = conversation.id
 
     // 6. Add assistant placeholder exactly once with correct timestamp
-    const isLongTask = isLongTaskClient(trimmedContent, safeAttachments)
-    const hasAttachments = safeAttachments && safeAttachments.length > 0
+    const hasAttachments = !!(safeAttachments && safeAttachments.length > 0)
     const loadingMarker = (requestArtifactMode || requestGeneratedFileIntent || requestZipProjectMode)
       ? ARTIFACT_LOADING_MARKER
       : isLongTask
         ? LONG_TASK_LOADING_MARKER
         : ASSISTANT_LOADING_MARKER
 
-    // Determine initial status label based on reasoning mode
-    const initialStatusLabel = requestGeneratedFileIntent
-      ? `Preparing ${requestGeneratedFileIntent.extension.toUpperCase()} file...`
-      : requestZipProjectMode
-        ? 'Creating ZIP package...'
-      : requestArtifactMode
-        ? 'Creating artifact...'
-      : hasAttachments
-        ? 'Reading attached files...'
-        : requestWebSearchEnabled
-          ? 'Searching the web...'
-          : isLongTask
-            ? 'Working through a larger task...'
-            : requestReasoningMode === 'extended'
-              ? 'Deep reasoning...'
-              : requestReasoningMode === 'instant'
-                ? 'Responding...'
-                : 'Thinking...'
+    const initialStatusLabel = getInitialStatusLabel({
+      generatedFileIntent: requestGeneratedFileIntent,
+      zipProjectMode: requestZipProjectMode,
+      artifactMode: requestArtifactMode,
+      hasAttachments,
+      webSearchEnabled: requestWebSearchEnabled,
+      isLongTask,
+      reasoningMode: requestReasoningMode,
+      autoUpgradeReason,
+    })
 
     const assistantPlaceholder: Message = {
       id: clientAssistantMessageId,
@@ -2404,9 +2530,20 @@ export default function ChatPage() {
       currentArtifact: activeArtifact,
     })
     const requestWebSearchEnabled = webSearchEnabled
-    const requestReasoningMode = reasoningMode
     const modelToUse = currentConversation.model_used || selectedModel
     const isLongTask = isLongTaskClient(trimmedContent, userMessage.attachments)
+    const { mode: requestReasoningMode, autoUpgradeReason } = resolveRequestReasoningMode({
+      selectedMode: reasoningMode,
+      artifactMode: requestArtifactMode,
+      generatedFileIntent: requestGeneratedFileIntent,
+      zipProjectMode: requestZipProjectMode,
+      isLongTask,
+    })
+
+    if (requestReasoningMode !== reasoningMode) {
+      applyAutoReasoningModeUpgrade(requestReasoningMode, conversationId)
+    }
+
     const hasAttachments = !!userMessage.attachments?.length
     const loadingMarker = (requestArtifactMode || requestGeneratedFileIntent || requestZipProjectMode)
       ? ARTIFACT_LOADING_MARKER
@@ -2414,23 +2551,16 @@ export default function ChatPage() {
         ? LONG_TASK_LOADING_MARKER
         : ASSISTANT_LOADING_MARKER
 
-    const initialStatusLabel = requestGeneratedFileIntent
-      ? `Preparing ${requestGeneratedFileIntent.extension.toUpperCase()} file...`
-      : requestZipProjectMode
-        ? 'Creating ZIP package...'
-      : requestArtifactMode
-        ? 'Creating artifact...'
-      : hasAttachments
-        ? 'Reading attached files...'
-        : requestWebSearchEnabled
-          ? 'Searching the web...'
-          : isLongTask
-            ? 'Working through a larger task...'
-            : requestReasoningMode === 'extended'
-              ? 'Deep reasoning...'
-              : requestReasoningMode === 'instant'
-                ? 'Responding...'
-                : 'Thinking...'
+    const initialStatusLabel = getInitialStatusLabel({
+      generatedFileIntent: requestGeneratedFileIntent,
+      zipProjectMode: requestZipProjectMode,
+      artifactMode: requestArtifactMode,
+      hasAttachments,
+      webSearchEnabled: requestWebSearchEnabled,
+      isLongTask,
+      reasoningMode: requestReasoningMode,
+      autoUpgradeReason,
+    })
 
     const assistantPlaceholder: Message = {
       id: clientAssistantMessageId,
