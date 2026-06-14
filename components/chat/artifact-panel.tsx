@@ -1454,10 +1454,13 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
     return null
   }
 
-  const renderPanelContent = () => (
-    <div className="flex flex-col h-full" style={{ paddingLeft: isMobile ? 0 : '12px' }}>
+  const renderPanelContent = (options?: { fullscreen?: boolean }) => (
+    <div
+      className="flex h-full min-h-0 flex-col"
+      style={{ paddingLeft: isMobile || options?.fullscreen ? 0 : '12px' }}
+    >
       {/* Header */}
-      <div className="border-b border-white/[0.06] bg-gradient-to-r from-white/[0.055] via-white/[0.025] to-fuchsia-500/[0.045] p-4 flex items-center justify-between">
+      <div className="shrink-0 border-b border-white/[0.06] bg-gradient-to-r from-white/[0.055] via-white/[0.025] to-fuchsia-500/[0.045] p-4 flex items-center justify-between">
         <div className="flex-1 min-w-0">
           <h3 className="text-lg font-semibold text-white truncate sm:text-xl">
             {artifact?.title || 'No Artifact'}
@@ -1491,7 +1494,7 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
       </div>
 
       {/* Tabs and Controls */}
-      <div className="border-b border-white/[0.06] bg-black/20 px-3 py-2 sm:px-4 flex flex-wrap items-center gap-2 justify-between">
+      <div className="shrink-0 border-b border-white/[0.06] bg-black/20 px-3 py-2 sm:px-4 flex flex-wrap items-center gap-2 justify-between">
         <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.035] p-1">
           <button
             onClick={() => setActiveTab('preview')}
@@ -1744,7 +1747,7 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
 
       {/* Actions */}
       {artifact && artifact.code && (
-        <div className="border-t border-white/[0.06] bg-black/25 p-3 sm:p-4 flex flex-wrap gap-2 sm:gap-3">
+        <div className="shrink-0 border-t border-white/[0.06] bg-black/25 p-3 sm:p-4 flex flex-wrap gap-2 sm:gap-3">
           <Button
             onClick={handleCopy}
             className="min-w-[130px] flex-1 bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.1]"
@@ -1919,17 +1922,34 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
             transition={{ type: 'spring', damping: 30, stiffness: 300 }}
             className="fixed inset-0 z-50 bg-[#0f0f0f] md:hidden"
           >
-            {renderPanelContent()}
+            {renderPanelContent({ fullscreen: true })}
           </motion.div>
         </AnimatePresence>
       )}
 
-      {/* Desktop: Flex child */}
-      {!isMobile && isOpen && (
+      {/* Desktop: True fullscreen overlay */}
+      {!isMobile && isOpen && isFullscreen && (
+        <AnimatePresence>
+          <motion.div
+            initial={{ opacity: 0, scale: 0.985 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.985 }}
+            transition={{ duration: 0.18 }}
+            className="fixed inset-3 z-50 hidden md:block"
+          >
+            <div className="h-full overflow-hidden rounded-2xl border border-white/[0.08] bg-[#111111] shadow-[0_40px_140px_rgba(0,0,0,0.55)]">
+              {renderPanelContent({ fullscreen: true })}
+            </div>
+          </motion.div>
+        </AnimatePresence>
+      )}
+
+      {/* Desktop: Docked flex child */}
+      {!isMobile && isOpen && !isFullscreen && (
         <aside
           ref={panelRef}
           className="hidden md:flex relative h-full min-h-0 flex-shrink-0 flex-col border-l border-white/[0.06] bg-[#111111] shadow-2xl"
-          style={{ width: `${isFullscreen ? Math.max(MIN_WIDTH, viewportWidth - 32) : currentWidth}px` }}
+          style={{ width: `${currentWidth}px` }}
         >
           {/* Resize Handle - Desktop Only - Full Height */}
           <div
