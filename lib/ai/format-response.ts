@@ -3,10 +3,37 @@ const ARTIFACT_BLOCK_PLACEHOLDER = '___ARTIFACT_BLOCK___'
 const CURRENCY_PLACEHOLDER = '___CURRENCY_'
 const CURRENCY_PLACEHOLDER_SUFFIX = '___'
 
-const CURRENCY_PATTERN = /(^|[^\\])\$((?:\d{1,3}(?:[,\s']\d{3})+|\d+)(?:\.\d+)?)/g
+const CURRENCY_PATTERN = /(^|[^\\])\$((?:\d{1,3}(?:[,\s']\d{3})+|\d+)(?:\.\d+)?)(?=$|[\s);:!?}\]]|,(?!\d)|\.(?!\d))/g
+const INLINE_MATH_CANDIDATE_PATTERN = /\$((?:\d+(?:[.,]\d+)?)|(?:[A-Za-z])|(?:[^$\n]*\\[^$\n]*)|(?:[^$\n]*[=<>≈≤≥+\-*/×÷^_][^$\n]*))\$/g
+const SIMPLE_INLINE_MATH_PATTERN = /^[A-Za-z0-9\s.,()/%=<>≈≤≥+\-*/×÷^_:]+$/
 
 function escapeUnescapedDollarSigns(value: string): string {
   return value.replace(/(^|[^\\])\$/g, '$1\\$')
+}
+
+function looksLikeInlineMath(content: string): boolean {
+  const trimmed = content.trim()
+  if (!trimmed) return false
+  if (/[=<>≈≤≥+\-*/×÷:]$/.test(trimmed)) return false
+
+  if (/[\\^_{}]/.test(trimmed)) return true
+  if (/[a-zA-Z]\s*[=<>+\-*/]/.test(trimmed)) return true
+  if (/[a-zA-Z]{2,}\s*[({]/.test(trimmed)) return true
+
+  // Preserve model output like "$8.8$", "$20$", "$A$", or "$241.875 × 0.02$".
+  if (/^[A-Za-z]$/.test(trimmed)) return true
+  if (/^\d+(?:[.,]\d+)?$/.test(trimmed)) return true
+  if (
+    SIMPLE_INLINE_MATH_PATTERN.test(trimmed) &&
+    (
+      (!/[A-Za-z]/.test(trimmed) && /\d/.test(trimmed)) ||
+      /[=<>≈≤≥+\-*/×÷^_]/.test(trimmed)
+    )
+  ) {
+    return true
+  }
+
+  return false
 }
 
 export function cleanAssistantText(text: string): string {
@@ -37,13 +64,6 @@ export function cleanAssistantText(text: string): string {
     return `___INLINE_CODE___${inlineCodeBlocks.length - 1}`
   })
 
-  // Protect currency before math detection so "$100,000 ... $A = P$" still
-  // leaves the later math expression available to remark-math.
-  cleaned = cleaned.replace(CURRENCY_PATTERN, (_match, prefix: string, amount: string) => {
-    currencyBlocks.push(`$${amount}`)
-    return `${prefix}${CURRENCY_PLACEHOLDER}${currencyBlocks.length - 1}${CURRENCY_PLACEHOLDER_SUFFIX}`
-  })
-
   // Convert LaTeX-style delimiters to dollar-sign delimiters
   // \(...\) → $...$ (inline math)
   cleaned = cleaned.replace(/\\\((.+?)\\\)/g, (_match, content) => `$${content}$`)
@@ -58,15 +78,21 @@ export function cleanAssistantText(text: string): string {
   })
 
   // Protect inline math blocks ($...$) where content looks like LaTeX
-  // Match $...$ where content contains backslash, ^, _, {}, or letters with operators
+  // Match $...$ where content looks like LaTeX or a compact numeric/equation fragment.
   const inlineMathBlocks: string[] = []
-  cleaned = cleaned.replace(/\$([^$\n]+)\$/g, (match, content) => {
-    const looksLikeMath = /[\\^_{}]|[a-zA-Z]\s*[=<>+\-*/]|[a-zA-Z]{2,}\s*[({]/.test(content)
-    if (looksLikeMath) {
+  cleaned = cleaned.replace(INLINE_MATH_CANDIDATE_PATTERN, (match, content) => {
+    if (looksLikeInlineMath(content)) {
       inlineMathBlocks.push(match)
       return `___INLINE_MATH___${inlineMathBlocks.length - 1}`
     }
     return match
+  })
+
+  // Protect standalone currency after inline math is reserved, so prices like
+  // "$140 deposit" stay as text while paired fragments like "$8.8$" render as math.
+  cleaned = cleaned.replace(CURRENCY_PATTERN, (_match, prefix: string, amount: string) => {
+    currencyBlocks.push(`$${amount}`)
+    return `${prefix}${CURRENCY_PLACEHOLDER}${currencyBlocks.length - 1}${CURRENCY_PLACEHOLDER_SUFFIX}`
   })
 
   // Only safe fix: add space after period/comma before uppercase (sentence boundaries)

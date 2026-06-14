@@ -57,10 +57,14 @@ const mixedCurrencyAndMath = 'The cost is $100,000 and the formula is $A = P(1+r
 const latexMath = String.raw`Use $u = \sec\theta$ and $$
 I = \int_0^{\pi/2} x\,dx
 $$.`
+const numericInlineMath = 'The widths are $8.8$ m, $7.1$ m, and rainfall was $20$ mm.'
+const compactEquationMath = String.raw`Volume uses $241.875 \times 0.02$ and the symbol $A$.`
 
 const exactResult = renderMarkdown(exactResponse)
 const mixedResult = renderMarkdown(mixedCurrencyAndMath)
 const latexResult = renderMarkdown(latexMath)
+const numericResult = renderMarkdown(numericInlineMath)
+const compactEquationResult = renderMarkdown(compactEquationMath)
 
 for (const amount of ['$140', '$25.50', '$191', '$446', '$612', '$752']) {
   assert(exactResult.html.includes(amount), `Missing ${amount} in rendered exact response`)
@@ -70,6 +74,13 @@ assert(!exactResult.html.includes('katex'), 'Currency-only exact response should
 assert(mixedResult.html.includes('$100,000'), 'Missing $100,000 in mixed rendered response')
 assert(mixedResult.html.includes('katex'), 'Expected mixed formula to render through KaTeX')
 assert(latexResult.html.includes('katex'), 'Expected LaTeX examples to render through KaTeX')
+assert(!numericResult.cleaned.includes('\\$8.8\\$'), 'Numeric inline math should not be escaped as literal dollars')
+assert(!numericResult.cleaned.includes('\\$20\\$'), 'Unit values should not be escaped as literal dollars')
+assert(!numericResult.html.includes('$8.8$'), 'Rendered numeric inline math should not show literal dollar signs')
+assert(!numericResult.html.includes('$20$'), 'Rendered unit values should not show literal dollar signs')
+assert(numericResult.html.includes('katex'), 'Expected numeric inline math to render through KaTeX')
+assert(compactEquationResult.html.includes('katex'), 'Expected compact equation fragments to render through KaTeX')
 
 console.log('PASS exact currency response renders $140, $25.50, $191, $446, $612, $752')
 console.log('PASS mixed currency and math renders $100,000 as text and $A = P(1+r)^n$ as KaTeX')
+console.log('PASS numeric inline math like $8.8$ m and $20$ mm renders without visible dollar signs')
