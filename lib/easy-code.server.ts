@@ -2,8 +2,8 @@ import 'server-only'
 
 import JSZip from 'jszip'
 import {
-  generateAzureGpt54Json,
   getAzureGpt54ConfigSnapshot,
+  streamAzureGpt54Response,
 } from '@/lib/ai/azure-gpt54.server'
 import {
   getCurrentEasyCodeProviderEnvDiagnostics,
@@ -12,12 +12,14 @@ import {
   recordEasyCodeProviderAttempt,
 } from '@/lib/ai/easy-code-provider-diagnostics.server'
 import {
-  generateAzureDeepSeekJson,
   getAzureDeepSeekConfigSnapshot,
+  streamAzureDeepSeekResponse,
 } from '@/lib/ai/azure-deepseek.server'
 import { isAzureTextProviderError, type AzureProviderEnvStatus } from '@/lib/ai/azure-provider-error'
+import { streamGeminiResponse } from '@/lib/ai/gemini'
 import { createServiceClient } from '@/lib/supabase/server'
 import { getAccountEntitlement, getEntitlementBlockResponse } from '@/lib/account-entitlements.server'
+import type { ChatMessage } from '@/types/models'
 
 export const EASY_CODE_MAX_PROMPT_LENGTH = 4000
 export const EASY_CODE_MAX_FILES_PER_AI_CALL = 28
@@ -29,10 +31,24 @@ const EASY_CODE_EDIT_TIMEOUT_MS = 90_000
 const EASY_CODE_REPAIR_TIMEOUT_MS = 45_000
 const EASY_CODE_STATIC_FILES = ['index.html', 'styles.css', 'script.js', 'README.md'] as const
 
-type EasyCodeAiProvider = 'azure-gpt54' | 'azure-deepseek' | 'fallback'
+type EasyCodeAiProvider = 'azure-gpt54' | 'azure-deepseek' | 'google' | 'fallback'
 type EasyCodeAiPhase = 'create' | 'edit' | 'repair'
 type EasyCodePromptType = 'static-site' | 'app' | 'script' | 'other'
 type EasyCodeLocalFallbackKind = 'static-site' | 'react-app' | 'node-app' | 'python-app'
+
+type EasyCodeProviderSnapshot = {
+  endpointHost: string | null
+  endpointPath: string | null
+  finalRequestPath: string | null
+  model: string
+  envConfigured: boolean
+  envStatus: AzureProviderEnvStatus | null
+  envValueLengths: {
+    apiKey: number
+    baseUrl: number
+    model: number
+  } | null
+}
 
 export interface EasyCodeAiDiagnostics {
   provider: EasyCodeAiProvider
@@ -226,6 +242,10 @@ function categorizeEasyCodeError(error: any): string {
   if (message === 'AI provider is busy. Try again.') return 'provider_busy'
   if (message === 'AI returned invalid file data.') return 'invalid_json'
   if (message === 'This EasyPlus mode is temporarily unavailable.') return 'provider_unavailable'
+  if (message === 'Inference backend is unavailable') return 'provider_not_configured'
+  if (message === 'This EasyPlus tier is unavailable') return 'provider_not_configured'
+  if (message === 'This EasyPlus tier is temporarily unavailable. Try again later or switch tiers.') return 'provider_busy'
+  if (message === 'This EasyPlus tier could not respond. Try again or switch tiers.') return 'provider_unavailable'
   if (message === 'DeepSeek V4 Pro is temporarily unavailable.') return 'provider_unavailable'
   if (message === 'Model provider is busy. Please try again.') return 'provider_busy'
   if (message === 'DeepSeek V4 Pro is temporarily busy. Please try again in a moment.') return 'provider_busy'
@@ -250,6 +270,8 @@ function getEasyCodeProviderSafeCode(provider: EasyCodeAiProvider, error?: any):
     ? 'gpt54'
     : provider === 'azure-deepseek'
       ? 'deepseek'
+      : provider === 'google'
+        ? 'gemini'
       : 'static'
   const category = categorizeEasyCodeError(error)
   const providerStatusCode = isAzureTextProviderError(error) ? error.status : null
@@ -307,7 +329,7 @@ function getEasyCodeFallbackSummaryLead(error: any): string {
   if (category === 'invalid_json' || category === 'invalid_changes' || category === 'no_valid_changes') return 'AI generation returned invalid file data, so'
   if (category === 'generation_incomplete') {
     const hadSuccessfulAiAttempt = Array.isArray(error?.easyCodeDiagnostics) &&
-      error.easyCodeDiagnostics.some((item: EasyCodeAiDiagnostics) => item.provider === 'azure-gpt54' && item.providerStatusCode === 200)
+      error.easyCodeDiagnostics.some((item: EasyCodeAiDiagnostics) => item.provider !== 'fallback' && item.providerStatusCode === 200)
     return hadSuccessfulAiAttempt
       ? 'AI generated a partial project that could not be completed automatically, so'
       : 'AI generation was incomplete, so'
@@ -333,34 +355,20 @@ function getEasyCodeFallbackSummaryLead(error: any): string {
 function buildEasyCodeProviderDiagnostics(
   provider: EasyCodeAiProvider,
   phase: EasyCodeAiPhase,
-  snapshot: {
-    endpointHost: string | null
-    endpointPath: string
-    model: string
-    envStatus: AzureProviderEnvStatus
-  } | null,
+  snapshot: EasyCodeProviderSnapshot | null,
   error?: any,
   overrides: Partial<Pick<EasyCodeAiDiagnostics, 'providerStatusCode' | 'providerErrorCode' | 'providerErrorMessage' | 'responseFormatUsed' | 'timeoutHit' | 'fallbackUsed' | 'safeReason' | 'safeCode'>> = {}
 ): EasyCodeAiDiagnostics {
-  const currentEnv = provider === 'azure-gpt54'
-    ? getCurrentEasyCodeProviderEnvDiagnostics('gpt54')
-    : provider === 'azure-deepseek'
-      ? getCurrentEasyCodeProviderEnvDiagnostics('deepseek')
-      : null
   return {
     provider,
     phase,
     attemptedAt: new Date().toISOString(),
-    envConfigured: snapshot
-      ? snapshot.envStatus.apiKey.configured &&
-        snapshot.envStatus.baseUrl.configured &&
-        snapshot.envStatus.model.configured
-      : false,
+    envConfigured: snapshot?.envConfigured || false,
     envStatus: snapshot?.envStatus || null,
-    envValueLengths: currentEnv?.envValueLengths || null,
+    envValueLengths: snapshot?.envValueLengths || null,
     endpointHost: snapshot?.endpointHost || null,
     endpointPath: snapshot?.endpointPath || null,
-    finalRequestPath: currentEnv?.finalRequestPath || snapshot?.endpointPath || null,
+    finalRequestPath: snapshot?.finalRequestPath || snapshot?.endpointPath || null,
     model: snapshot?.model || null,
     providerStatusCode: overrides.providerStatusCode ?? (isAzureTextProviderError(error) ? error.status : null),
     providerErrorCode: overrides.providerErrorCode ?? (isAzureTextProviderError(error) ? error.providerErrorCode : null),
@@ -465,15 +473,18 @@ function inferEasyCodeLocalFallbackKind(prompt: string): EasyCodeLocalFallbackKi
 function getEasyCodeProviderConfigurationSummary() {
   const gpt54 = getCurrentEasyCodeProviderEnvDiagnostics('gpt54')
   const deepseek = getCurrentEasyCodeProviderEnvDiagnostics('deepseek')
+  const googleConfigured = Boolean(process.env.GEMINI_API_KEY)
   return {
     gpt54Configured: gpt54.envConfigured,
     deepseekConfigured: deepseek.envConfigured,
+    googleConfigured,
     gpt54EndpointHost: gpt54.endpointHost,
     gpt54EndpointPath: gpt54.endpointPath,
     gpt54Model: gpt54.model,
     deepseekEndpointHost: deepseek.endpointHost,
     deepseekEndpointPath: deepseek.endpointPath,
     deepseekModel: deepseek.model,
+    googleModel: 'gemini-3.1-pro',
   }
 }
 
@@ -535,6 +546,106 @@ Rules:
 - For edits, preserve the existing working structure and return only changed files as complete replacement content.
 - For static HTML edits, read the current files carefully, improve the existing experience, and update index.html, styles.css, and script.js as needed.
 - Do not expose backend providers, model names, or routing details.`
+}
+
+function getEasyCodeProviderSnapshot(provider: Exclude<EasyCodeAiProvider, 'fallback'>): EasyCodeProviderSnapshot {
+  if (provider === 'azure-gpt54') {
+    const snapshot = getAzureGpt54ConfigSnapshot()
+    const currentEnv = getCurrentEasyCodeProviderEnvDiagnostics('gpt54')
+    return {
+      endpointHost: snapshot.endpointHost,
+      endpointPath: snapshot.endpointPath,
+      finalRequestPath: currentEnv.finalRequestPath,
+      model: snapshot.model,
+      envConfigured: currentEnv.envConfigured,
+      envStatus: snapshot.envStatus,
+      envValueLengths: currentEnv.envValueLengths,
+    }
+  }
+
+  if (provider === 'azure-deepseek') {
+    const snapshot = getAzureDeepSeekConfigSnapshot()
+    const currentEnv = getCurrentEasyCodeProviderEnvDiagnostics('deepseek')
+    return {
+      endpointHost: snapshot.endpointHost,
+      endpointPath: snapshot.endpointPath,
+      finalRequestPath: currentEnv.finalRequestPath,
+      model: snapshot.model,
+      envConfigured: currentEnv.envConfigured,
+      envStatus: snapshot.envStatus,
+      envValueLengths: currentEnv.envValueLengths,
+    }
+  }
+
+  return {
+    endpointHost: 'generativelanguage.googleapis.com',
+    endpointPath: '/v1beta/models/gemini-2.5-flash:generateContent',
+    finalRequestPath: '/v1beta/models/gemini-2.5-flash:generateContent',
+    model: 'gemini-2.5-flash',
+    envConfigured: Boolean(process.env.GEMINI_API_KEY),
+    envStatus: null,
+    envValueLengths: {
+      apiKey: process.env.GEMINI_API_KEY?.length || 0,
+      baseUrl: 0,
+      model: 'gemini-2.5-flash'.length,
+    },
+  }
+}
+
+function buildEasyCodeProviderAttemptOrder(): Array<Exclude<EasyCodeAiProvider, 'fallback'>> {
+  const order: Array<Exclude<EasyCodeAiProvider, 'fallback'>> = []
+  const push = (provider: Exclude<EasyCodeAiProvider, 'fallback'>) => {
+    if (!order.includes(provider)) order.push(provider)
+  }
+
+  push('azure-gpt54')
+  push('azure-deepseek')
+  push('google')
+  return order
+}
+
+function toEasyCodeChatMessages(
+  messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>
+): { systemPrompt: string; chatMessages: ChatMessage[] } {
+  const systemParts: string[] = []
+  const chatMessages: ChatMessage[] = []
+
+  for (const message of messages) {
+    if (!message.content?.trim()) continue
+    if (message.role === 'system') {
+      systemParts.push(message.content)
+      continue
+    }
+
+    chatMessages.push({
+      role: message.role,
+      content: message.content,
+    })
+  }
+
+  return {
+    systemPrompt: systemParts.join('\n\n').trim(),
+    chatMessages,
+  }
+}
+
+async function readEasyCodeProviderStream(stream: ReadableStream): Promise<string> {
+  const reader = stream.getReader()
+  const decoder = new TextDecoder()
+  let content = ''
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      content += decoder.decode(value, { stream: true })
+    }
+    content += decoder.decode()
+  } finally {
+    reader.releaseLock()
+  }
+
+  return content.trim()
 }
 
 async function repairIncompleteStaticLandingPageGeneration(input: {
@@ -3628,22 +3739,22 @@ async function callEasyCodeJsonProvider(
   messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>,
   maxTokens = 8192,
   options: { timeoutMs?: number; phase?: EasyCodeAiPhase; projectId?: string; promptType?: EasyCodePromptType } = {}
-): Promise<{ content: string; providerUsed: 'azure-gpt54' | 'azure-deepseek'; diagnostics: EasyCodeAiDiagnostics[] }> {
+): Promise<{ content: string; providerUsed: Exclude<EasyCodeAiProvider, 'fallback'>; diagnostics: EasyCodeAiDiagnostics[] }> {
   const timeoutMs = options.timeoutMs || EASY_CODE_CREATE_TIMEOUT_MS
   const phase = options.phase || 'create'
   const providerConfig = getEasyCodeProviderConfigurationSummary()
   const diagnostics: EasyCodeAiDiagnostics[] = []
+  const { systemPrompt, chatMessages } = toEasyCodeChatMessages(messages)
+  const providerAttemptOrder = buildEasyCodeProviderAttemptOrder()
+
   const tryProvider = async (
-    provider: 'azure-gpt54' | 'azure-deepseek',
+    provider: Exclude<EasyCodeAiProvider, 'fallback'>,
     run: () => Promise<string>,
-    snapshot: ReturnType<typeof getAzureGpt54ConfigSnapshot> | ReturnType<typeof getAzureDeepSeekConfigSnapshot>,
     providerOptions: { responseFormatUsed?: boolean } = {}
   ) => {
     const startedAt = Date.now()
     const requestStartedAt = new Date(startedAt).toISOString()
-    const currentEnv = provider === 'azure-gpt54'
-      ? getCurrentEasyCodeProviderEnvDiagnostics('gpt54')
-      : getCurrentEasyCodeProviderEnvDiagnostics('deepseek')
+    const snapshot = getEasyCodeProviderSnapshot(provider)
     console.info('[Easy Code] AI provider request started', {
       projectId: options.projectId || null,
       phase,
@@ -3651,22 +3762,17 @@ async function callEasyCodeJsonProvider(
       maxTokens,
       timeoutMs,
       provider,
-      providerAttempted: provider === 'azure-gpt54' ? 'gpt54' : 'deepseek',
+      providerAttempted: provider === 'azure-gpt54' ? 'gpt54' : provider === 'azure-deepseek' ? 'deepseek' : 'gemini',
       requestStartedAt,
       gpt54Configured: providerConfig.gpt54Configured,
       deepseekConfigured: providerConfig.deepseekConfigured,
-      envExists: currentEnv.envExists,
-      apiKeySource: currentEnv.apiKeySource || null,
-      baseUrlSource: currentEnv.baseUrlSource || null,
-      modelSource: currentEnv.modelSource || null,
+      googleConfigured: providerConfig.googleConfigured,
       endpointHost: snapshot.endpointHost,
       endpointPath: snapshot.endpointPath,
-      finalRequestPath: currentEnv.finalRequestPath,
+      finalRequestPath: snapshot.finalRequestPath,
       model: snapshot.model,
-      envConfigured: snapshot.envStatus.apiKey.configured &&
-        snapshot.envStatus.baseUrl.configured &&
-        snapshot.envStatus.model.configured,
-      envValueLengths: currentEnv.envValueLengths,
+      envConfigured: snapshot.envConfigured,
+      envValueLengths: snapshot.envValueLengths,
     })
     try {
       const content = await run()
@@ -3676,25 +3782,27 @@ async function callEasyCodeJsonProvider(
         timeoutHit: false,
         fallbackUsed: provider !== 'azure-gpt54',
         safeReason: 'available',
-        safeCode: provider === 'azure-gpt54' ? 'gpt54_available' : 'deepseek_available',
+        safeCode: provider === 'azure-gpt54' ? 'gpt54_available' : provider === 'azure-deepseek' ? 'deepseek_available' : 'gemini_available',
       })
-      recordEasyCodeProviderAttempt({
-        provider: provider === 'azure-gpt54' ? 'gpt54' : 'deepseek',
-        phase,
-        attemptedAt: providerDiagnostics.attemptedAt,
-        endpointHost: providerDiagnostics.endpointHost,
-        endpointPath: providerDiagnostics.endpointPath,
-        finalRequestPath: providerDiagnostics.finalRequestPath,
-        model: providerDiagnostics.model,
-        statusCode: providerDiagnostics.providerStatusCode,
-        providerErrorCode: providerDiagnostics.providerErrorCode,
-        providerErrorMessage: providerDiagnostics.providerErrorMessage,
-        responseFormatUsed: providerDiagnostics.responseFormatUsed,
-        timeoutHit: providerDiagnostics.timeoutHit,
-        fallbackUsed: providerDiagnostics.fallbackUsed,
-        safeReason: providerDiagnostics.safeReason,
-        safeCode: providerDiagnostics.safeCode,
-      })
+      if (provider === 'azure-gpt54' || provider === 'azure-deepseek') {
+        recordEasyCodeProviderAttempt({
+          provider: provider === 'azure-gpt54' ? 'gpt54' : 'deepseek',
+          phase,
+          attemptedAt: providerDiagnostics.attemptedAt,
+          endpointHost: providerDiagnostics.endpointHost,
+          endpointPath: providerDiagnostics.endpointPath,
+          finalRequestPath: providerDiagnostics.finalRequestPath,
+          model: providerDiagnostics.model,
+          statusCode: providerDiagnostics.providerStatusCode,
+          providerErrorCode: providerDiagnostics.providerErrorCode,
+          providerErrorMessage: providerDiagnostics.providerErrorMessage,
+          responseFormatUsed: providerDiagnostics.responseFormatUsed,
+          timeoutHit: providerDiagnostics.timeoutHit,
+          fallbackUsed: providerDiagnostics.fallbackUsed,
+          safeReason: providerDiagnostics.safeReason,
+          safeCode: providerDiagnostics.safeCode,
+        })
+      }
       diagnostics.push(providerDiagnostics)
       console.info('[Easy Code] AI provider request ended', {
         projectId: options.projectId || null,
@@ -3703,7 +3811,7 @@ async function callEasyCodeJsonProvider(
         durationMs: Date.now() - startedAt,
         responseChars: content.length,
         provider,
-        providerAttempted: provider === 'azure-gpt54' ? 'gpt54' : 'deepseek',
+        providerAttempted: provider === 'azure-gpt54' ? 'gpt54' : provider === 'azure-deepseek' ? 'deepseek' : 'gemini',
         providerStatusCode: 200,
         timeoutHit: false,
         responseFormatUsed: providerDiagnostics.responseFormatUsed,
@@ -3716,23 +3824,25 @@ async function callEasyCodeJsonProvider(
         responseFormatUsed: providerOptions.responseFormatUsed ?? false,
         fallbackUsed: provider !== 'azure-gpt54',
       })
-      recordEasyCodeProviderAttempt({
-        provider: provider === 'azure-gpt54' ? 'gpt54' : 'deepseek',
-        phase,
-        attemptedAt: providerDiagnostics.attemptedAt,
-        endpointHost: providerDiagnostics.endpointHost,
-        endpointPath: providerDiagnostics.endpointPath,
-        finalRequestPath: providerDiagnostics.finalRequestPath,
-        model: providerDiagnostics.model,
-        statusCode: providerDiagnostics.providerStatusCode,
-        providerErrorCode: providerDiagnostics.providerErrorCode,
-        providerErrorMessage: providerDiagnostics.providerErrorMessage,
-        responseFormatUsed: providerDiagnostics.responseFormatUsed,
-        timeoutHit: providerDiagnostics.timeoutHit,
-        fallbackUsed: providerDiagnostics.fallbackUsed,
-        safeReason: providerDiagnostics.safeReason,
-        safeCode: providerDiagnostics.safeCode,
-      })
+      if (provider === 'azure-gpt54' || provider === 'azure-deepseek') {
+        recordEasyCodeProviderAttempt({
+          provider: provider === 'azure-gpt54' ? 'gpt54' : 'deepseek',
+          phase,
+          attemptedAt: providerDiagnostics.attemptedAt,
+          endpointHost: providerDiagnostics.endpointHost,
+          endpointPath: providerDiagnostics.endpointPath,
+          finalRequestPath: providerDiagnostics.finalRequestPath,
+          model: providerDiagnostics.model,
+          statusCode: providerDiagnostics.providerStatusCode,
+          providerErrorCode: providerDiagnostics.providerErrorCode,
+          providerErrorMessage: providerDiagnostics.providerErrorMessage,
+          responseFormatUsed: providerDiagnostics.responseFormatUsed,
+          timeoutHit: providerDiagnostics.timeoutHit,
+          fallbackUsed: providerDiagnostics.fallbackUsed,
+          safeReason: providerDiagnostics.safeReason,
+          safeCode: providerDiagnostics.safeCode,
+        })
+      }
       diagnostics.push(providerDiagnostics)
       console.error('[Easy Code] AI provider request failed', {
         projectId: options.projectId || null,
@@ -3740,7 +3850,7 @@ async function callEasyCodeJsonProvider(
         promptType: options.promptType || 'other',
         durationMs: Date.now() - startedAt,
         provider,
-        providerAttempted: provider === 'azure-gpt54' ? 'gpt54' : 'deepseek',
+        providerAttempted: provider === 'azure-gpt54' ? 'gpt54' : provider === 'azure-deepseek' ? 'deepseek' : 'gemini',
         providerStatusCode: providerDiagnostics.providerStatusCode,
         providerErrorCode: providerDiagnostics.providerErrorCode,
         timeoutHit: providerDiagnostics.timeoutHit,
@@ -3754,37 +3864,32 @@ async function callEasyCodeJsonProvider(
     }
   }
 
-  const gptAttempt = await tryProvider(
-    'azure-gpt54',
-    () => generateAzureGpt54Json(messages, {
-      maxTokens,
-      temperature: 0.2,
-      timeoutMs,
-      phase,
-      projectId: options.projectId,
-      responseFormat: 'text',
-    }),
-    getAzureGpt54ConfigSnapshot(),
-    { responseFormatUsed: false }
-  )
-  if (gptAttempt) return gptAttempt
+  for (const provider of providerAttemptOrder) {
+    const attempt = await tryProvider(
+      provider,
+      async () => {
+        if (provider === 'azure-gpt54') {
+          const stream = await streamAzureGpt54Response(chatMessages, systemPrompt, 0.2, maxTokens)
+          return readEasyCodeProviderStream(stream)
+        }
 
-  const deepSeekAttempt = await tryProvider(
-    'azure-deepseek',
-    () => generateAzureDeepSeekJson(messages, {
-      maxTokens,
-      temperature: 0.2,
-      timeoutMs,
-      phase,
-      projectId: options.projectId,
-    }),
-    getAzureDeepSeekConfigSnapshot(),
-    { responseFormatUsed: false }
-  )
-  if (deepSeekAttempt) return deepSeekAttempt
+        if (provider === 'azure-deepseek') {
+          const stream = await streamAzureDeepSeekResponse(chatMessages, systemPrompt, 0.2, maxTokens)
+          return readEasyCodeProviderStream(stream)
+        }
 
-  const gptFailure = diagnostics.find((item) => item.provider === 'azure-gpt54')
-  throw attachEasyCodeDiagnostics(new Error(gptFailure?.safeReason || 'provider not configured'), diagnostics)
+        const stream = await streamGeminiResponse('gemini-3.1-pro', chatMessages, systemPrompt, 0.2, maxTokens)
+        return readEasyCodeProviderStream(stream)
+      },
+      { responseFormatUsed: false }
+    )
+    if (attempt) return attempt
+  }
+
+  const lastFailure = [...diagnostics]
+    .reverse()
+    .find((item) => item.provider !== 'fallback')
+  throw attachEasyCodeDiagnostics(new Error(lastFailure?.safeReason || 'provider not configured'), diagnostics)
 }
 
 async function parseEasyCodeJson(
@@ -4882,7 +4987,7 @@ export async function runEasyCodeEdit(userId: string, projectId: string, instruc
       filesSavedCount: aiResult.files.length,
       changedFiles: aiResult.files.map(file => file.newPath || file.path),
       finalStatus: 'ready',
-      fallbackUsed: providerUsed !== 'azure-gpt54',
+      fallbackUsed: providerUsed === 'azure-deepseek' || providerUsed === 'fallback',
     })
     return { project: freshProject, files: freshFiles, messages: freshMessages, aiResult, diagnostics: aiDiagnostics, providerUsed }
   } catch (error: any) {
