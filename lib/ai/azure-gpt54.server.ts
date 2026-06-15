@@ -420,20 +420,30 @@ export async function getAzureGpt54Diagnostics(force = false): Promise<AzureGpt5
   }
 
   try {
-    const { response, authMode } = await fetchWithAuthFallback(getChatCompletionsUrl(baseUrl), apiKey, {
-      method: 'POST',
-      body: JSON.stringify({
-        model,
-        messages: [{ role: 'user', content: 'hi' }],
-        temperature: 0,
-        ...getCompletionTokenField(model, 8),
-        stream: false,
-      }),
-      signal: AbortSignal.timeout(30_000),
-    })
+    const runProbe = (tokenField?: CompletionTokenField) =>
+      fetchWithAuthFallback(getChatCompletionsUrl(baseUrl), apiKey, {
+        method: 'POST',
+        body: JSON.stringify({
+          model,
+          messages: [{ role: 'user', content: 'hi' }],
+          temperature: 0,
+          ...getCompletionTokenField(model, 8, tokenField),
+          stream: false,
+        }),
+        signal: AbortSignal.timeout(30_000),
+      })
+
+    let { response, authMode } = await runProbe()
+    let probeErrorPayload = response.ok ? null : await readProviderErrorPayload(response)
+    if (response.status === 400 && probeErrorPayload && isWrongCompletionTokenField(probeErrorPayload)) {
+      const flipped = flipCompletionTokenField(resolveCompletionTokenField(model))
+      console.warn('[Azure GPT-5.4] Retrying availability probe with flipped completion token field', { tokenField: flipped })
+      ;({ response, authMode } = await runProbe(flipped))
+      probeErrorPayload = response.ok ? null : await readProviderErrorPayload(response)
+    }
 
     if (!response.ok) {
-      const errorPayload = await readProviderErrorPayload(response)
+      const errorPayload = probeErrorPayload ?? await readProviderErrorPayload(response)
       const providerError = getProviderErrorFromPayload(response.status, errorPayload)
       const diagnostics = {
         configured: true,

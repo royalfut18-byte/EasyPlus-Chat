@@ -18,8 +18,24 @@ interface EasyCodeProject {
     progress?: Array<{ label: string; state: 'done' | 'active' | 'pending' }>
     filesCreated?: string[]
     lastError?: string | null
+    diagnostics?: {
+      providerUsed?: 'azure-gpt54' | 'azure-deepseek' | 'google' | 'fallback' | null
+      fallbackUsed?: boolean
+    }
   }
   updated_at: string
+}
+
+const PROVIDER_LABELS: Record<string, string> = {
+  'azure-gpt54': 'GPT 5.5',
+  'azure-deepseek': 'DeepSeek V4 Pro',
+  google: 'Gemini 3.1 Pro',
+  fallback: 'offline template',
+}
+
+function getProviderLabel(providerUsed?: string | null): string | null {
+  if (!providerUsed) return null
+  return PROVIDER_LABELS[providerUsed] || providerUsed
 }
 
 interface EasyCodeFile {
@@ -524,6 +540,27 @@ export function EasyCodeWorkspaceClient({
                   </div>
                 ))}
               </div>
+              {(() => {
+                const providerUsed = project.generation_metadata?.diagnostics?.providerUsed
+                const providerLabel = getProviderLabel(providerUsed)
+                if (!providerLabel || generationStatus !== 'ready') return null
+                const onGpt = providerUsed === 'azure-gpt54'
+                return (
+                  <div className="mt-3 flex items-center gap-2 text-[11px]">
+                    <span className="text-gray-500">Built with</span>
+                    <span className={cn(
+                      'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-semibold',
+                      onGpt
+                        ? 'border-clay-400/20 bg-clay-500/10 text-clay-200'
+                        : 'border-amber-400/20 bg-amber-500/10 text-amber-200'
+                    )}>
+                      <Sparkles className="h-3 w-3" />
+                      {providerLabel}
+                    </span>
+                    {!onGpt && <span className="text-gray-600">GPT was unavailable</span>}
+                  </div>
+                )
+              })()}
               {project.generation_metadata?.filesCreated?.length ? (
                 <div className="mt-3 flex flex-wrap gap-1">
                   {project.generation_metadata.filesCreated.slice(0, 10).map(path => (
