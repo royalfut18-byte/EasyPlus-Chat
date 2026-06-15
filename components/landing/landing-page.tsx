@@ -94,10 +94,10 @@ const landingModels = UI_MODELS.map((model) => ({
 
 export function LandingPage() {
   return (
-    <div className="min-h-screen overflow-hidden bg-[#050507] text-white">
+    <div className="min-h-screen overflow-hidden bg-[#0c0a08] text-white">
       <Background />
 
-      <header className="relative z-20 border-b border-white/[0.06] bg-[#050507]/70 backdrop-blur-xl">
+      <header className="relative z-20 border-b border-white/[0.06] bg-[#0c0a08]/70 backdrop-blur-xl">
         <nav className="mx-auto flex max-w-7xl items-center justify-between px-5 py-4 md:px-8">
           <Link href="/" aria-label="EasyPlus AI home">
             <Logo size="sm" showText />
@@ -129,9 +129,9 @@ export function LandingPage() {
             <motion.div
               initial={{ opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0 }}
-              className="mx-auto mb-7 inline-flex items-center gap-2 rounded-full border border-white/[0.10] bg-white/[0.04] px-3 py-1.5 text-xs font-medium text-gray-300 shadow-2xl shadow-violet-950/20"
+              className="mx-auto mb-7 inline-flex items-center gap-2 rounded-full border border-white/[0.10] bg-white/[0.04] px-3 py-1.5 text-xs font-medium text-gray-300 shadow-2xl shadow-clay-950/20"
             >
-              <Sparkles className="h-3.5 w-3.5 text-violet-300" />
+              <Sparkles className="h-3.5 w-3.5 text-clay-300" />
               A premium AI workspace for serious work
             </motion.div>
 
@@ -139,10 +139,10 @@ export function LandingPage() {
               initial={{ opacity: 0, y: 18 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.08 }}
-              className="text-balance text-5xl font-semibold tracking-[-0.055em] text-white sm:text-6xl md:text-7xl lg:text-8xl"
+              className="font-serif text-balance text-5xl font-medium tracking-[-0.03em] text-white sm:text-6xl md:text-7xl lg:text-[5.5rem]"
             >
               Your all-in-one
-              <span className="block bg-gradient-to-r from-violet-200 via-white to-cyan-100 bg-clip-text text-transparent">
+              <span className="block bg-gradient-to-r from-clay-200 via-white to-amber-100 bg-clip-text text-transparent">
                 AI workspace.
               </span>
             </motion.h1>
@@ -163,7 +163,7 @@ export function LandingPage() {
               className="mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row"
             >
               <Link href="/chat">
-                <Button size="lg" className="h-12 rounded-full bg-violet-500 px-7 font-semibold text-white shadow-lg shadow-violet-950/40 hover:bg-violet-400">
+                <Button size="lg" className="h-12 rounded-full bg-clay-500 px-7 font-semibold text-white shadow-lg shadow-clay-950/40 hover:bg-clay-400">
                   Start chatting
                   <ArrowRight className="h-4 w-4" />
                 </Button>
@@ -183,7 +183,7 @@ export function LandingPage() {
             >
               {['Chat', 'Files', 'Projects', 'Memory', 'Artifacts', 'Search'].map((item) => (
                 <span key={item} className="flex items-center gap-1.5">
-                  <Check className="h-3.5 w-3.5 text-violet-300" />
+                  <Check className="h-3.5 w-3.5 text-clay-300" />
                   {item}
                 </span>
               ))}
@@ -197,7 +197,7 @@ export function LandingPage() {
             >
               <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                 <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-violet-300">Model lineup</p>
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-clay-300">Model lineup</p>
                   <p className="mt-2 text-sm text-gray-400">
                     Switch between premium models for coding, writing, research, reasoning, and image generation inside one workspace.
                   </p>
@@ -273,7 +273,7 @@ export function LandingPage() {
           />
           <div className="mt-12 grid gap-4 md:grid-cols-2 lg:grid-cols-5">
             {useCases.map(([title, description]) => (
-              <div key={title} className="rounded-3xl border border-white/[0.08] bg-white/[0.03] p-5 transition-colors hover:border-violet-300/20 hover:bg-white/[0.05]">
+              <div key={title} className="rounded-3xl border border-white/[0.08] bg-white/[0.03] p-5 transition-colors hover:border-clay-300/20 hover:bg-white/[0.05]">
                 <h3 className="font-semibold text-white">{title}</h3>
                 <p className="mt-3 text-sm leading-6 text-gray-500">{description}</p>
               </div>
@@ -282,13 +282,13 @@ export function LandingPage() {
         </section>
 
         <section className="mx-auto max-w-7xl px-5 py-16 md:px-8 md:py-24">
-          <div className="rounded-[2rem] border border-white/[0.08] bg-[#101014]/80 p-6 shadow-2xl shadow-black/30 md:p-10">
+          <div className="rounded-[2rem] border border-white/[0.08] bg-[#121010]/80 p-6 shadow-2xl shadow-black/30 md:p-10">
             <div className="grid gap-10 lg:grid-cols-[0.9fr_1.1fr]">
               <div>
-                <div className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-violet-300/20 bg-violet-500/10 text-violet-200">
+                <div className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-clay-300/20 bg-clay-500/10 text-clay-200">
                   <Lock className="h-5 w-5" />
                 </div>
-                <h2 className="mt-6 text-3xl font-semibold tracking-tight md:text-5xl">A serious workspace for serious AI users.</h2>
+                <h2 className="mt-6 font-serif text-3xl font-medium tracking-tight md:text-5xl">A serious workspace for serious AI users.</h2>
                 <p className="mt-5 max-w-xl text-base leading-7 text-gray-400">
                   Clean workspaces, private account access, project-scoped memory, and admin controls help teams and power users stay organized.
                 </p>
@@ -302,7 +302,7 @@ export function LandingPage() {
               <div className="grid gap-3 sm:grid-cols-2">
                 {trustPoints.map((point) => (
                   <div key={point} className="flex items-center gap-3 rounded-2xl border border-white/[0.07] bg-white/[0.035] px-4 py-3 text-sm text-gray-300">
-                    <Check className="h-4 w-4 shrink-0 text-violet-300" />
+                    <Check className="h-4 w-4 shrink-0 text-clay-300" />
                     {point}
                   </div>
                 ))}
@@ -312,15 +312,15 @@ export function LandingPage() {
         </section>
 
         <section className="mx-auto max-w-5xl px-5 py-20 text-center md:px-8 md:py-28">
-          <div className="rounded-[2rem] border border-violet-300/15 bg-gradient-to-b from-violet-500/10 to-white/[0.03] p-8 shadow-2xl shadow-violet-950/20 md:p-14">
-            <Crown className="mx-auto h-8 w-8 text-violet-200" />
-            <h2 className="mt-6 text-4xl font-semibold tracking-tight md:text-6xl">Start building with AI today.</h2>
+          <div className="rounded-[2rem] border border-clay-300/15 bg-gradient-to-b from-clay-500/10 to-white/[0.03] p-8 shadow-2xl shadow-clay-950/20 md:p-14">
+            <Crown className="mx-auto h-8 w-8 text-clay-200" />
+            <h2 className="mt-6 font-serif text-4xl font-medium tracking-tight md:text-6xl">Start building with AI today.</h2>
             <p className="mx-auto mt-5 max-w-2xl text-base leading-7 text-gray-400 md:text-lg">
               Open the workspace and bring your chats, files, projects, research, and generated outputs into one focused place.
             </p>
             <div className="mt-8 flex flex-col justify-center gap-3 sm:flex-row">
               <Link href="/chat">
-                <Button size="lg" className="h-12 rounded-full bg-violet-500 px-7 font-semibold text-white hover:bg-violet-400">
+                <Button size="lg" className="h-12 rounded-full bg-clay-500 px-7 font-semibold text-white hover:bg-clay-400">
                   Start chatting
                   <ArrowRight className="h-4 w-4" />
                 </Button>
@@ -335,7 +335,7 @@ export function LandingPage() {
         </section>
       </main>
 
-      <footer className="relative z-10 border-t border-white/[0.06] bg-[#050507]/80">
+      <footer className="relative z-10 border-t border-white/[0.06] bg-[#0c0a08]/80">
         <div className="mx-auto flex max-w-7xl flex-col gap-6 px-5 py-8 md:flex-row md:items-center md:justify-between md:px-8">
           <div className="flex items-center gap-3">
             <Logo size="sm" />
@@ -359,9 +359,9 @@ export function LandingPage() {
 function Background() {
   return (
     <div className="pointer-events-none fixed inset-0 z-0">
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_-10%,rgba(139,92,246,0.24),transparent_34%),radial-gradient(circle_at_15%_25%,rgba(34,211,238,0.10),transparent_28%),linear-gradient(180deg,#050507_0%,#08080d_45%,#050507_100%)]" />
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_-10%,rgba(217,119,87,0.24),transparent_34%),radial-gradient(circle_at_15%_25%,rgba(226,169,143,0.10),transparent_28%),linear-gradient(180deg,#0c0a08_0%,#0f0c0a_45%,#0c0a08_100%)]" />
       <div className="absolute inset-0 opacity-[0.07] [background-image:linear-gradient(rgba(255,255,255,0.18)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.18)_1px,transparent_1px)] [background-size:64px_64px] [mask-image:radial-gradient(circle_at_center,black,transparent_72%)]" />
-      <div className="absolute left-1/2 top-0 h-[32rem] w-[32rem] -translate-x-1/2 rounded-full bg-violet-500/10 blur-3xl" />
+      <div className="absolute left-1/2 top-0 h-[32rem] w-[32rem] -translate-x-1/2 rounded-full bg-clay-500/10 blur-3xl" />
     </div>
   )
 }
@@ -379,8 +379,8 @@ function SectionHeader({
 }) {
   return (
     <div className={align === 'center' ? 'mx-auto max-w-3xl text-center' : 'max-w-2xl'}>
-      <p className="text-xs font-semibold uppercase tracking-[0.22em] text-violet-300">{eyebrow}</p>
-      <h2 className="mt-4 text-3xl font-semibold tracking-tight text-white md:text-5xl">{title}</h2>
+      <p className="text-xs font-semibold uppercase tracking-[0.22em] text-clay-300">{eyebrow}</p>
+      <h2 className="mt-4 font-serif text-3xl font-medium tracking-tight text-white md:text-5xl">{title}</h2>
       <p className="mt-5 text-base leading-7 text-gray-400 md:text-lg">{description}</p>
     </div>
   )
@@ -403,9 +403,9 @@ function FeatureCard({
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true, margin: '-80px' }}
       transition={{ delay, duration: 0.45 }}
-      className="group rounded-3xl border border-white/[0.08] bg-white/[0.03] p-6 transition-all hover:-translate-y-1 hover:border-violet-300/20 hover:bg-white/[0.05]"
+      className="group rounded-3xl border border-white/[0.08] bg-white/[0.03] p-6 transition-all hover:-translate-y-1 hover:border-clay-300/20 hover:bg-white/[0.05]"
     >
-      <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/[0.08] bg-white/[0.04] text-violet-200 transition-colors group-hover:border-violet-300/20 group-hover:bg-violet-500/10">
+      <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/[0.08] bg-white/[0.04] text-clay-200 transition-colors group-hover:border-clay-300/20 group-hover:bg-clay-500/10">
         <Icon className="h-5 w-5" />
       </div>
       <h3 className="mt-6 text-lg font-semibold text-white">{title}</h3>
@@ -416,11 +416,11 @@ function FeatureCard({
 
 function ProjectMemoryCard() {
   return (
-    <div className="rounded-[2rem] border border-white/[0.08] bg-[#101014]/90 p-5 shadow-2xl shadow-black/30 md:p-6">
+    <div className="rounded-[2rem] border border-white/[0.08] bg-[#121010]/90 p-5 shadow-2xl shadow-black/30 md:p-6">
       <div className="rounded-3xl border border-white/[0.07] bg-white/[0.035] p-5">
         <div className="flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-violet-500/15 text-violet-200">
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-clay-500/15 text-clay-200">
               <FolderKanban className="h-5 w-5" />
             </div>
             <div>
@@ -457,7 +457,7 @@ function MiniPanel({ title, icon, children }: { title: string; icon: React.React
   return (
     <div className="rounded-2xl border border-white/[0.07] bg-black/20 p-4">
       <div className="mb-3 flex items-center gap-2 text-sm font-medium text-gray-200">
-        <span className="text-violet-300">{icon}</span>
+        <span className="text-clay-300">{icon}</span>
         {title}
       </div>
       <div className="space-y-2 text-xs leading-5 text-gray-500">{children}</div>
@@ -479,7 +479,7 @@ function ShowcaseCard({
   return (
     <div className="overflow-hidden rounded-[2rem] border border-white/[0.08] bg-white/[0.03]">
       <div className="p-6 md:p-8">
-        <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/[0.08] bg-white/[0.04] text-violet-200">
+        <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/[0.08] bg-white/[0.04] text-clay-200">
           {icon}
         </div>
         <h2 className="mt-6 text-2xl font-semibold tracking-tight text-white md:text-3xl">{title}</h2>
@@ -493,9 +493,9 @@ function ShowcaseCard({
 function DocumentVisual() {
   return (
     <div className="border-t border-white/[0.07] bg-black/20 p-6">
-      <div className="rounded-3xl border border-white/[0.08] bg-[#111115] p-4">
-        <div className="flex items-center gap-3 rounded-2xl border border-dashed border-violet-300/25 bg-violet-500/5 p-4">
-          <FileText className="h-8 w-8 text-violet-200" />
+      <div className="rounded-3xl border border-white/[0.08] bg-[#13110e] p-4">
+        <div className="flex items-center gap-3 rounded-2xl border border-dashed border-clay-300/25 bg-clay-500/5 p-4">
+          <FileText className="h-8 w-8 text-clay-200" />
           <div>
             <p className="text-sm font-medium text-white">macroeconomics-notes.pdf</p>
             <p className="text-xs text-gray-500">Analysing document...</p>
@@ -513,21 +513,21 @@ function DocumentVisual() {
 function ArtifactVisual() {
   return (
     <div className="border-t border-white/[0.07] bg-black/20 p-6">
-      <div className="rounded-3xl border border-white/[0.08] bg-[#111115] p-4">
+      <div className="rounded-3xl border border-white/[0.08] bg-[#13110e] p-4">
         <div className="flex items-center justify-between border-b border-white/[0.07] pb-3">
           <div className="flex rounded-full border border-white/[0.08] bg-white/[0.03] p-1 text-xs">
-            <span className="rounded-full bg-violet-500 px-3 py-1 text-white">Preview</span>
+            <span className="rounded-full bg-clay-500 px-3 py-1 text-white">Preview</span>
             <span className="px-3 py-1 text-gray-500">Code</span>
           </div>
           <button className="rounded-full border border-white/[0.08] px-3 py-1 text-xs text-gray-300">Copy</button>
         </div>
-        <div className="mt-4 rounded-2xl bg-gradient-to-br from-violet-500/20 via-white/[0.06] to-cyan-500/10 p-5">
+        <div className="mt-4 rounded-2xl bg-gradient-to-br from-clay-500/20 via-white/[0.06] to-amber-500/10 p-5">
           <div className="rounded-2xl border border-white/[0.10] bg-black/30 p-4">
             <p className="text-sm font-semibold text-white">Generated study dashboard</p>
             <div className="mt-4 grid grid-cols-3 gap-2">
               <div className="h-16 rounded-xl bg-white/[0.10]" />
-              <div className="h-16 rounded-xl bg-violet-400/20" />
-              <div className="h-16 rounded-xl bg-cyan-400/15" />
+              <div className="h-16 rounded-xl bg-clay-400/20" />
+              <div className="h-16 rounded-xl bg-amber-400/15" />
             </div>
           </div>
         </div>

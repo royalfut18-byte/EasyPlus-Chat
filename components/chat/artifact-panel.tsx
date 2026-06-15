@@ -984,13 +984,13 @@ function createPresentationPreviewHtml(title: string, content: string): string {
     </main>
     <style>
       body { margin: 0; background: #09090f; color: #f8fafc; font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
-      .deck-preview { min-height: 100vh; padding: 32px; background: radial-gradient(circle at top left, rgba(168,85,247,.28), transparent 36%), #09090f; }
+      .deck-preview { min-height: 100vh; padding: 32px; background: radial-gradient(circle at top left, rgba(217,119,87,.28), transparent 36%), #09090f; }
       .deck-hero { max-width: 980px; margin: 0 auto 24px; padding: 28px; border: 1px solid rgba(255,255,255,.12); border-radius: 28px; background: rgba(255,255,255,.06); box-shadow: 0 24px 90px rgba(0,0,0,.35); }
       .deck-hero span { color: #c4b5fd; text-transform: uppercase; letter-spacing: .16em; font-size: 12px; font-weight: 800; }
       .deck-hero h1 { margin: 10px 0; font-size: clamp(32px, 5vw, 60px); letter-spacing: -.04em; }
       .deck-hero p { margin: 0; color: #cbd5e1; }
       .slides { max-width: 980px; margin: 0 auto; display: grid; gap: 18px; }
-      .slide-card { min-height: 280px; padding: 30px; border-radius: 26px; border: 1px solid rgba(255,255,255,.12); background: linear-gradient(135deg, rgba(124,58,237,.28), rgba(236,72,153,.14)); box-shadow: 0 18px 70px rgba(0,0,0,.28); }
+      .slide-card { min-height: 280px; padding: 30px; border-radius: 26px; border: 1px solid rgba(255,255,255,.12); background: linear-gradient(135deg, rgba(205,98,67,.28), rgba(236,72,153,.14)); box-shadow: 0 18px 70px rgba(0,0,0,.28); }
       .slide-kicker { color: #f0abfc; font-size: 12px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; }
       .slide-card h2 { margin: 12px 0 18px; font-size: clamp(26px, 4vw, 42px); line-height: 1.05; }
       .slide-card li, .slide-card p { color: #e2e8f0; font-size: 18px; line-height: 1.55; }
@@ -1029,13 +1029,13 @@ function createPresentationPreviewHtml(title: string, content: string): string {
   </main>
   <style>
     body { margin: 0; background: #09090f; color: #f8fafc; font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
-    .deck-preview { min-height: 100vh; padding: 32px; background: radial-gradient(circle at top left, rgba(168,85,247,.28), transparent 36%), #09090f; }
+    .deck-preview { min-height: 100vh; padding: 32px; background: radial-gradient(circle at top left, rgba(217,119,87,.28), transparent 36%), #09090f; }
     .deck-hero { max-width: 980px; margin: 0 auto 24px; padding: 28px; border: 1px solid rgba(255,255,255,.12); border-radius: 28px; background: rgba(255,255,255,.06); box-shadow: 0 24px 90px rgba(0,0,0,.35); }
     .deck-hero span { color: #c4b5fd; text-transform: uppercase; letter-spacing: .16em; font-size: 12px; font-weight: 800; }
     .deck-hero h1 { margin: 10px 0; font-size: clamp(32px, 5vw, 60px); letter-spacing: -.04em; }
     .deck-hero p { margin: 0; color: #cbd5e1; }
     .slides { max-width: 980px; margin: 0 auto; display: grid; gap: 18px; }
-    .slide-card { min-height: 280px; padding: 30px; border-radius: 26px; border: 1px solid rgba(255,255,255,.12); background: linear-gradient(135deg, rgba(124,58,237,.28), rgba(236,72,153,.14)); box-shadow: 0 18px 70px rgba(0,0,0,.28); }
+    .slide-card { min-height: 280px; padding: 30px; border-radius: 26px; border: 1px solid rgba(255,255,255,.12); background: linear-gradient(135deg, rgba(205,98,67,.28), rgba(236,72,153,.14)); box-shadow: 0 18px 70px rgba(0,0,0,.28); }
     .slide-kicker { color: #f0abfc; font-size: 12px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; }
     .slide-card h2 { margin: 12px 0 18px; font-size: clamp(26px, 4vw, 42px); line-height: 1.05; }
     .slide-card li, .slide-card p { color: #e2e8f0; font-size: 18px; line-height: 1.55; }
@@ -1460,7 +1460,7 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
       style={{ paddingLeft: isMobile || options?.fullscreen ? 0 : '12px' }}
     >
       {/* Header */}
-      <div className="shrink-0 border-b border-white/[0.06] bg-gradient-to-r from-white/[0.055] via-white/[0.025] to-fuchsia-500/[0.045] p-4 flex items-center justify-between">
+      <div className="shrink-0 border-b border-white/[0.06] bg-gradient-to-r from-white/[0.055] via-white/[0.025] to-clay-500/[0.045] p-4 flex items-center justify-between">
         <div className="flex-1 min-w-0">
           <h3 className="text-lg font-semibold text-white truncate sm:text-xl">
             {artifact?.title || 'No Artifact'}
@@ -1501,7 +1501,7 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
             className={cn(
               'rounded-lg px-3 py-2 text-sm font-medium transition-colors flex items-center gap-2',
               currentTab === 'preview'
-                ? 'bg-violet-500/20 text-white shadow-sm'
+                ? 'bg-clay-500/20 text-white shadow-sm'
                 : 'text-gray-400 hover:bg-white/5 hover:text-white'
             )}
           >
@@ -1513,7 +1513,7 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
             className={cn(
               'rounded-lg px-3 py-2 text-sm font-medium transition-colors flex items-center gap-2',
               currentTab === 'code'
-                ? 'bg-violet-500/20 text-white shadow-sm'
+                ? 'bg-clay-500/20 text-white shadow-sm'
                 : 'text-gray-400 hover:bg-white/5 hover:text-white'
             )}
           >
@@ -1530,7 +1530,7 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
               className={cn(
                 'p-2 rounded transition-colors',
                 previewDevice === 'desktop'
-                  ? 'bg-violet-500/15 text-violet-400'
+                  ? 'bg-clay-500/15 text-clay-400'
                   : 'text-gray-400 hover:text-white hover:bg-white/5'
               )}
             >
@@ -1542,7 +1542,7 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
               className={cn(
                 'p-2 rounded transition-colors',
                 previewDevice === 'tablet'
-                  ? 'bg-violet-500/15 text-violet-400'
+                  ? 'bg-clay-500/15 text-clay-400'
                   : 'text-gray-400 hover:text-white hover:bg-white/5'
               )}
             >
@@ -1554,7 +1554,7 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
               className={cn(
                 'p-2 rounded transition-colors',
                 previewDevice === 'mobile'
-                  ? 'bg-violet-500/15 text-violet-400'
+                  ? 'bg-clay-500/15 text-clay-400'
                   : 'text-gray-400 hover:text-white hover:bg-white/5'
               )}
             >
@@ -1577,7 +1577,7 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-hidden flex flex-col min-h-0 bg-[#0f0f0f]">
+      <div className="flex-1 overflow-hidden flex flex-col min-h-0 bg-[#12100e]">
         {!artifact ? (
           <div className="flex items-center justify-center h-full p-8 text-center">
             <div className="max-w-md space-y-4">
@@ -1604,7 +1604,7 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
           </div>
         ) : currentTab === 'preview' ? (
           canPreview ? (
-            <div className="flex-1 min-h-0 h-full overflow-hidden flex flex-col items-center justify-center bg-[radial-gradient(circle_at_top,rgba(139,92,246,0.14),transparent_36%),#0b0b0f] p-4">
+            <div className="flex-1 min-h-0 h-full overflow-hidden flex flex-col items-center justify-center bg-[radial-gradient(circle_at_top,rgba(217,119,87,0.14),transparent_36%),#0e0c0a] p-4">
               {/* Interactive hint for games/apps */}
               <div className="text-center mb-2">
                 <p className="text-xs text-gray-400">
@@ -1762,7 +1762,7 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
           </Button>
           <Button
             onClick={handleDownload}
-            className="min-w-[130px] flex-1 bg-violet-600/80 hover:bg-violet-600 text-white"
+            className="min-w-[130px] flex-1 bg-clay-600/80 hover:bg-clay-600 text-white"
           >
             <Download className="h-4 w-4 mr-2" />
             {zipBackedAttachment
@@ -1774,7 +1774,7 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
           {!isGeneratedFilePreview && !zipBackedAttachment && (
             <Button
               onClick={handleDownloadZip}
-              className="min-w-[130px] flex-1 bg-fuchsia-600/80 hover:bg-fuchsia-600 text-white"
+              className="min-w-[130px] flex-1 bg-clay-600/80 hover:bg-clay-600 text-white"
             >
               <Download className="h-4 w-4 mr-2" />
               Download ZIP
@@ -1920,7 +1920,7 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
             animate={{ x: 0 }}
             exit={{ x: '100%' }}
             transition={{ type: 'spring', damping: 30, stiffness: 300 }}
-            className="fixed inset-0 z-50 bg-[#0f0f0f] md:hidden"
+            className="fixed inset-0 z-50 bg-[#12100e] md:hidden"
           >
             {renderPanelContent({ fullscreen: true })}
           </motion.div>
@@ -1955,8 +1955,8 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
           <div
             className={cn(
               'absolute left-0 top-0 bottom-0 w-3 cursor-col-resize flex items-center justify-center group',
-              'hover:bg-violet-500/5 transition-colors',
-              isResizing && 'bg-violet-500/10'
+              'hover:bg-clay-500/5 transition-colors',
+              isResizing && 'bg-clay-500/10'
             )}
             style={{
               zIndex: 100,
@@ -1967,12 +1967,12 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
             {/* Vertical line spanning full height */}
             <div className={cn(
               'absolute left-1 w-px h-full bg-white/10 transition-colors',
-              'group-hover:bg-violet-400/40',
-              isResizing && 'bg-violet-400/60'
+              'group-hover:bg-clay-400/40',
+              isResizing && 'bg-clay-400/60'
             )} />
             {/* Centered grip indicator */}
             <div className={cn(
-              'absolute top-1/2 left-0.5 -translate-y-1/2 w-1.5 h-16 rounded-full bg-violet-400/40 transition-opacity',
+              'absolute top-1/2 left-0.5 -translate-y-1/2 w-1.5 h-16 rounded-full bg-clay-400/40 transition-opacity',
               'opacity-0 group-hover:opacity-100',
               isResizing && 'opacity-100'
             )} />

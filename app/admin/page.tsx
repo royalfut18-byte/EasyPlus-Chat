@@ -24,10 +24,10 @@ export default async function AdminPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0f0f0f] p-4 text-white md:p-8">
+    <div className="min-h-screen bg-[#12100e] p-4 text-white md:p-8">
       <div className="mx-auto max-w-7xl space-y-6">
         <div>
-          <p className="text-xs font-medium uppercase tracking-[0.16em] text-violet-300">
+          <p className="text-xs font-medium uppercase tracking-[0.16em] text-clay-300">
             {access.isMainAdmin ? 'EasyPlus Administration' : 'EasyPlus Sub-admin'}
           </p>
           <h1 className="mt-2 text-3xl font-semibold">{access.isMainAdmin ? 'Admin Panel' : 'Your User Panel'}</h1>
@@ -57,7 +57,7 @@ export default async function AdminPage() {
 
         {access.isMainAdmin && <BackfillPanel />}
 
-        <section className="rounded-2xl border border-white/[0.08] bg-[#181818] p-4 md:p-5">
+        <section className="rounded-2xl border border-white/[0.08] bg-[#1b1613] p-4 md:p-5">
           <h2 className="text-lg font-semibold">{access.isMainAdmin ? 'Accounts' : 'Assigned accounts'}</h2>
           <p className="mt-1 text-sm text-gray-500">
             {access.isMainAdmin ? 'Sub-admin groups and unassigned users are managed here.' : 'Only users assigned to your panel are visible.'}
@@ -71,8 +71,8 @@ export default async function AdminPage() {
 
 function Stat({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
   return (
-    <section className="rounded-2xl border border-white/[0.08] bg-[#181818] p-5">
-      <div className="h-5 w-5 text-violet-400">{icon}</div>
+    <section className="rounded-2xl border border-white/[0.08] bg-[#1b1613] p-5">
+      <div className="h-5 w-5 text-clay-400">{icon}</div>
       <p className="mt-4 text-xs uppercase tracking-[0.12em] text-gray-500">{label}</p>
       <p className="mt-2 text-2xl font-semibold">{value}</p>
     </section>

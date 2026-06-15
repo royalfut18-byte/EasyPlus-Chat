@@ -109,7 +109,7 @@ export function EasyCodeHomeClient({ initialProjects }: { initialProjects: EasyC
   }
 
   return (
-    <main className="min-h-[100dvh] bg-[#0f0f0f] px-4 py-5 text-white md:px-8">
+    <main className="min-h-[100dvh] bg-[#12100e] px-4 py-5 text-white md:px-8">
       <div className="mx-auto flex max-w-7xl items-center justify-between">
         <Link href="/chat" className="rounded-xl p-1 transition-colors hover:bg-white/[0.04]">
           <Logo size="sm" showText />
@@ -122,16 +122,16 @@ export function EasyCodeHomeClient({ initialProjects }: { initialProjects: EasyC
       </div>
 
       <section className="mx-auto flex min-h-[58vh] max-w-4xl flex-col items-center justify-center py-12 text-center">
-        <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-violet-300/15 bg-violet-500/10 px-3 py-1 text-xs font-medium text-violet-100">
+        <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-clay-300/15 bg-clay-500/10 px-3 py-1 text-xs font-medium text-clay-100">
           <Code2 className="h-3.5 w-3.5" />
           Easy Code
         </div>
-        <h1 className="text-4xl font-semibold tracking-tight sm:text-6xl">What do you want to build?</h1>
+        <h1 className="font-serif text-4xl font-medium tracking-tight sm:text-[3.5rem]">What do you want to build?</h1>
         <p className="mt-4 max-w-2xl text-base leading-relaxed text-gray-400 sm:text-lg">
           Describe your app, website, script, or tool. Easy Code will generate the files, preview it, and let you download the project.
         </p>
 
-        <div className="mt-8 w-full rounded-[28px] border border-white/[0.10] bg-[#191919] p-3 shadow-2xl shadow-black/30">
+        <div className="mt-8 w-full rounded-[28px] border border-white/[0.10] bg-[#1c1714] p-3 shadow-2xl shadow-black/30">
           <textarea
             value={prompt}
             onChange={(event) => setPrompt(event.target.value)}
@@ -144,7 +144,7 @@ export function EasyCodeHomeClient({ initialProjects }: { initialProjects: EasyC
             disabled={isCreating}
             rows={4}
             placeholder="Build a modern SaaS landing page with pricing, dashboard mockup, and dark mode..."
-            className="min-h-28 w-full resize-none rounded-3xl border border-white/[0.06] bg-[#101010] p-4 text-base text-white outline-none placeholder:text-gray-500 focus:border-violet-300/25 disabled:opacity-60"
+            className="min-h-28 w-full resize-none rounded-3xl border border-white/[0.06] bg-[#13110f] p-4 text-base text-white outline-none placeholder:text-gray-500 focus:border-clay-300/25 disabled:opacity-60"
           />
           <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-left text-xs text-gray-500">Easy Code will create a file-based starter project you can edit and export.</p>
@@ -152,7 +152,7 @@ export function EasyCodeHomeClient({ initialProjects }: { initialProjects: EasyC
               type="button"
               onClick={() => createProject()}
               disabled={prompt.trim().length < 5 || isCreating}
-              className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl bg-violet-600 px-5 text-sm font-semibold text-white transition-colors hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-50"
+              className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl bg-clay-600 px-5 text-sm font-semibold text-white transition-colors hover:bg-clay-500 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {isCreating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
               Create Project
@@ -205,12 +205,12 @@ export function EasyCodeHomeClient({ initialProjects }: { initialProjects: EasyC
                   }
                 }}
                 className={cn(
-                  'group cursor-pointer rounded-[24px] border border-white/[0.08] bg-[#191919] p-5 transition-colors',
-                  'hover:border-violet-300/20 hover:bg-[#202020]'
+                  'group cursor-pointer rounded-[24px] border border-white/[0.08] bg-[#1c1714] p-5 transition-colors',
+                  'hover:border-clay-300/20 hover:bg-[#202020]'
                 )}
               >
                 <div className="flex items-center justify-between gap-3">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-violet-500/10 text-violet-200">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-clay-500/10 text-clay-200">
                     <Code2 className="h-5 w-5" />
                   </div>
                   <div className="flex items-center gap-2">
@@ -227,7 +227,7 @@ export function EasyCodeHomeClient({ initialProjects }: { initialProjects: EasyC
                     >
                       {deletingProjectId === project.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
                     </button>
-                    <ArrowRight className="h-4 w-4 text-gray-600 transition-colors group-hover:text-violet-200" />
+                    <ArrowRight className="h-4 w-4 text-gray-600 transition-colors group-hover:text-clay-200" />
                   </div>
                 </div>
                 <h3 className="mt-4 line-clamp-2 font-semibold text-white">{project.title}</h3>

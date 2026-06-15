@@ -403,7 +403,7 @@ export function ChatInput({ onSend, disabled, isLoading, conversationId, reasoni
 
   return (
     <div
-      className="sticky bottom-0 bg-gradient-to-t from-[#0f0f0f] via-[#0f0f0f] to-[#0f0f0f]/90 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2 md:px-4 md:pb-4"
+      className="sticky bottom-0 bg-gradient-to-t from-[#12100e] via-[#12100e] to-[#12100e]/90 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2 md:px-4 md:pb-4"
       onDragEnter={handleDragEnter}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
@@ -411,7 +411,7 @@ export function ChatInput({ onSend, disabled, isLoading, conversationId, reasoni
     >
       {isDragging && (
         <div className="pointer-events-none fixed inset-0 z-[80] flex items-center justify-center bg-black/55 p-4 backdrop-blur-md">
-          <div className="w-full max-w-lg rounded-2xl border border-dashed border-white/[0.18] bg-[#1b1b1b]/95 p-8 text-center shadow-2xl shadow-black/40">
+          <div className="w-full max-w-lg rounded-2xl border border-dashed border-white/[0.18] bg-[#1e1814]/95 p-8 text-center shadow-2xl shadow-black/40">
             <Paperclip className="h-12 w-12 text-gray-400 mx-auto mb-3" />
             <p className="text-lg font-semibold text-white">Drop files to attach</p>
             <p className="text-gray-400 text-sm mt-1">
@@ -449,7 +449,7 @@ export function ChatInput({ onSend, disabled, isLoading, conversationId, reasoni
                       )}
                       {attachment.uploadStatus === 'compressing' && (
                         <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
-                          <Loader2 className="h-4 w-4 animate-spin text-violet-400" />
+                          <Loader2 className="h-4 w-4 animate-spin text-clay-400" />
                         </div>
                       )}
                     </div>
@@ -457,7 +457,7 @@ export function ChatInput({ onSend, disabled, isLoading, conversationId, reasoni
                     <div className="flex h-14 w-44 flex-col justify-between rounded-lg border border-white/[0.09] bg-[#202020] p-2 md:h-16 md:w-52">
                       <div className="flex items-start gap-2">
                         {attachment.uploadStatus === 'uploading' || attachment.uploadStatus === 'processing' || attachment.uploadStatus === 'pending' ? (
-                          <Upload className="h-5 w-5 text-violet-400 animate-pulse shrink-0" />
+                          <Upload className="h-5 w-5 text-clay-400 animate-pulse shrink-0" />
                         ) : attachment.uploadStatus === 'failed' ? (
                           <AlertCircle className="h-5 w-5 text-red-400 shrink-0" />
                         ) : attachment.uploadStatus === 'uploaded' ? (
@@ -487,7 +487,7 @@ export function ChatInput({ onSend, disabled, isLoading, conversationId, reasoni
                             <div
                               className={cn(
                                 'h-full rounded-full transition-all duration-300',
-                                attachment.uploadStatus === 'processing' ? 'bg-amber-400' : 'bg-violet-500'
+                                attachment.uploadStatus === 'processing' ? 'bg-amber-400' : 'bg-clay-500'
                               )}
                               style={{ width: `${attachment.uploadProgress || 0}%` }}
                             />
@@ -555,12 +555,12 @@ export function ChatInput({ onSend, disabled, isLoading, conversationId, reasoni
               onMouseDown={(event) => event.preventDefault()}
               disabled={(!message.trim() && attachments.length === 0) || isComposerUnavailable || hasActiveUpload}
               size="icon"
-              className="h-8 w-8 shrink-0 rounded-full bg-violet-600/90 transition-colors hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-40 md:h-9 md:w-9"
+              className="h-8 w-8 shrink-0 rounded-full bg-clay-600/90 transition-colors hover:bg-clay-500 disabled:cursor-not-allowed disabled:opacity-40 md:h-9 md:w-9"
             >
               {isLoading ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : hasActiveUpload ? (
-                <Loader2 className="h-4 w-4 animate-spin text-violet-300" />
+                <Loader2 className="h-4 w-4 animate-spin text-clay-300" />
               ) : (
                 <Send className="h-4 w-4" />
               )}

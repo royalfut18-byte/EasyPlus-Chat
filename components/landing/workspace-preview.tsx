@@ -31,38 +31,38 @@ export function WorkspacePreview() {
       transition={{ duration: 0.7, delay: 0.32 }}
       className="relative mx-auto mt-16 max-w-7xl md:mt-20"
     >
-      <div className="absolute -inset-x-8 -inset-y-6 rounded-[2.5rem] bg-[linear-gradient(110deg,rgba(139,92,246,0.14),rgba(255,255,255,0.04),rgba(34,211,238,0.08))] blur-3xl" />
-      <div className="relative overflow-hidden rounded-[2rem] border border-white/[0.08] bg-[#0f0f0f] shadow-2xl shadow-black/50">
+      <div className="absolute -inset-x-8 -inset-y-6 rounded-[2.5rem] bg-[linear-gradient(110deg,rgba(217,119,87,0.14),rgba(255,255,255,0.04),rgba(226,169,143,0.08))] blur-3xl" />
+      <div className="relative overflow-hidden rounded-[2rem] border border-white/[0.08] bg-[#12100e] shadow-2xl shadow-black/50">
         <div className="grid min-h-[700px] lg:grid-cols-[288px_minmax(0,1fr)]">
-          <aside className="hidden border-r border-white/[0.05] bg-[#171717] lg:flex lg:flex-col">
+          <aside className="hidden border-r border-white/[0.05] bg-[#1a1512] lg:flex lg:flex-col">
             <div className="px-3 pb-2 pt-3">
               <div className="px-2 py-1">
                 <Logo size="sm" showText />
               </div>
               <button className="mt-3 flex h-9 w-full items-center justify-start rounded-lg border border-white/[0.07] bg-white/[0.02] px-3 text-sm text-gray-200">
-                <Plus className="mr-2 h-4 w-4 text-violet-400" />
+                <Plus className="mr-2 h-4 w-4 text-clay-400" />
                 New Chat
               </button>
-              <button className="mt-2 flex h-9 w-full items-center justify-start rounded-lg border border-violet-300/[0.12] bg-violet-500/[0.06] px-3 text-sm text-violet-100">
-                <Code2 className="mr-2 h-4 w-4 text-violet-300" />
+              <button className="mt-2 flex h-9 w-full items-center justify-start rounded-lg border border-clay-300/[0.12] bg-clay-500/[0.06] px-3 text-sm text-clay-100">
+                <Code2 className="mr-2 h-4 w-4 text-clay-300" />
                 Easy Code
               </button>
             </div>
 
             <div className="flex items-center justify-between px-4 pb-1 pt-2 text-[10px] font-medium uppercase tracking-[0.14em] text-gray-500">
               <span>Projects</span>
-              <span className="rounded px-1.5 py-0.5 text-violet-300">View all</span>
+              <span className="rounded px-1.5 py-0.5 text-clay-300">View all</span>
             </div>
             <div className="space-y-px px-2 pb-3">
               {projects.map((project, index) => (
                 <div
                   key={project}
                   className={`group flex items-center rounded-lg transition-colors ${
-                    index === 0 ? 'bg-violet-500/[0.08]' : 'hover:bg-white/[0.045]'
+                    index === 0 ? 'bg-clay-500/[0.08]' : 'hover:bg-white/[0.045]'
                   }`}
                 >
                   <div className="flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-left">
-                    <FolderOpen className={`h-3.5 w-3.5 shrink-0 ${index === 0 ? 'text-violet-300' : 'text-gray-500'}`} />
+                    <FolderOpen className={`h-3.5 w-3.5 shrink-0 ${index === 0 ? 'text-clay-300' : 'text-gray-500'}`} />
                     <span className={`truncate text-sm ${index === 0 ? 'text-white' : 'text-gray-300'}`}>{project}</span>
                   </div>
                 </div>
@@ -81,7 +81,7 @@ export function WorkspacePreview() {
                   }`}
                 >
                   <div className="flex items-start gap-2.5 pr-7">
-                    <MessageSquare className={`mt-0.5 h-3.5 w-3.5 shrink-0 ${chat.active ? 'text-violet-400' : 'text-gray-500'}`} />
+                    <MessageSquare className={`mt-0.5 h-3.5 w-3.5 shrink-0 ${chat.active ? 'text-clay-400' : 'text-gray-500'}`} />
                     <div className="min-w-0 flex-1">
                       <p className={`truncate text-sm leading-snug ${chat.active ? 'text-white' : 'text-gray-200'}`}>{chat.title}</p>
                       <p className="mt-0.5 text-[11px] text-gray-500">{chat.date}</p>
@@ -101,8 +101,8 @@ export function WorkspacePreview() {
             </div>
           </aside>
 
-          <section className="flex min-w-0 flex-col bg-[#0f0f0f]">
-            <div className="border-b border-white/[0.06] bg-[#0f0f0f]/95 px-3 py-3 backdrop-blur-md md:px-4">
+          <section className="flex min-w-0 flex-col bg-[#12100e]">
+            <div className="border-b border-white/[0.06] bg-[#12100e]/95 px-3 py-3 backdrop-blur-md md:px-4">
               <div className="flex flex-wrap items-center gap-2">
                 {UI_MODELS.map((model, index) => (
                   <span
@@ -136,7 +136,7 @@ export function WorkspacePreview() {
                   </div>
 
                   <div className="w-full">
-                    <div className="relative overflow-hidden rounded-[26px] border border-white/[0.08] bg-[radial-gradient(circle_at_top,rgba(139,92,246,0.10),transparent_42%),rgba(24,24,24,0.9)] p-3 shadow-[0_18px_60px_rgba(0,0,0,0.32)] backdrop-blur-xl sm:p-4">
+                    <div className="relative overflow-hidden rounded-[26px] border border-white/[0.08] bg-[radial-gradient(circle_at_top,rgba(217,119,87,0.10),transparent_42%),rgba(24,24,24,0.9)] p-3 shadow-[0_18px_60px_rgba(0,0,0,0.32)] backdrop-blur-xl sm:p-4">
                       <div className="flex items-end gap-2">
                         <button
                           type="button"
@@ -154,7 +154,7 @@ export function WorkspacePreview() {
                         />
                         <button
                           type="button"
-                          className="mb-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-violet-600/90 text-white"
+                          className="mb-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-clay-600/90 text-white"
                           aria-label="Send message"
                         >
                           <Send className="h-4 w-4" />
@@ -168,7 +168,7 @@ export function WorkspacePreview() {
                               key={mode}
                               className={`rounded-full border px-3 py-1 text-[11px] ${
                                 index === 0
-                                  ? 'border-violet-300/20 bg-violet-500/10 text-violet-100'
+                                  ? 'border-clay-300/20 bg-clay-500/10 text-clay-100'
                                   : 'border-white/[0.08] bg-white/[0.03] text-gray-400'
                               }`}
                             >

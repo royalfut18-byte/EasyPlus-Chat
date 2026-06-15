@@ -74,7 +74,7 @@ function downloadTextFile(path: string, content: string) {
 function statusClass(status: string) {
   if (status === 'failed' || status === 'incomplete') return 'bg-red-500/10 text-red-200 border-red-400/10'
   if (status === 'ready') return 'bg-emerald-500/10 text-emerald-200 border-emerald-400/10'
-  return 'bg-violet-500/10 text-violet-200 border-violet-300/10'
+  return 'bg-clay-500/10 text-clay-200 border-clay-300/10'
 }
 
 export function EasyCodeWorkspaceClient({
@@ -329,13 +329,13 @@ export function EasyCodeWorkspaceClient({
             className="h-full w-full bg-white"
           />
         ) : generationStatus === 'generating' ? (
-          <div className="flex h-full flex-col items-center justify-center bg-[#101010] p-8 text-center">
-            <Loader2 className="h-8 w-8 animate-spin text-violet-300" />
+          <div className="flex h-full flex-col items-center justify-center bg-[#13110f] p-8 text-center">
+            <Loader2 className="h-8 w-8 animate-spin text-clay-300" />
             <p className="mt-4 text-sm font-medium text-gray-200">Preparing preview...</p>
             <p className="mt-2 max-w-sm text-xs leading-relaxed text-gray-500">Easy Code is generating files. The preview will load automatically when an index.html file is ready.</p>
           </div>
         ) : (
-          <div className="flex h-full flex-col items-center justify-center bg-[#101010] p-8 text-center">
+          <div className="flex h-full flex-col items-center justify-center bg-[#13110f] p-8 text-center">
             <Monitor className="h-9 w-9 text-gray-600" />
             <p className="mt-4 text-sm font-medium text-gray-200">Preview unavailable for this project type.</p>
             <p className="mt-2 max-w-sm text-xs leading-relaxed text-gray-500">View code or download the ZIP to run this project locally.</p>
@@ -347,10 +347,10 @@ export function EasyCodeWorkspaceClient({
 
   const CodePane = (
     <div className="grid h-full min-h-0 grid-cols-1 overflow-hidden rounded-[28px] border border-white/[0.08] bg-[#111] shadow-2xl shadow-black/25 md:grid-cols-[260px_minmax(0,1fr)]">
-      <aside className={cn('min-h-0 border-r border-white/[0.06] bg-[#151515]', mobileTab !== 'files' && 'hidden md:block')}>
+      <aside className={cn('min-h-0 border-r border-white/[0.06] bg-[#181311]', mobileTab !== 'files' && 'hidden md:block')}>
         <div className="flex items-center justify-between border-b border-white/[0.06] p-3">
           <div className="flex items-center gap-2 text-sm font-medium text-gray-200">
-            <FolderOpen className="h-4 w-4 text-violet-300" />
+            <FolderOpen className="h-4 w-4 text-clay-300" />
             Files
           </div>
           <button onClick={addFile} className="rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-white/[0.06] hover:text-white" title="Add file">
@@ -362,7 +362,7 @@ export function EasyCodeWorkspaceClient({
             <button
               key={file.path}
               onClick={() => selectFile(file)}
-              className={cn('flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm transition-colors', selectedPath === file.path ? 'bg-violet-500/10 text-white' : 'text-gray-400 hover:bg-white/[0.045] hover:text-gray-200')}
+              className={cn('flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm transition-colors', selectedPath === file.path ? 'bg-clay-500/10 text-white' : 'text-gray-400 hover:bg-white/[0.045] hover:text-gray-200')}
             >
               <File className="h-3.5 w-3.5 shrink-0 text-gray-500" />
               <span className="truncate">{file.path}</span>
@@ -371,7 +371,7 @@ export function EasyCodeWorkspaceClient({
         </div>
       </aside>
       <section className={cn('flex min-h-0 min-w-0 flex-col', mobileTab === 'files' && 'hidden md:flex')}>
-        <div className="flex min-h-12 items-center justify-between gap-3 border-b border-white/[0.06] bg-[#171717] px-3">
+        <div className="flex min-h-12 items-center justify-between gap-3 border-b border-white/[0.06] bg-[#1a1512] px-3">
           <div className="min-w-0">
             <p className="truncate text-sm font-medium text-gray-200">{selectedFile?.path || 'No file selected'}</p>
             <p className="text-xs text-gray-600">{selectedFile?.language || 'text'} {selectedFile ? `- ${formatBytes(selectedFile.size_bytes)}` : ''} {hasUnsavedChanges ? '- unsaved' : ''}</p>
@@ -387,7 +387,7 @@ export function EasyCodeWorkspaceClient({
               <button onClick={deleteFile} className="rounded-full border border-red-400/10 p-2 text-red-300 transition-colors hover:bg-red-500/10" title="Delete file">
                 <Trash2 className="h-3.5 w-3.5" />
               </button>
-              <button onClick={saveFile} disabled={!hasUnsavedChanges || isSaving} className="inline-flex h-9 items-center gap-2 rounded-full bg-violet-600 px-3 text-xs font-semibold text-white transition-colors hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-50">
+              <button onClick={saveFile} disabled={!hasUnsavedChanges || isSaving} className="inline-flex h-9 items-center gap-2 rounded-full bg-clay-600 px-3 text-xs font-semibold text-white transition-colors hover:bg-clay-500 disabled:cursor-not-allowed disabled:opacity-50">
                 {isSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
                 Save
               </button>
@@ -399,7 +399,7 @@ export function EasyCodeWorkspaceClient({
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
             spellCheck={false}
-            className="min-h-0 flex-1 resize-none bg-[#101010] p-4 font-mono text-[13px] leading-6 text-gray-100 outline-none scrollbar-thin placeholder:text-gray-600"
+            className="min-h-0 flex-1 resize-none bg-[#13110f] p-4 font-mono text-[13px] leading-6 text-gray-100 outline-none scrollbar-thin placeholder:text-gray-600"
           />
         ) : (
           <div className="flex flex-1 items-center justify-center text-sm text-gray-500">Select or add a file.</div>
@@ -409,13 +409,13 @@ export function EasyCodeWorkspaceClient({
   )
 
   return (
-    <main className="flex h-[100dvh] flex-col overflow-hidden bg-[#0f0f0f] text-white">
-      <header className="flex min-h-16 items-center justify-between gap-3 border-b border-white/[0.06] bg-[#151515]/95 px-3 backdrop-blur md:px-4">
+    <main className="flex h-[100dvh] flex-col overflow-hidden bg-[#12100e] text-white">
+      <header className="flex min-h-16 items-center justify-between gap-3 border-b border-white/[0.06] bg-[#181311]/95 px-3 backdrop-blur md:px-4">
         <div className="flex min-w-0 items-center gap-3">
           <Link href="/easy-code" className="rounded-lg p-2 text-gray-400 transition-colors hover:bg-white/[0.06] hover:text-white">
             <ArrowLeft className="h-4 w-4" />
           </Link>
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-violet-500/10 text-violet-200">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-clay-500/10 text-clay-200">
             <Code2 className="h-4 w-4" />
           </div>
           <div className="min-w-0">
@@ -428,7 +428,7 @@ export function EasyCodeWorkspaceClient({
         </div>
 
         <div className="hidden shrink-0 items-center gap-2 md:flex">
-          <div className="rounded-full border border-white/[0.08] bg-[#101010] p-1">
+          <div className="rounded-full border border-white/[0.08] bg-[#13110f] p-1">
             <button
               onClick={() => setBuilderView('preview')}
               className={cn('inline-flex h-9 items-center gap-2 rounded-full px-4 text-xs font-semibold transition-colors', builderView === 'preview' ? 'bg-white text-black' : 'text-gray-400 hover:text-white')}
@@ -485,10 +485,10 @@ export function EasyCodeWorkspaceClient({
       )}
 
       <div className="grid min-h-0 flex-1 grid-cols-1 overflow-hidden md:grid-cols-[380px_minmax(0,1fr)]">
-        <aside className={cn('flex min-h-0 flex-col border-r border-white/[0.06] bg-[#151515]', mobileTab !== 'chat' && 'hidden md:flex')}>
+        <aside className={cn('flex min-h-0 flex-col border-r border-white/[0.06] bg-[#181311]', mobileTab !== 'chat' && 'hidden md:flex')}>
           <div className="border-b border-white/[0.06] p-4">
             <div className="flex items-center gap-2">
-              <div className="flex h-9 w-9 items-center justify-center rounded-2xl bg-violet-500/10 text-violet-200">
+              <div className="flex h-9 w-9 items-center justify-center rounded-2xl bg-clay-500/10 text-clay-200">
                 <Sparkles className="h-4 w-4" />
               </div>
               <div>
@@ -505,7 +505,7 @@ export function EasyCodeWorkspaceClient({
           </div>
 
           <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3 scrollbar-thin">
-            <div className="rounded-2xl border border-white/[0.07] bg-[#101010] p-3">
+            <div className="rounded-2xl border border-white/[0.07] bg-[#13110f] p-3">
               <div className="flex items-center justify-between gap-3">
                 <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500">Build progress</p>
                 <span className={cn('rounded-full border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]', statusClass(generationStatus))}>{generationStatus}</span>
@@ -516,7 +516,7 @@ export function EasyCodeWorkspaceClient({
                     {step.state === 'done' ? (
                       <CheckCircle2 className="h-3.5 w-3.5 text-emerald-300" />
                     ) : step.state === 'active' ? (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin text-violet-300" />
+                      <Loader2 className="h-3.5 w-3.5 animate-spin text-clay-300" />
                     ) : (
                       <Circle className="h-3.5 w-3.5 text-gray-700" />
                     )}
@@ -532,7 +532,7 @@ export function EasyCodeWorkspaceClient({
                 </div>
               ) : null}
               {(generationStatus === 'failed' || generationStatus === 'incomplete' || isGenerationStale) && (
-                <button onClick={retryGeneration} className="mt-3 inline-flex items-center gap-2 rounded-full bg-violet-600 px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-violet-500">
+                <button onClick={retryGeneration} className="mt-3 inline-flex items-center gap-2 rounded-full bg-clay-600 px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-clay-500">
                   <RefreshCw className="h-3.5 w-3.5" />
                   Retry generation
                 </button>
@@ -542,14 +542,14 @@ export function EasyCodeWorkspaceClient({
               )}
             </div>
 
-            <div className="rounded-2xl border border-white/[0.07] bg-[#101010] p-3">
+            <div className="rounded-2xl border border-white/[0.07] bg-[#13110f] p-3">
               <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500">What&apos;s next?</p>
               <div className="mt-2 flex flex-wrap gap-2">
                 {suggestedNextSteps.map(suggestion => (
                   <button
                     key={suggestion}
                     onClick={() => setChatInput(suggestion)}
-                    className="rounded-full border border-white/[0.07] bg-white/[0.035] px-3 py-1.5 text-xs text-gray-300 transition-colors hover:border-violet-300/20 hover:bg-violet-500/10 hover:text-white"
+                    className="rounded-full border border-white/[0.07] bg-white/[0.035] px-3 py-1.5 text-xs text-gray-300 transition-colors hover:border-clay-300/20 hover:bg-clay-500/10 hover:text-white"
                   >
                     {suggestion}
                   </button>
@@ -560,7 +560,7 @@ export function EasyCodeWorkspaceClient({
             {messages.length === 0 ? (
               <p className="rounded-2xl border border-white/[0.07] bg-white/[0.025] p-3 text-sm text-gray-500">Ask Easy Code to change anything in this project.</p>
             ) : messages.map(message => (
-              <div key={message.id} className={cn('rounded-2xl p-3 text-sm', message.role === 'user' ? 'bg-violet-600/15 text-violet-50' : 'bg-white/[0.04] text-gray-200')}>
+              <div key={message.id} className={cn('rounded-2xl p-3 text-sm', message.role === 'user' ? 'bg-clay-600/15 text-clay-50' : 'bg-white/[0.04] text-gray-200')}>
                 <p className="whitespace-pre-wrap leading-relaxed">{message.content}</p>
                 {message.role === 'assistant' && Array.isArray(message.metadata?.changedFiles) && (
                   <div className="mt-2 flex flex-wrap gap-1">
@@ -573,12 +573,12 @@ export function EasyCodeWorkspaceClient({
             ))}
 
             {isGenerating && (
-              <div className="rounded-2xl border border-violet-300/10 bg-violet-500/10 p-3 text-sm text-violet-100">
+              <div className="rounded-2xl border border-clay-300/10 bg-clay-500/10 p-3 text-sm text-clay-100">
                 <div className="flex items-center gap-2">
-                  <Loader2 className="h-4 w-4 animate-spin text-violet-200" />
+                  <Loader2 className="h-4 w-4 animate-spin text-clay-200" />
                   <span>{generationStatus === 'generating' ? 'Building project...' : 'Applying changes...'}</span>
                 </div>
-                <div className="mt-3 grid gap-1 text-xs text-violet-100/70">
+                <div className="mt-3 grid gap-1 text-xs text-clay-100/70">
                   <span>Reading project files...</span>
                   <span>Planning changes...</span>
                   <span>Updating files...</span>
@@ -588,7 +588,7 @@ export function EasyCodeWorkspaceClient({
             )}
 
             {latestAssistant?.metadata?.instructions?.length ? (
-              <div className="rounded-2xl border border-white/[0.07] bg-[#101010] p-3">
+              <div className="rounded-2xl border border-white/[0.07] bg-[#13110f] p-3">
                 <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500">Run instructions</p>
                 <ul className="mt-2 space-y-1 text-xs text-gray-300">
                   {latestAssistant.metadata.instructions.map((item: string) => <li key={item}>- {item}</li>)}
@@ -610,12 +610,12 @@ export function EasyCodeWorkspaceClient({
               disabled={isGenerating}
               rows={3}
               placeholder="Ask Easy Code to change anything..."
-              className="w-full resize-none rounded-2xl border border-white/[0.08] bg-[#101010] p-3 text-sm text-white outline-none placeholder:text-gray-600 focus:border-violet-300/25 disabled:opacity-60"
+              className="w-full resize-none rounded-2xl border border-white/[0.08] bg-[#13110f] p-3 text-sm text-white outline-none placeholder:text-gray-600 focus:border-clay-300/25 disabled:opacity-60"
             />
             <button
               onClick={sendEasyCodeMessage}
               disabled={chatInput.trim().length < 3 || isGenerating}
-              className="mt-2 inline-flex h-10 w-full items-center justify-center gap-2 rounded-2xl bg-violet-600 text-sm font-semibold text-white transition-colors hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-50"
+              className="mt-2 inline-flex h-10 w-full items-center justify-center gap-2 rounded-2xl bg-clay-600 text-sm font-semibold text-white transition-colors hover:bg-clay-500 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {isGenerating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
               Apply changes
@@ -623,7 +623,7 @@ export function EasyCodeWorkspaceClient({
           </div>
         </aside>
 
-        <section className={cn('min-h-0 bg-[#0f0f0f] p-3 md:p-4', mobileTab === 'chat' && 'hidden md:block')}>
+        <section className={cn('min-h-0 bg-[#12100e] p-3 md:p-4', mobileTab === 'chat' && 'hidden md:block')}>
           <div className="mb-3 flex items-center justify-between gap-3 md:hidden">
             {isDownloadReady ? (
               <Link href={`/api/easy-code/projects/${project.id}/download`} className="inline-flex h-9 items-center gap-2 rounded-full bg-white px-3 text-xs font-semibold text-black">

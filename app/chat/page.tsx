@@ -3149,20 +3149,20 @@ export default function ChatPage() {
 
   if (!userProfile) {
     return (
-      <div className="flex min-h-[100dvh] items-center justify-center bg-[#0f0f0f] p-4 text-center">
+      <div className="flex min-h-[100dvh] items-center justify-center bg-[#12100e] p-4 text-center">
         {sessionLoadError ? (
-          <div className="max-w-sm rounded-2xl border border-white/[0.08] bg-[#181818] p-6">
+          <div className="max-w-sm rounded-2xl border border-white/[0.08] bg-[#1b1613] p-6">
             <p className="text-sm text-gray-200">Something went wrong loading your session. Tap to retry.</p>
             <button
               type="button"
               onClick={() => window.location.reload()}
-              className="mt-4 rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-violet-500"
+              className="mt-4 rounded-lg bg-clay-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-clay-500"
             >
               Retry
             </button>
           </div>
         ) : (
-          <div className="h-8 w-8 animate-spin rounded-full border-2 border-violet-500/60 border-t-transparent" />
+          <div className="h-8 w-8 animate-spin rounded-full border-2 border-clay-500/60 border-t-transparent" />
         )}
       </div>
     )
@@ -3175,8 +3175,8 @@ export default function ChatPage() {
 
   if (accountExpired || userProfile.account_status === 'disabled') {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[#0f0f0f] p-4 text-white">
-        <div className="max-w-xl rounded-2xl border border-amber-400/20 bg-[#181818] p-8 text-center shadow-2xl shadow-black/30">
+      <div className="flex min-h-screen items-center justify-center bg-[#12100e] p-4 text-white">
+        <div className="max-w-xl rounded-2xl border border-amber-400/20 bg-[#1b1613] p-8 text-center shadow-2xl shadow-black/30">
           <h1 className="text-3xl font-semibold text-amber-200">
             {accountExpired ? 'Your subscription has ended.' : 'Your account is disabled.'}
           </h1>
@@ -3223,7 +3223,7 @@ export default function ChatPage() {
   }
 
   return (
-    <div className="flex h-[100dvh] overflow-hidden bg-[#0f0f0f] md:h-screen">
+    <div className="flex h-[100dvh] overflow-hidden bg-[#12100e] md:h-screen">
       <Sidebar
         conversations={normalConversations}
         projects={sidebarProjects}
@@ -3241,7 +3241,7 @@ export default function ChatPage() {
       <div className="ml-0 flex min-w-0 flex-1 overflow-hidden md:ml-72">
         {/* Chat section */}
         <main className="flex min-w-0 flex-1 flex-col overflow-hidden h-full">
-        <div className="sticky top-0 z-20 border-b border-white/[0.06] bg-[#0f0f0f]/95 backdrop-blur-md">
+        <div className="sticky top-0 z-20 border-b border-white/[0.06] bg-[#12100e]/95 backdrop-blur-md">
           <div className="flex min-h-12 items-center gap-2 overflow-x-auto pb-1.5 pl-14 pr-3 pt-[max(0.375rem,env(safe-area-inset-top))] md:px-4 md:py-1.5">
             <div className="flex-1 min-w-0">
               <ModelSelector
@@ -3254,7 +3254,7 @@ export default function ChatPage() {
             </div>
             {activeProject && (
               <div className="hidden min-w-0 items-center gap-2 rounded-full border border-white/[0.08] bg-white/[0.03] px-3 py-1.5 text-xs text-gray-300 md:flex">
-                <FolderOpen className="h-3.5 w-3.5 text-violet-300" />
+                <FolderOpen className="h-3.5 w-3.5 text-clay-300" />
                 <span className="truncate">Project: {activeProject.name}</span>
                 <button
                   type="button"
@@ -3290,7 +3290,7 @@ export default function ChatPage() {
                     className={cn(
                       'flex h-8 items-center gap-1.5 rounded-full border px-2.5 text-xs font-medium transition-colors md:px-3',
                       webSearchEnabled
-                        ? 'border-violet-400/20 bg-violet-500/10 text-violet-200'
+                        ? 'border-clay-400/20 bg-clay-500/10 text-clay-200'
                         : 'border-white/[0.07] bg-white/[0.02] text-gray-400 hover:bg-white/[0.06] hover:text-gray-200',
                       isRequestInProgress && 'opacity-50 cursor-not-allowed'
                     )}
@@ -3306,7 +3306,7 @@ export default function ChatPage() {
                     className={cn(
                       'flex h-8 items-center gap-1.5 rounded-full border px-2.5 text-xs font-medium transition-colors md:px-3',
                       artifactMode
-                        ? 'border-violet-400/20 bg-violet-500/10 text-violet-200'
+                        ? 'border-clay-400/20 bg-clay-500/10 text-clay-200'
                         : 'border-white/[0.07] bg-white/[0.02] text-gray-400 hover:bg-white/[0.06] hover:text-gray-200',
                       isRequestInProgress && 'opacity-50 cursor-not-allowed'
                     )}
@@ -3346,7 +3346,7 @@ export default function ChatPage() {
                     >
                       {heroIsDragging && (
                         <div className="pointer-events-none fixed inset-0 z-[80] flex items-center justify-center bg-black/55 p-4 backdrop-blur-md">
-                          <div className="w-full max-w-lg rounded-2xl border border-dashed border-white/[0.18] bg-[#1b1b1b]/95 p-8 text-center shadow-2xl shadow-black/40">
+                          <div className="w-full max-w-lg rounded-2xl border border-dashed border-white/[0.18] bg-[#1e1814]/95 p-8 text-center shadow-2xl shadow-black/40">
                             <Paperclip className="mx-auto mb-3 h-12 w-12 text-gray-400" />
                             <p className="text-lg font-semibold text-white">Drop files to attach</p>
                             <p className="mt-1 text-sm text-gray-400">
@@ -3366,7 +3366,7 @@ export default function ChatPage() {
                           transition={{ delay: 0.1 }}
                           className="space-y-2"
                         >
-                          <h1 className="text-2xl font-semibold tracking-tight text-white sm:text-[2rem]">
+                          <h1 className="font-serif text-[2rem] font-medium tracking-tight text-white/95 sm:text-[2.6rem]">
                             How can I help?
                           </h1>
                         </motion.div>
@@ -3377,7 +3377,7 @@ export default function ChatPage() {
                           transition={{ delay: 0.16 }}
                           className="w-full"
                         >
-                          <div className="relative overflow-hidden rounded-[26px] border border-white/[0.08] bg-[radial-gradient(circle_at_top,rgba(139,92,246,0.10),transparent_42%),rgba(24,24,24,0.9)] p-3 shadow-[0_18px_60px_rgba(0,0,0,0.32)] backdrop-blur-xl sm:p-4">
+                          <div className="relative overflow-hidden rounded-[26px] border border-white/[0.08] bg-[radial-gradient(circle_at_top,rgba(217,119,87,0.10),transparent_42%),rgba(24,24,24,0.9)] p-3 shadow-[0_18px_60px_rgba(0,0,0,0.32)] backdrop-blur-xl sm:p-4">
                             <input
                               ref={heroFileInputRef}
                               type="file"
@@ -3424,7 +3424,7 @@ export default function ChatPage() {
                                       )}
                                       {(att.uploadStatus === 'uploading' || att.uploadStatus === 'processing') && (
                                         <div className="absolute bottom-0 left-0 right-0 h-1 overflow-hidden rounded-b-xl bg-white/10">
-                                          <div className={cn('h-full transition-all', att.uploadStatus === 'processing' ? 'bg-amber-400' : 'bg-violet-500')} style={{ width: `${att.uploadProgress || 0}%` }} />
+                                          <div className={cn('h-full transition-all', att.uploadStatus === 'processing' ? 'bg-amber-400' : 'bg-clay-500')} style={{ width: `${att.uploadProgress || 0}%` }} />
                                         </div>
                                       )}
                                       <button
@@ -3490,7 +3490,7 @@ export default function ChatPage() {
                                   type="button"
                                   onClick={submitHeroComposer}
                                   disabled={(!heroInput.trim() && heroAttachments.length === 0) || isRequestInProgress || heroHasActiveUpload}
-                                  className="mb-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-violet-600/90 transition-colors hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-30"
+                                  className="mb-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-clay-600/90 transition-colors hover:bg-clay-500 disabled:cursor-not-allowed disabled:opacity-30"
                                 >
                                   {isRequestInProgress || heroHasActiveUpload ? (
                                     <Loader2 className="h-4 w-4 animate-spin text-white" />
@@ -3524,7 +3524,7 @@ export default function ChatPage() {
                     <div key={i} className={cn('flex', i % 2 === 0 ? 'justify-start' : 'justify-end')}>
                       <div className={cn(
                         'rounded-2xl p-4 animate-pulse',
-                        i % 2 === 0 ? 'w-full bg-white/[0.025]' : 'max-w-[70%] bg-violet-600/15'
+                        i % 2 === 0 ? 'w-full bg-white/[0.025]' : 'max-w-[70%] bg-clay-600/15'
                       )}>
                         <div className="h-4 bg-white/10 rounded w-3/4 mb-2" />
                         <div className="h-4 bg-white/10 rounded w-1/2" />

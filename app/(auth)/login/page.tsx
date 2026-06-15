@@ -70,20 +70,20 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-[100dvh] items-center justify-center bg-[#0f0f0f] p-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-[max(1rem,env(safe-area-inset-top))] sm:p-6">
-      <div className="absolute inset-0 bg-gradient-radial from-violet-900/10 via-transparent to-transparent" />
+    <div className="flex min-h-[100dvh] items-center justify-center bg-[#12100e] p-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-[max(1rem,env(safe-area-inset-top))] sm:p-6">
+      <div className="absolute inset-0 bg-gradient-radial from-clay-900/10 via-transparent to-transparent" />
 
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="bg-[#0e0d14]/80 border border-white/[0.08] rounded-2xl p-8 w-full max-w-md relative z-10"
+        className="bg-[#11100d]/80 border border-white/[0.08] rounded-2xl p-8 w-full max-w-md relative z-10"
       >
         <div className="text-center mb-6">
           <div className="mb-5 flex items-center justify-center gap-3">
             <Logo size="md" showText={false} />
             <span className="text-xl font-semibold text-white/90">EasyPlus AI</span>
           </div>
-          <h1 className="text-2xl font-semibold mb-2 text-white/90">Welcome Back</h1>
+          <h1 className="font-serif text-[1.75rem] font-medium mb-2 text-white/95">Welcome back</h1>
           <p className="text-gray-500 text-sm">Sign in to continue</p>
         </div>
 
@@ -122,7 +122,7 @@ export default function LoginPage() {
 
           <Button
             type="submit"
-            className="w-full bg-violet-600 hover:bg-violet-500 text-white"
+            className="w-full bg-clay-600 hover:bg-clay-500 text-white"
             size="lg"
             disabled={isLoading}
           >

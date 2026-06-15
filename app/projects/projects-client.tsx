@@ -94,13 +94,13 @@ export function ProjectsClient({ initialProjects }: { initialProjects: ProjectCa
     <>
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <p className="text-xs font-medium uppercase tracking-[0.16em] text-violet-300">Workspace memory</p>
+          <p className="text-xs font-medium uppercase tracking-[0.16em] text-clay-300">Workspace memory</p>
           <h1 className="mt-2 text-3xl font-semibold text-white">Projects</h1>
           <p className="mt-2 max-w-2xl text-sm text-gray-400">
             Long-term AI workspaces with their own chats, instructions, files, and memory.
           </p>
         </div>
-        <Button onClick={() => setIsCreateOpen(true)} className="rounded-lg bg-violet-600 text-white hover:bg-violet-500">
+        <Button onClick={() => setIsCreateOpen(true)} className="rounded-lg bg-clay-600 text-white hover:bg-clay-500">
           <Plus className="mr-2 h-4 w-4" />
           Create Project
         </Button>
@@ -114,18 +114,18 @@ export function ProjectsClient({ initialProjects }: { initialProjects: ProjectCa
       )}
 
       {projects.length === 0 ? (
-        <section className="rounded-2xl border border-white/[0.08] bg-[#181818] p-10 text-center">
+        <section className="rounded-2xl border border-white/[0.08] bg-[#1b1613] p-10 text-center">
           <FolderOpen className="mx-auto h-12 w-12 text-gray-600" />
           <h2 className="mt-4 text-xl font-semibold text-white">No projects yet</h2>
           <p className="mx-auto mt-2 max-w-md text-sm text-gray-500">
             Create a project for study, client work, coding, essays, or any workflow where the AI should remember context.
           </p>
-          <Button onClick={() => setIsCreateOpen(true)} className="mt-5 bg-violet-600 text-white hover:bg-violet-500">
+          <Button onClick={() => setIsCreateOpen(true)} className="mt-5 bg-clay-600 text-white hover:bg-clay-500">
             Create your first project
           </Button>
         </section>
       ) : filteredProjects.length === 0 ? (
-        <section className="rounded-2xl border border-white/[0.08] bg-[#181818] p-8 text-center">
+        <section className="rounded-2xl border border-white/[0.08] bg-[#1b1613] p-8 text-center">
           <Search className="mx-auto h-8 w-8 text-gray-600" />
           <h2 className="mt-3 text-lg font-semibold text-white">No matching projects</h2>
           <p className="mt-1 text-sm text-gray-500">Try a different name or description.</p>
@@ -133,12 +133,12 @@ export function ProjectsClient({ initialProjects }: { initialProjects: ProjectCa
       ) : (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {filteredProjects.map(project => (
-            <article key={project.id} className="group rounded-2xl border border-white/[0.08] bg-[#181818] p-5 transition-colors hover:border-white/[0.14] hover:bg-[#1d1d1d]">
+            <article key={project.id} className="group rounded-2xl border border-white/[0.08] bg-[#1b1613] p-5 transition-colors hover:border-white/[0.14] hover:bg-[#1d1d1d]">
               <div className="flex items-start justify-between gap-3">
                 <Link href={`/projects/${project.id}`} className="min-w-0 flex-1">
                   <div className="flex items-center gap-3">
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-violet-400/15 bg-violet-500/10">
-                      <FolderOpen className="h-5 w-5 text-violet-300" />
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-clay-400/15 bg-clay-500/10">
+                      <FolderOpen className="h-5 w-5 text-clay-300" />
                     </div>
                     <div className="min-w-0">
                       <h2 className="truncate text-lg font-semibold text-white">{project.name}</h2>
@@ -170,7 +170,7 @@ export function ProjectsClient({ initialProjects }: { initialProjects: ProjectCa
       )}
 
       <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
-        <DialogContent className="border-white/[0.08] bg-[#181818] text-white">
+        <DialogContent className="border-white/[0.08] bg-[#1b1613] text-white">
           <DialogHeader>
             <DialogTitle>Create Project</DialogTitle>
             <DialogDescription>Create a workspace with dedicated instructions, chats, files, and memory.</DialogDescription>
@@ -187,7 +187,7 @@ export function ProjectsClient({ initialProjects }: { initialProjects: ProjectCa
                 value={form.description}
                 onChange={event => setForm(prev => ({ ...prev, description: event.target.value }))}
                 placeholder="What is this workspace for?"
-                className="min-h-20 w-full resize-none rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 py-2 text-sm text-white outline-none placeholder:text-gray-500 focus:border-violet-500/30"
+                className="min-h-20 w-full resize-none rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 py-2 text-sm text-white outline-none placeholder:text-gray-500 focus:border-clay-500/30"
               />
             </div>
             <div className="space-y-2">
@@ -197,13 +197,13 @@ export function ProjectsClient({ initialProjects }: { initialProjects: ProjectCa
                 value={form.instructions}
                 onChange={event => setForm(prev => ({ ...prev, instructions: event.target.value }))}
                 placeholder="Use Australian spelling. Answer in Band 6 style."
-                className="min-h-24 w-full resize-none rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 py-2 text-sm text-white outline-none placeholder:text-gray-500 focus:border-violet-500/30"
+                className="min-h-24 w-full resize-none rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 py-2 text-sm text-white outline-none placeholder:text-gray-500 focus:border-clay-500/30"
               />
             </div>
           </div>
           <DialogFooter>
             <Button variant="ghost" onClick={() => setIsCreateOpen(false)}>Cancel</Button>
-            <Button onClick={createProject} disabled={isSaving} className="bg-violet-600 text-white hover:bg-violet-500">
+            <Button onClick={createProject} disabled={isSaving} className="bg-clay-600 text-white hover:bg-clay-500">
               {isSaving ? 'Creating...' : 'Create Project'}
             </Button>
           </DialogFooter>
@@ -219,9 +219,9 @@ function Metric({ href, icon, label, value }: { href: string; icon: React.ReactN
   return (
     <Link
       href={href}
-      className="inline-flex h-7 items-center gap-1.5 rounded-full border border-white/[0.06] bg-white/[0.02] px-2.5 text-[11px] leading-none text-gray-400 transition-colors hover:border-violet-400/20 hover:bg-violet-500/[0.06] hover:text-gray-200"
+      className="inline-flex h-7 items-center gap-1.5 rounded-full border border-white/[0.06] bg-white/[0.02] px-2.5 text-[11px] leading-none text-gray-400 transition-colors hover:border-clay-400/20 hover:bg-clay-500/[0.06] hover:text-gray-200"
     >
-      <span className="h-4 w-4 shrink-0 text-violet-300/80">{icon}</span>
+      <span className="h-4 w-4 shrink-0 text-clay-300/80">{icon}</span>
       <span className="font-medium text-gray-200">{value ?? '-'}</span>
       <span>{labelText.toLowerCase()}</span>
     </Link>

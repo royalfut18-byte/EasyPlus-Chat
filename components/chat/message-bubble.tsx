@@ -42,12 +42,12 @@ const RECOVERY_POLLING_MARKER = '__RECOVERY_POLLING__'
 
 const STATUS_CONFIG: Record<string, { dotColor: string; iconColor: string; subtitle: string }> = {
   'Thinking...': { dotColor: 'bg-blue-400', iconColor: 'text-blue-400', subtitle: '' },
-  'Reading attached files...': { dotColor: 'bg-violet-400', iconColor: 'text-violet-400', subtitle: 'Analyzing your files' },
+  'Reading attached files...': { dotColor: 'bg-clay-400', iconColor: 'text-clay-400', subtitle: 'Analyzing your files' },
   'Searching the web...': { dotColor: 'bg-emerald-400', iconColor: 'text-emerald-400', subtitle: 'Finding relevant information' },
   'Working through a larger task...': { dotColor: 'bg-amber-400', iconColor: 'text-amber-400', subtitle: 'This may take longer than usual' },
   'Reconnecting and recovering response...': { dotColor: 'bg-cyan-400', iconColor: 'text-cyan-400', subtitle: 'The AI is still generating — recovering automatically' },
   'Writing response...': { dotColor: 'bg-blue-400', iconColor: 'text-blue-400', subtitle: 'Streaming answer' },
-  'Creating artifact...': { dotColor: 'bg-purple-400', iconColor: 'text-purple-400', subtitle: 'Preparing preview panel' },
+  'Creating artifact...': { dotColor: 'bg-clay-400', iconColor: 'text-clay-400', subtitle: 'Preparing preview panel' },
 }
 
 const assistantMarkdownComponents = {
@@ -203,7 +203,7 @@ export function MessageBubble({ role, content, model, onRegenerate, attachments,
         className={cn(
           'relative group min-w-0',
           isUser
-            ? 'mb-4 max-w-[85%] rounded-2xl border border-violet-300/[0.08] bg-[#312b3b] text-gray-100 md:max-w-[72%]'
+            ? 'mb-4 max-w-[85%] rounded-2xl border border-clay-300/[0.08] bg-[#312b3b] text-gray-100 md:max-w-[72%]'
             : 'w-full'
         )}
       >
@@ -215,7 +215,7 @@ export function MessageBubble({ role, content, model, onRegenerate, attachments,
               ) : modelData.id === 'claude-opus-4.8' ? (
                 <AnthropicIcon className="w-3 h-3 md:w-3.5 md:h-3.5 text-[#d97757]" />
               ) : modelData.id === 'deepseek-v4-pro' ? (
-                <Code2 className="w-3 h-3 md:w-3.5 md:h-3.5 text-violet-300" />
+                <Code2 className="w-3 h-3 md:w-3.5 md:h-3.5 text-clay-300" />
               ) : (
                 <Sparkles className="w-3 h-3 md:w-3.5 md:h-3.5 text-blue-400" />
               )}
@@ -295,9 +295,9 @@ export function MessageBubble({ role, content, model, onRegenerate, attachments,
                       }}
                     >
                     {attachment.mimeType === 'application/zip' ? (
-                      <FileArchive className="h-5 w-5 text-violet-400 shrink-0" />
+                      <FileArchive className="h-5 w-5 text-clay-400 shrink-0" />
                     ) : attachment.type === 'image' ? (
-                      <ImageIcon className="h-5 w-5 text-purple-400 shrink-0" />
+                      <ImageIcon className="h-5 w-5 text-clay-400 shrink-0" />
                     ) : attachment.mimeType === 'application/pdf' ? (
                       <FileText className="h-5 w-5 text-red-400 shrink-0" />
                     ) : attachment.mimeType === 'application/vnd.openxmlformats-officedocument.presentationml.presentation' ? (
@@ -387,7 +387,7 @@ export function MessageBubble({ role, content, model, onRegenerate, attachments,
                           value={ocrRanges[index] || ''}
                           onChange={(event) => setOcrRanges((prev) => ({ ...prev, [index]: event.target.value }))}
                           placeholder="120-125"
-                          className="h-7 w-24 rounded-md border border-white/10 bg-black/20 px-2 text-xs text-white placeholder:text-gray-500 outline-none focus:border-violet-400/60"
+                          className="h-7 w-24 rounded-md border border-white/10 bg-black/20 px-2 text-xs text-white placeholder:text-gray-500 outline-none focus:border-clay-400/60"
                         />
                         <Button
                           type="button"
@@ -448,8 +448,8 @@ export function MessageBubble({ role, content, model, onRegenerate, attachments,
                 <div className="mt-4 rounded-xl border border-white/[0.08] bg-[#202020] p-4 transition-colors hover:border-white/[0.14]">
                   <div className="flex items-center justify-between gap-3">
                     <div className="flex items-center gap-3 flex-1 min-w-0">
-                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-violet-500/20 bg-violet-500/10">
-                        <FileCode className="h-5 w-5 text-violet-400" />
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-clay-500/20 bg-clay-500/10">
+                        <FileCode className="h-5 w-5 text-clay-400" />
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="font-semibold text-white truncate">{artifact.title}</p>
@@ -459,7 +459,7 @@ export function MessageBubble({ role, content, model, onRegenerate, attachments,
                     <Button
                       onClick={() => onOpenArtifact(artifact)}
                       size="sm"
-                      className="bg-violet-600/80 hover:bg-violet-600 text-white shrink-0"
+                      className="bg-clay-600/80 hover:bg-clay-600 text-white shrink-0"
                     >
                       <PanelRightOpen className="h-4 w-4 mr-2" />
                       {artifact && isGeneratedFileArtifactLanguage(artifact.language) ? 'Open Preview' : 'Open Artifact'}

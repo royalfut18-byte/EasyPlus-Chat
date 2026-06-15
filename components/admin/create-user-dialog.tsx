@@ -66,12 +66,12 @@ export function CreateUserDialog({ actorRole, subAdmins, onUserCreated }: Create
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button className="bg-violet-600 text-white hover:bg-violet-500">
+        <Button className="bg-clay-600 text-white hover:bg-clay-500">
           <UserPlus className="mr-2 h-4 w-4" />
           Create account
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-w-md border-white/[0.08] bg-[#181818]">
+      <DialogContent className="max-w-md border-white/[0.08] bg-[#1b1613]">
         <DialogHeader>
           <DialogTitle>Create account</DialogTitle>
           <DialogDescription className="text-gray-400">Set entitlement and optional expiration at creation.</DialogDescription>
@@ -117,7 +117,7 @@ export function CreateUserDialog({ actorRole, subAdmins, onUserCreated }: Create
 
           <div className="flex gap-3 pt-2">
             <Button type="button" variant="outline" className="flex-1 border-white/[0.10]" onClick={() => setOpen(false)}>Cancel</Button>
-            <Button type="submit" className="flex-1 bg-violet-600 text-white hover:bg-violet-500" disabled={isLoading}>
+            <Button type="submit" className="flex-1 bg-clay-600 text-white hover:bg-clay-500" disabled={isLoading}>
               {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Create'}
             </Button>
           </div>
