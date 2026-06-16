@@ -415,7 +415,7 @@ export function EasyCodeWorkspaceClient({
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
             spellCheck={false}
-            className="min-h-0 flex-1 resize-none bg-[#13110f] p-4 font-mono text-[13px] leading-6 text-gray-100 outline-none scrollbar-thin placeholder:text-gray-600"
+            className="min-h-0 flex-1 resize-none bg-[#13110f] p-4 font-mono text-[16px] leading-6 text-gray-100 outline-none scrollbar-thin placeholder:text-gray-600 md:text-[13px]"
           />
         ) : (
           <div className="flex flex-1 items-center justify-center text-sm text-gray-500">Select or add a file.</div>
@@ -647,7 +647,7 @@ export function EasyCodeWorkspaceClient({
               disabled={isGenerating}
               rows={3}
               placeholder="Ask Easy Code to change anything..."
-              className="w-full resize-none rounded-2xl border border-white/[0.08] bg-[#13110f] p-3 text-sm text-white outline-none placeholder:text-gray-600 focus:border-clay-300/25 disabled:opacity-60"
+              className="w-full resize-none rounded-2xl border border-white/[0.08] bg-[#13110f] p-3 text-base text-white outline-none placeholder:text-gray-600 focus:border-clay-300/25 disabled:opacity-60 md:text-sm"
             />
             <button
               onClick={sendEasyCodeMessage}

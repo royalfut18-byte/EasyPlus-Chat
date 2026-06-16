@@ -97,7 +97,7 @@ const assistantMarkdownComponents = {
   code({ inline, className, children, ...props }: any) {
     const match = /language-(\w+)/.exec(className || '')
     return !inline && match ? (
-      <div className="my-4 overflow-hidden rounded-lg border border-white/[0.08] bg-[#1f1f1f]">
+      <div className="my-4 max-w-full overflow-hidden rounded-lg border border-white/[0.08] bg-[#1f1f1f]">
         <SyntaxHighlighter
           style={vscDarkPlus}
           language={match[1]}
@@ -105,8 +105,14 @@ const assistantMarkdownComponents = {
           customStyle={{
             margin: 0,
             borderRadius: '0',
-            fontSize: '0.875rem',
+            fontSize: '0.8125rem',
             padding: '1rem',
+            // PreTag is a div, so Prism's <pre> overflow styles don't apply.
+            // Make the code itself scroll horizontally so long lines stay
+            // reachable on phones instead of being clipped by the wrapper.
+            overflow: 'auto',
+            WebkitOverflowScrolling: 'touch',
+            maxWidth: '100%',
           }}
           {...props}
         >

@@ -48,6 +48,24 @@
   body {
     min-height: 100dvh;
   }
+
+  /* iOS zooms the page whenever a focused input/textarea has a font smaller
+     than 16px. Force at least 16px on phones so focusing any field never
+     triggers that jarring zoom — desktop keeps its smaller, denser sizing. */
+  @media (max-width: 767px) {
+    input:not([type='checkbox']):not([type='radio']):not([type='range']),
+    textarea,
+    select {
+      font-size: 16px !important;
+    }
+  }
+
+  /* Remove the grey tap-flash on mobile for a cleaner, app-like feel. */
+  button,
+  a,
+  [role='button'] {
+    -webkit-tap-highlight-color: transparent;
+  }
 }
 
 @layer utilities {

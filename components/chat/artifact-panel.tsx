@@ -1530,43 +1530,49 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
 
         {canPreview && currentTab === 'preview' && artifact?.code && (
           <div className="flex items-center gap-1 rounded-xl border border-white/10 bg-white/[0.025] p-1">
-            <button
-              onClick={() => setPreviewDevice('desktop')}
-              title="Desktop view"
-              className={cn(
-                'p-2 rounded transition-colors',
-                previewDevice === 'desktop'
-                  ? 'bg-clay-500/15 text-clay-400'
-                  : 'text-gray-400 hover:text-white hover:bg-white/5'
-              )}
-            >
-              <Monitor className="h-4 w-4" />
-            </button>
-            <button
-              onClick={() => setPreviewDevice('tablet')}
-              title="Tablet view"
-              className={cn(
-                'p-2 rounded transition-colors',
-                previewDevice === 'tablet'
-                  ? 'bg-clay-500/15 text-clay-400'
-                  : 'text-gray-400 hover:text-white hover:bg-white/5'
-              )}
-            >
-              <Tablet className="h-4 w-4" />
-            </button>
-            <button
-              onClick={() => setPreviewDevice('mobile')}
-              title="Mobile view"
-              className={cn(
-                'p-2 rounded transition-colors',
-                previewDevice === 'mobile'
-                  ? 'bg-clay-500/15 text-clay-400'
-                  : 'text-gray-400 hover:text-white hover:bg-white/5'
-              )}
-            >
-              <Smartphone className="h-4 w-4" />
-            </button>
-            <div className="w-px h-6 bg-white/10 mx-1" />
+            {/* Responsive-breakpoint toggle is a desktop-only tool — on a phone
+                you're already on mobile, so hide it and keep just Refresh. */}
+            {!isMobile && (
+              <>
+                <button
+                  onClick={() => setPreviewDevice('desktop')}
+                  title="Desktop view"
+                  className={cn(
+                    'p-2 rounded transition-colors',
+                    previewDevice === 'desktop'
+                      ? 'bg-clay-500/15 text-clay-400'
+                      : 'text-gray-400 hover:text-white hover:bg-white/5'
+                  )}
+                >
+                  <Monitor className="h-4 w-4" />
+                </button>
+                <button
+                  onClick={() => setPreviewDevice('tablet')}
+                  title="Tablet view"
+                  className={cn(
+                    'p-2 rounded transition-colors',
+                    previewDevice === 'tablet'
+                      ? 'bg-clay-500/15 text-clay-400'
+                      : 'text-gray-400 hover:text-white hover:bg-white/5'
+                  )}
+                >
+                  <Tablet className="h-4 w-4" />
+                </button>
+                <button
+                  onClick={() => setPreviewDevice('mobile')}
+                  title="Mobile view"
+                  className={cn(
+                    'p-2 rounded transition-colors',
+                    previewDevice === 'mobile'
+                      ? 'bg-clay-500/15 text-clay-400'
+                      : 'text-gray-400 hover:text-white hover:bg-white/5'
+                  )}
+                >
+                  <Smartphone className="h-4 w-4" />
+                </button>
+                <div className="w-px h-6 bg-white/10 mx-1" />
+              </>
+            )}
             <button
               onClick={() => {
                 setPreviewRuntimeError(null)
