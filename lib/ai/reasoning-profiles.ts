@@ -22,7 +22,11 @@ export const REASONING_PROFILES: Record<ReasoningMode, ReasoningProfile> = {
     label: 'Instant',
     emoji: '',
     description: 'Fastest responses with lighter reasoning',
-    maxTokens: 2500,
+    // A ceiling, not a target: short answers still finish early, but a genuinely
+    // detailed answer is no longer truncated mid-thought. 2500 (~1.8k words) was
+    // cutting off normal answers, since auto-continue only fires on long-form
+    // prompts (essay/report/etc.).
+    maxTokens: 6000,
     retrievalDepth: 'low',
     memoryLimit: 3,
     enableWebSearch: false,
@@ -38,7 +42,7 @@ export const REASONING_PROFILES: Record<ReasoningMode, ReasoningProfile> = {
     label: 'Thinking',
     emoji: '',
     description: 'Balanced speed and reasoning',
-    maxTokens: 8000,
+    maxTokens: 12000,
     retrievalDepth: 'medium',
     memoryLimit: 10,
     enableWebSearch: true,
@@ -76,9 +80,9 @@ export function getReasoningSystemAddendum(mode: ReasoningMode): string {
   switch (mode) {
     case 'instant':
       return `\n\nREASONING MODE: Instant
-- Be concise and direct. Prioritize speed over exhaustive detail.
-- Give the answer first, then briefly explain if needed.
-- Skip lengthy preambles, step-by-step breakdowns, or unnecessary qualifications.
+- Be concise and direct. Lead with the answer, then add only the detail that helps.
+- Skip lengthy preambles and unnecessary qualifications.
+- Still show essential working for maths, code, or multi-step reasoning — concise does not mean incomplete or truncated.
 - If the answer is straightforward, just state it.`
 
     case 'thinking':
