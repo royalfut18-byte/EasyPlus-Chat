@@ -1195,6 +1195,7 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
   const [previewRuntimeError, setPreviewRuntimeError] = useState<string | null>(null)
   const panelRef = useRef<HTMLDivElement>(null)
   const iframeRef = useRef<HTMLIFrameElement>(null)
+  const latestWidthRef = useRef(width)
 
   useEffect(() => {
     const checkMobile = () => {
@@ -1253,51 +1254,56 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
   useEffect(() => {
     if (!isResizing) return
 
-    const handlePointerMove = (e: PointerEvent) => {
-      e.preventDefault()
-
-      // Calculate new width: distance from pointer to right edge of window
-      const newWidth = window.innerWidth - e.clientX
-
-      // Clamp width
-      const maxWidth = window.innerWidth * MAX_WIDTH_PERCENT
-      const clampedWidth = Math.max(MIN_WIDTH, Math.min(newWidth, maxWidth))
-
-      setCurrentWidth(clampedWidth)
+    let frame = 0
+    const applyWidth = () => {
+      frame = 0
+      setCurrentWidth(latestWidthRef.current)
     }
 
-    const handlePointerUp = (e: PointerEvent) => {
-      e.preventDefault()
-      setIsResizing(false)
+    const handlePointerMove = (e: PointerEvent) => {
+      // Distance from pointer to the right edge of the window, clamped.
+      const newWidth = window.innerWidth - e.clientX
+      const maxWidth = window.innerWidth * MAX_WIDTH_PERCENT
+      latestWidthRef.current = Math.max(MIN_WIDTH, Math.min(newWidth, maxWidth))
+      // Coalesce updates to one per animation frame for a buttery 1:1 drag.
+      if (!frame) frame = requestAnimationFrame(applyWidth)
+    }
 
-      // Restore user select
+    const stopResize = () => {
+      setIsResizing(false)
       document.body.style.userSelect = ''
       document.body.style.cursor = ''
-
-      // Save to localStorage and notify parent
+      if (frame) cancelAnimationFrame(frame)
+      setCurrentWidth(latestWidthRef.current)
       if (typeof window !== 'undefined') {
-        localStorage.setItem('easyplus-artifact-panel-width', currentWidth.toString())
+        localStorage.setItem('easyplus-artifact-panel-width', String(Math.round(latestWidthRef.current)))
       }
-      onWidthChange?.(currentWidth)
+      onWidthChange?.(latestWidthRef.current)
     }
 
-    // Add listeners to document for smooth dragging
-    document.addEventListener('pointermove', handlePointerMove)
-    document.addEventListener('pointerup', handlePointerUp)
+    // Listen on window so the drag keeps tracking even past the panel edge.
+    // A full-window overlay (rendered while resizing) sits above the preview
+    // iframe so it can never swallow these pointer events mid-drag.
+    window.addEventListener('pointermove', handlePointerMove, { passive: true })
+    window.addEventListener('pointerup', stopResize)
+    window.addEventListener('pointercancel', stopResize)
 
     return () => {
-      document.removeEventListener('pointermove', handlePointerMove)
-      document.removeEventListener('pointerup', handlePointerUp)
+      if (frame) cancelAnimationFrame(frame)
+      window.removeEventListener('pointermove', handlePointerMove)
+      window.removeEventListener('pointerup', stopResize)
+      window.removeEventListener('pointercancel', stopResize)
     }
-  }, [isResizing, currentWidth, onWidthChange])
+  }, [isResizing, onWidthChange])
 
   const handleResizeStart = (e: React.PointerEvent) => {
     e.preventDefault()
     e.stopPropagation()
 
+    latestWidthRef.current = currentWidth
     setIsResizing(true)
 
-    // Prevent text selection during resize
+    // Prevent text selection / native scroll during the drag.
     document.body.style.userSelect = 'none'
     document.body.style.cursor = 'col-resize'
   }
@@ -1911,6 +1917,16 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
 
   return (
     <>
+      {/* While dragging the resize handle, a transparent full-window overlay
+          sits above the preview iframe so it cannot capture pointer events and
+          break the drag. This is what keeps the resize buttery and 1:1. */}
+      {isResizing && (
+        <div
+          className="fixed inset-0 z-[200]"
+          style={{ cursor: 'col-resize', touchAction: 'none' }}
+        />
+      )}
+
       {/* Mobile: Fixed overlay full-screen */}
       {isMobile && isOpen && (
         <AnimatePresence>
@@ -1961,6 +1977,7 @@ export function ArtifactPanel({ artifact, isOpen, onClose, width = 560, onWidthC
             style={{
               zIndex: 100,
               pointerEvents: 'auto',
+              touchAction: 'none',
             }}
             onPointerDown={handleResizeStart}
           >

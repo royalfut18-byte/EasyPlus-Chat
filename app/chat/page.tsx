@@ -974,6 +974,8 @@ export default function ChatPage() {
 
     ++conversationRequestSeqRef.current
     selectedConversationIdRef.current = null
+    abortControllerRef.current?.abort()
+    setIsLoadingConversation(false)
     setCurrentConversation(null)
     setMessages([])
     setActiveArtifact(null)
@@ -1318,11 +1320,14 @@ export default function ChatPage() {
       console.error('[Chat] Failed to load messages:', error)
       setMessages([])
     } finally {
-      // Only clear loading if this is still the selected conversation AND sequence matches
-      if (
-        selectedConversationIdRef.current === conversationId &&
-        conversationRequestSeqRef.current === requestSeq
-      ) {
+      // Clear loading whenever THIS was the most recent load request issued.
+      // The request sequence is the single source of truth for "latest": if a
+      // newer switch happened it owns the spinner, and if an invalidation path
+      // (new chat / project switch) bumped the sequence it clears loading
+      // itself. Keying off the sequence alone (not selectedConversationIdRef,
+      // which other flows can mutate) prevents the spinner from sticking
+      // forever during aggressive chat switching.
+      if (conversationRequestSeqRef.current === requestSeq) {
         setIsLoadingConversation(false)
       }
     }
@@ -1370,9 +1375,13 @@ export default function ChatPage() {
       return
     }
 
-    // Increment sequence to invalidate any pending requests
+    // Increment sequence to invalidate any pending requests, abort the
+    // in-flight message load, and clear its spinner so switching to a new chat
+    // never leaves the loading state stuck on.
     ++conversationRequestSeqRef.current
     selectedConversationIdRef.current = null
+    abortControllerRef.current?.abort()
+    setIsLoadingConversation(false)
 
     setCurrentConversation(null)
     setMessages([])
