@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { streamBedrockResponse, getModelCost } from '@/lib/ai/bedrock'
-import { streamGeminiResponse } from '@/lib/ai/gemini'
+import { streamGeminiResponse, describeImagesForTextModel } from '@/lib/ai/gemini'
 import {
   getAzureGpt54ConfigSnapshot,
   getAzureGpt54Diagnostics,
@@ -550,15 +550,13 @@ export async function POST(request: NextRequest) {
 
     const geminiVisionConfigured = Boolean(process.env.GEMINI_API_KEY)
 
-    if (hasCurrentImageAttachments) {
-      if (geminiVisionConfigured) {
-        // Gemini is genuinely vision-capable, so use it to actually read images
-        // regardless of what the azure-gpt54 slot points at. Many deployments in
-        // that slot (e.g. a text-only DeepSeek model) silently ignore image input
-        // and then hallucinate a description — this guarantees real image reading.
-        providerForRequest = 'google'
-        visionFallbackUsed = validationModel.provider !== 'google'
-      } else {
+    // When Gemini is configured we read images with Gemini's vision and hand the
+    // description to the selected (text) model to answer — see the image
+    // description step below. The selected model keeps writing the reply.
+    // Only when Gemini is unavailable do we send the raw image to the azure slot
+    // and require that deployment to be vision-capable.
+    if (hasCurrentImageAttachments && !geminiVisionConfigured) {
+      {
         const azureVisionSnapshot = getAzureGpt54ConfigSnapshot()
         azureGpt54Configured = azureVisionSnapshot.envStatus.apiKey.configured &&
           azureVisionSnapshot.envStatus.baseUrl.configured &&
@@ -988,10 +986,8 @@ RULES FOR USING THESE RESULTS:
     // Stage: Route to provider
     stage = 'provider-routing'
     const selectedModel = validationModel
-    const providerAttemptOrder = hasCurrentImageAttachments
-      ? (providerForRequest === 'google'
-          ? (['google', 'azure-gpt54'] as ChatProviderName[])
-          : (['azure-gpt54'] as ChatProviderName[]))
+    const providerAttemptOrder = hasCurrentImageAttachments && providerForRequest === 'azure-gpt54'
+      ? (['azure-gpt54'] as ChatProviderName[])
       : buildTextProviderAttemptOrder(selectedModel.provider)
 
     if (!selectedModel) {
@@ -1116,6 +1112,36 @@ RULES FOR USING THESE RESULTS:
         ...attachmentDiagnostics,
         attachmentIdsPresent: currentAttachments.some((attachment: any) => !!attachment.attachmentId),
       })
+    }
+
+    // "Gemini eyes, DeepSeek brain": when the answering model is text-only, read
+    // the uploaded image(s) with Gemini's vision and fold the description into the
+    // user's message, then drop the raw image so the text model gets usable
+    // context and writes the actual reply. If the user picked Gemini directly it
+    // sees the image natively, so this is skipped. This only mutates the
+    // model-bound copy (messagesForModel) — the saved message keeps the image.
+    if (hasCurrentImageAttachments && geminiVisionConfigured && providerForRequest !== 'google') {
+      const lastModelMessage = messagesForModel[messagesForModel.length - 1]
+      const imagesToRead = (lastModelMessage?.attachments || [])
+        .filter((attachment) => attachment.type === 'image' && attachment.dataUrl)
+        .map((attachment) => ({ dataUrl: attachment.dataUrl, mimeType: attachment.mimeType }))
+
+      if (lastModelMessage && imagesToRead.length > 0) {
+        const imageDescription = await describeImagesForTextModel(imagesToRead, latestUserMessage.content)
+        const imageNoun = imagesToRead.length === 1 ? 'an image' : `${imagesToRead.length} images`
+        // Strip the raw image either way — a text-only model can't use it.
+        lastModelMessage.attachments = (lastModelMessage.attachments || []).filter((attachment) => attachment.type !== 'image')
+        if (imageDescription) {
+          lastModelMessage.content = `${lastModelMessage.content || ''}\n\n[The user attached ${imageNoun}. Here is exactly what it shows, read by the vision system — treat it as if you can see the image:]\n${imageDescription}`.trim()
+          console.log('[Chat API] Image(s) read via Gemini for text model', {
+            imageCount: imagesToRead.length,
+            descriptionChars: imageDescription.length,
+          })
+        } else {
+          lastModelMessage.content = `${lastModelMessage.content || ''}\n\n[The user attached ${imageNoun}, but the vision system could not read ${imagesToRead.length === 1 ? 'it' : 'them'} right now. Tell the user you couldn't read the image and ask them to try again — do NOT guess what it showed.]`.trim()
+          console.warn('[Chat API] Gemini image description unavailable; instructed model not to guess')
+        }
+      }
     }
 
     // Stage: Save user message BEFORE AI call (idempotent via client_message_id)
