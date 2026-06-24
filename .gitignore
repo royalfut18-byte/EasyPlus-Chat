@@ -43,5 +43,8 @@ yarn-error.log*
 # Claude Code
 .claude
 
+# Unrelated nested project (separate git repo, contains its own .env)
+odysseus
+
 .vercel
 tsconfig.tsbuildinfo

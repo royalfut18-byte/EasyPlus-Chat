@@ -8,8 +8,8 @@ export default function manifest(): MetadataRoute.Manifest {
     start_url: '/chat',
     scope: '/',
     display: 'standalone',
-    background_color: '#0f0f0f',
-    theme_color: '#0f0f0f',
+    background_color: '#12100e',
+    theme_color: '#12100e',
     icons: [
       {
         src: '/pwa-icon-192.png',

@@ -18,31 +18,31 @@ export default async function BillingPage() {
   const creditLabel = formatEntitlementCredits(entitlement)
 
   return (
-    <div className="min-h-screen bg-[#0f0f0f] p-4 text-white md:p-8">
+    <div className="min-h-screen bg-[#12100e] p-4 text-white md:p-8">
       <div className="mx-auto max-w-5xl space-y-6">
         <div>
-          <p className="text-xs font-medium uppercase tracking-[0.16em] text-violet-300">EasyPlus Account</p>
+          <p className="text-xs font-medium uppercase tracking-[0.16em] text-clay-300">EasyPlus Account</p>
           <h1 className="mt-2 text-3xl font-semibold">Billing & Credits</h1>
           <p className="mt-2 text-sm text-gray-400">Your current account entitlement and subscription details.</p>
         </div>
 
         <div className="grid gap-4 md:grid-cols-3">
-          <section className="rounded-2xl border border-white/[0.08] bg-[#181818] p-5">
-            <CreditCard className="h-5 w-5 text-violet-400" />
+          <section className="rounded-2xl border border-white/[0.08] bg-[#1b1613] p-5">
+            <CreditCard className="h-5 w-5 text-clay-400" />
             <p className="mt-4 text-sm text-gray-400">Subscription</p>
             <p className="mt-1 text-2xl font-semibold">{planLabel}</p>
             <p className="mt-2 text-xs text-gray-500">{entitlement.subscriptionTier === 'free' ? 'Standard account' : 'Premium subscription'}</p>
           </section>
 
-          <section className="rounded-2xl border border-white/[0.08] bg-[#181818] p-5">
-            {entitlement.unlimitedCredits ? <Infinity className="h-5 w-5 text-violet-400" /> : <CreditCard className="h-5 w-5 text-violet-400" />}
+          <section className="rounded-2xl border border-white/[0.08] bg-[#1b1613] p-5">
+            {entitlement.unlimitedCredits ? <Infinity className="h-5 w-5 text-clay-400" /> : <CreditCard className="h-5 w-5 text-clay-400" />}
             <p className="mt-4 text-sm text-gray-400">Credits</p>
             <p className="mt-1 text-2xl font-semibold">{creditLabel}</p>
             <p className="mt-2 text-xs text-gray-500">{entitlement.unlimitedCredits ? 'Unlimited credits enabled' : 'Finite credits remaining'}</p>
           </section>
 
-          <section className="rounded-2xl border border-white/[0.08] bg-[#181818] p-5">
-            <ShieldCheck className="h-5 w-5 text-violet-400" />
+          <section className="rounded-2xl border border-white/[0.08] bg-[#1b1613] p-5">
+            <ShieldCheck className="h-5 w-5 text-clay-400" />
             <p className="mt-4 text-sm text-gray-400">Account status</p>
             <p className={`mt-1 text-2xl font-semibold ${entitlement.status === 'active' ? 'text-emerald-300' : 'text-amber-300'}`}>{statusLabel}</p>
             <p className="mt-2 text-xs text-gray-500">Server-verified entitlement</p>
@@ -56,7 +56,7 @@ export default async function BillingPage() {
           </section>
         )}
 
-        <section className="rounded-2xl border border-white/[0.08] bg-[#181818] p-5">
+        <section className="rounded-2xl border border-white/[0.08] bg-[#1b1613] p-5">
           <h2 className="text-lg font-semibold">Account details</h2>
           <div className="mt-4 divide-y divide-white/[0.06] text-sm">
             <Detail label="Plan" value={`${planLabel} subscription`} />

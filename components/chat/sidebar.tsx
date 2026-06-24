@@ -115,7 +115,7 @@ export function Sidebar({
         onClick={() => setIsOpen(!isOpen)}
         variant="ghost"
         size="icon"
-        className="fixed left-3 top-[max(0.75rem,env(safe-area-inset-top))] z-50 h-9 w-9 rounded-lg border border-white/[0.07] bg-[#171717] text-gray-300 hover:bg-[#202020] md:hidden"
+        className="fixed left-3 top-[max(0.75rem,env(safe-area-inset-top))] z-50 h-9 w-9 rounded-lg border border-white/[0.07] bg-[#1a1512] text-gray-300 hover:bg-[#202020] md:hidden"
         aria-label={isOpen ? 'Close menu' : 'Open menu'}
       >
         {isOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
@@ -124,7 +124,7 @@ export function Sidebar({
       <aside
         className={cn(
           'fixed left-0 top-0 z-40 flex h-[100dvh] w-[min(18rem,86vw)] flex-col pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)]',
-          'border-r border-white/[0.05] bg-[#171717]',
+          'border-r border-white/[0.05] bg-[#1a1512]',
           'transition-transform duration-200',
           isOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
         )}
@@ -134,18 +134,18 @@ export function Sidebar({
                 <Logo size="sm" showText />
               </div>
               <Button onClick={() => { closeDrawer(); onNewChat() }} className="mt-3 h-9 w-full justify-start rounded-lg border border-white/[0.07] bg-white/[0.02] px-3 text-sm text-gray-200 hover:bg-white/[0.06] hover:text-white">
-                <Plus className="mr-2 h-4 w-4 text-violet-400" />
+                <Plus className="mr-2 h-4 w-4 text-clay-400" />
                 New Chat
               </Button>
-              <Button onClick={() => navigateFromDrawer('/easy-code')} className="mt-2 h-9 w-full justify-start rounded-lg border border-violet-300/[0.12] bg-violet-500/[0.06] px-3 text-sm text-violet-100 hover:bg-violet-500/[0.12] hover:text-white">
-                <Code2 className="mr-2 h-4 w-4 text-violet-300" />
+              <Button onClick={() => navigateFromDrawer('/easy-code')} className="mt-2 h-9 w-full justify-start rounded-lg border border-clay-300/[0.12] bg-clay-500/[0.06] px-3 text-sm text-clay-100 hover:bg-clay-500/[0.12] hover:text-white">
+                <Code2 className="mr-2 h-4 w-4 text-clay-300" />
                 Easy Code
               </Button>
             </div>
 
             <div className="flex items-center justify-between px-4 pb-1 pt-2 text-[10px] font-medium uppercase tracking-[0.14em] text-gray-500">
               <span>Projects</span>
-              <button onClick={() => navigateFromDrawer('/projects')} className="rounded px-1.5 py-0.5 text-violet-300 transition-colors hover:bg-white/[0.05] hover:text-white" title="View all projects">
+              <button onClick={() => navigateFromDrawer('/projects')} className="rounded px-1.5 py-0.5 text-clay-300 transition-colors hover:bg-white/[0.05] hover:text-white" title="View all projects">
                 View all
               </button>
             </div>
@@ -162,19 +162,19 @@ export function Sidebar({
                 const isActive = activeProjectId === project.id
                 return (
                   <div key={project.id}>
-                    <div className={cn('group flex items-center rounded-lg transition-colors', isActive ? 'bg-violet-500/[0.08]' : 'hover:bg-white/[0.045]')}>
+                    <div className={cn('group flex items-center rounded-lg transition-colors', isActive ? 'bg-clay-500/[0.08]' : 'hover:bg-white/[0.045]')}>
                       <button onClick={() => toggleProject(project.id)} className="flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-left">
                         {expanded ? <ChevronDown className="h-3.5 w-3.5 shrink-0 text-gray-500" /> : <ChevronRight className="h-3.5 w-3.5 shrink-0 text-gray-500" />}
-                        <FolderOpen className={cn('h-3.5 w-3.5 shrink-0', isActive ? 'text-violet-300' : 'text-gray-500')} />
+                        <FolderOpen className={cn('h-3.5 w-3.5 shrink-0', isActive ? 'text-clay-300' : 'text-gray-500')} />
                         <span className={cn('truncate text-sm', isActive ? 'text-white' : 'text-gray-300')}>{project.name}</span>
                       </button>
-                      <button onClick={() => { closeDrawer(); onNewProjectChat?.(project.id) }} className="mr-1 rounded p-1 text-gray-500 opacity-100 transition-all hover:bg-white/[0.08] hover:text-violet-300 md:opacity-0 md:group-hover:opacity-100" title={`New chat in ${project.name}`}>
+                      <button onClick={() => { closeDrawer(); onNewProjectChat?.(project.id) }} className="mr-1 rounded p-1 text-gray-500 opacity-100 transition-all hover:bg-white/[0.08] hover:text-clay-300 md:opacity-0 md:group-hover:opacity-100" title={`New chat in ${project.name}`}>
                         <Plus className="h-3.5 w-3.5" />
                       </button>
                     </div>
                     {expanded && (
                       <div className="ml-5 border-l border-white/[0.06] pl-2">
-                        <button onClick={() => { closeDrawer(); onNewProjectChat?.(project.id) }} className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs text-gray-500 transition-colors hover:bg-white/[0.04] hover:text-violet-200">
+                        <button onClick={() => { closeDrawer(); onNewProjectChat?.(project.id) }} className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs text-gray-500 transition-colors hover:bg-white/[0.04] hover:text-clay-200">
                           <Plus className="h-3 w-3" />
                           New chat
                         </button>
@@ -218,7 +218,7 @@ export function Sidebar({
                     <div className="flex items-start gap-2.5 pr-7">
                       <MessageSquare className={cn(
                         'mt-0.5 h-3.5 w-3.5 shrink-0 transition-colors',
-                        currentConversationId === conv.id ? 'text-violet-400' : 'text-gray-500'
+                        currentConversationId === conv.id ? 'text-clay-400' : 'text-gray-500'
                       )} />
                       <div className="flex-1 min-w-0">
                         <p className={cn(
@@ -236,7 +236,7 @@ export function Sidebar({
                         </p>
                       </div>
                       {pendingConversationIds.includes(conv.id) && (
-                        <span className="absolute top-3 right-10 h-2 w-2 rounded-full bg-violet-400 animate-pulse" />
+                        <span className="absolute top-3 right-10 h-2 w-2 rounded-full bg-clay-400 animate-pulse" />
                       )}
                     </div>
                     <Button

@@ -48,16 +48,16 @@ export default async function DashboardPage() {
   const plan = entitlement.subscriptionTier === 'free' ? 'Free' : 'Premium'
 
   return (
-    <div className="min-h-screen bg-[#0f0f0f] p-4 text-white md:p-8">
+    <div className="min-h-screen bg-[#12100e] p-4 text-white md:p-8">
       <div className="mx-auto max-w-6xl space-y-6">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
-            <p className="text-xs font-medium uppercase tracking-[0.16em] text-violet-300">EasyPlus Workspace</p>
+            <p className="text-xs font-medium uppercase tracking-[0.16em] text-clay-300">EasyPlus Workspace</p>
             <h1 className="mt-2 text-3xl font-semibold">Dashboard</h1>
             <p className="mt-2 text-sm text-gray-400">Welcome back, {entitlement.displayName || 'User'}.</p>
           </div>
           <Link href="/chat">
-            <Button className="rounded-lg bg-violet-600 text-white hover:bg-violet-500">
+            <Button className="rounded-lg bg-clay-600 text-white hover:bg-clay-500">
               <MessageSquare className="mr-2 h-4 w-4" />
               Go to Chat
             </Button>
@@ -77,7 +77,7 @@ export default async function DashboardPage() {
           <StatCard icon={<ShieldCheck />} label="Subscription" value={plan} detail={`${entitlement.status} account`} />
         </div>
 
-        <section className="rounded-2xl border border-white/[0.08] bg-[#181818] p-5">
+        <section className="rounded-2xl border border-white/[0.08] bg-[#1b1613] p-5">
           <h2 className="text-lg font-semibold">Account details</h2>
           <div className="mt-4 grid gap-3 text-sm md:grid-cols-2">
             <Detail label="Account created" value={formatDate(entitlement.createdAt)} />
@@ -86,7 +86,7 @@ export default async function DashboardPage() {
         </section>
 
         <div className="grid gap-4 lg:grid-cols-2">
-          <section className="rounded-2xl border border-white/[0.08] bg-[#181818] p-5">
+          <section className="rounded-2xl border border-white/[0.08] bg-[#1b1613] p-5">
             <h2 className="text-lg font-semibold">Recent conversations</h2>
             <div className="mt-4 space-y-2">
               {conversations?.length ? conversations.map((conversation: any) => (
@@ -98,7 +98,7 @@ export default async function DashboardPage() {
             </div>
           </section>
 
-          <section className="rounded-2xl border border-white/[0.08] bg-[#181818] p-5">
+          <section className="rounded-2xl border border-white/[0.08] bg-[#1b1613] p-5">
             <h2 className="text-lg font-semibold">Recent credit activity</h2>
             <div className="mt-4 space-y-2">
               {transactions?.length ? transactions.map((transaction: any) => (
@@ -127,8 +127,8 @@ export default async function DashboardPage() {
 
 function StatCard({ icon, label, value, detail }: { icon: React.ReactNode; label: string; value: string; detail: string }) {
   return (
-    <section className="rounded-2xl border border-white/[0.08] bg-[#181818] p-5">
-      <div className="h-5 w-5 text-violet-400">{icon}</div>
+    <section className="rounded-2xl border border-white/[0.08] bg-[#1b1613] p-5">
+      <div className="h-5 w-5 text-clay-400">{icon}</div>
       <p className="mt-4 text-sm text-gray-400">{label}</p>
       <p className="mt-1 text-2xl font-semibold">{value}</p>
       <p className="mt-2 text-xs text-gray-500">{detail}</p>
@@ -139,7 +139,7 @@ function StatCard({ icon, label, value, detail }: { icon: React.ReactNode; label
 function Detail({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-center gap-3 rounded-lg border border-white/[0.06] bg-white/[0.02] p-3">
-      <CalendarDays className="h-4 w-4 text-violet-400" />
+      <CalendarDays className="h-4 w-4 text-clay-400" />
       <div>
         <p className="text-xs text-gray-500">{label}</p>
         <p className="mt-1 text-gray-200">{value}</p>

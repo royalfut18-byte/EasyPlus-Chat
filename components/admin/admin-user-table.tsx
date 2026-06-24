@@ -113,7 +113,7 @@ export function AdminUserTable() {
       <td className="px-3 py-3 text-gray-200">{user.display_name}</td>
       <td className="px-3 py-3 text-gray-400">{user.email}</td>
       <td className="px-3 py-3 text-gray-400">{user.role.replace('_', '-')}</td>
-      <td className="px-3 py-3 text-gray-200">{user.unlimited_credits ? <span className="flex items-center gap-1 text-violet-300"><Infinity className="h-4 w-4" />Unlimited</span> : formatCredits(user.credits)}</td>
+      <td className="px-3 py-3 text-gray-200">{user.unlimited_credits ? <span className="flex items-center gap-1 text-clay-300"><Infinity className="h-4 w-4" />Unlimited</span> : formatCredits(user.credits)}</td>
       <td className="px-3 py-3 text-gray-400">{user.user_prompt_count}</td>
       <td className="px-3 py-3 text-gray-400">{user.total_message_count}</td>
       <td className="px-3 py-3 text-gray-400">{user.conversation_count}</td>
@@ -174,7 +174,7 @@ export function AdminUserTable() {
       </div>
 
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
-        <DialogContent className="border-white/[0.08] bg-[#181818]">
+        <DialogContent className="border-white/[0.08] bg-[#1b1613]">
           <DialogHeader>
             <DialogTitle>Edit account</DialogTitle>
             <DialogDescription className="text-gray-400">{selectedUser?.email}</DialogDescription>
@@ -186,7 +186,7 @@ export function AdminUserTable() {
             <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={editForm.unlimitedCredits} onChange={(event) => setEditForm({ ...editForm, unlimitedCredits: event.target.checked })} />Unlimited credits</label>
             <Field label="Expiry date"><Input type="date" value={editForm.accountExpiresAt} onChange={(event) => setEditForm({ ...editForm, accountExpiresAt: event.target.value })} /></Field>
             <Field label="Account status"><Select value={editForm.accountStatus} onValueChange={(accountStatus) => setEditForm({ ...editForm, accountStatus })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent className="bg-[#202020]"><SelectItem value="active">Active</SelectItem><SelectItem value="disabled">Disabled</SelectItem></SelectContent></Select></Field>
-            <Button onClick={saveUser} className="w-full bg-violet-600 hover:bg-violet-500">Save changes</Button>
+            <Button onClick={saveUser} className="w-full bg-clay-600 hover:bg-clay-500">Save changes</Button>
           </div>
         </DialogContent>
       </Dialog>

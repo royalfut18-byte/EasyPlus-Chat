@@ -18,7 +18,24 @@ const config = {
       },
     },
     extend: {
+      fontFamily: {
+        serif: ['Georgia', 'Cambria', '"Iowan Old Style"', '"Times New Roman"', 'serif'],
+      },
       colors: {
+        // Claude-inspired warm "clay" accent ramp (anchored on #d97757)
+        clay: {
+          50: "#fbf4f0",
+          100: "#f6e5dc",
+          200: "#eecab7",
+          300: "#e2a98f",
+          400: "#d97757",
+          500: "#cd6243",
+          600: "#b54e30",
+          700: "#963f28",
+          800: "#793423",
+          900: "#642d20",
+          950: "#36140c",
+        },
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
         ring: "hsl(var(--ring))",

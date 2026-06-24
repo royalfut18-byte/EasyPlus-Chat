@@ -207,6 +207,12 @@ function extractHtmlDocument(content: string): string | null {
   return afterStart.trim()
 }
 
+function extractSvgDocument(content: string): string | null {
+  const decoded = decodePossiblyEscapedText(content)
+  const match = decoded.match(/<svg[\s>][\s\S]*?<\/svg\s*>/i)
+  return match ? match[0].trim() : null
+}
+
 function extractHtmlLikeFragment(content: string): string | null {
   const trimmed = decodePossiblyEscapedText(content).trim()
   if (!trimmed) return null
@@ -414,29 +420,6 @@ ${html}
   return { code: html.trim(), repaired }
 }
 
-function collectMissingInlineHandlers(html: string): string[] {
-  const handlerMatches = Array.from(
-    html.matchAll(/\bon(?:click|change|submit|input|keydown|keyup)\s*=\s*["'][^"']*?([A-Za-z_$][\w$]*)\s*\(/gi)
-  ).map((match) => match[1])
-
-  if (handlerMatches.length === 0) return []
-
-  const definedNames = new Set<string>()
-  const definitionPatterns = [
-    /function\s+([A-Za-z_$][\w$]*)\s*\(/gi,
-    /(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?(?:function|\()/gi,
-    /window\.([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?(?:function|\()/gi,
-  ]
-
-  for (const pattern of definitionPatterns) {
-    for (const match of html.matchAll(pattern)) {
-      definedNames.add(match[1])
-    }
-  }
-
-  return Array.from(new Set(handlerMatches)).filter((name) => !definedNames.has(name))
-}
-
 function validateArtifact(
   artifact: Artifact,
   userPrompt?: string,
@@ -467,34 +450,18 @@ function validateArtifact(
       repaired: repairResult.repaired,
     }
 
-    if (!/<(?:html|body|main|section|div|button|form|svg|canvas)\b/i.test(nextArtifact.code)) {
-      errors.push('HTML artifact does not contain meaningful HTML structure.')
-    }
-
-    const missingHandlers = collectMissingInlineHandlers(nextArtifact.code)
-    if (missingHandlers.length > 0) {
-      errors.push(`Missing inline handler functions: ${missingHandlers.join(', ')}`)
-    }
-
-    const expectsInteractivity = /\b(interactive|quiz|calculator|flashcard|game|timeline|study tool)\b/i.test(String(userPrompt || ''))
-      || /<(button|input|select|textarea|form)\b/i.test(nextArtifact.code)
-      || /\bon(?:click|change|submit|input|keydown|keyup)\s*=/i.test(nextArtifact.code)
-      || /\b(addEventListener|requestAnimationFrame|canvas)\b/i.test(nextArtifact.code)
-
-    if (expectsInteractivity && nextArtifact.code.length < 600) {
-      errors.push('Interactive HTML artifact is too short to be a complete working app.')
-    }
-
-    if (expectsInteractivity && !/<script\b/i.test(nextArtifact.code) && missingHandlers.length > 0) {
-      errors.push('Interactive HTML artifact is missing the JavaScript needed for its handlers.')
-    }
-
-    if (
-      expectsInteractivity &&
-      /<(button|canvas|input|select|textarea|form)\b/i.test(nextArtifact.code) &&
-      !/(<script\b|addEventListener\s*\(|onclick\s*=|onchange\s*=|onsubmit\s*=|oninput\s*=)/i.test(nextArtifact.code)
-    ) {
-      errors.push('Interactive HTML artifact has controls but no working interaction code.')
+    // The preview renders inside a sandboxed iframe that can execute any
+    // HTML/CSS/JS the model produced — canvas, SVG, requestAnimationFrame,
+    // inline or addEventListener handlers, and external libraries all work.
+    // So we only reject content that is genuinely unrenderable (no HTML tags
+    // at all). We deliberately do NOT inspect JS handler wiring or output
+    // length: those heuristics produced false positives that hid working
+    // interactive figures. Any real runtime error is surfaced live and
+    // non-destructively by the in-iframe preview bridge instead of replacing
+    // or suppressing the artifact.
+    const hasRenderableMarkup = /<[a-z!][^>]*>/i.test(nextArtifact.code)
+    if (nextArtifact.code.trim() && !hasRenderableMarkup) {
+      errors.push('HTML artifact does not contain renderable HTML.')
     }
   }
 
@@ -838,6 +805,25 @@ export function parseArtifactFromResponse(
     const validated = validateArtifact(artifact, userPrompt, 'raw_html')
     return {
       cleanContent: buildCleanContent(content, htmlDocument, validated.artifact),
+      artifact: validated.artifact,
+      diagnostics: validated.diagnostics,
+    }
+  }
+
+  // Raw <svg>…</svg> figure that appears anywhere in the response (e.g. after a
+  // sentence of explanation). Without this, an interactive/animated SVG figure
+  // preceded by prose would never be detected and would not show.
+  const svgDocument = extractSvgDocument(content)
+  if (svgDocument) {
+    const artifact = createArtifact(
+      'svg',
+      userPrompt ? generateTitleFromPrompt(userPrompt) : 'SVG Figure',
+      svgDocument,
+      'raw_html'
+    )
+    const validated = validateArtifact(artifact, userPrompt, 'raw_html')
+    return {
+      cleanContent: buildCleanContent(content, svgDocument, validated.artifact),
       artifact: validated.artifact,
       diagnostics: validated.diagnostics,
     }

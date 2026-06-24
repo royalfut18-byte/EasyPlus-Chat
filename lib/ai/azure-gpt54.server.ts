@@ -59,6 +59,8 @@ export interface AzureGpt54JsonOptions {
   projectId?: string
   responseFormat?: 'json_object' | 'text'
   responseFormatRetryAttempted?: boolean
+  tokenFieldOverride?: CompletionTokenField
+  tokenFieldRetryAttempted?: boolean
 }
 
 let availabilityCache: { checkedAt: number; diagnostics: AzureGpt54Diagnostics } | null = null
@@ -66,6 +68,7 @@ let availabilityCache: { checkedAt: number; diagnostics: AzureGpt54Diagnostics }
 function normalizeBaseUrl(baseUrl: string): string {
   return baseUrl
     .trim()
+    .replace(/[?#].*$/, '') // drop any query/hash (e.g. a pasted ?api-version=…)
     .replace(/\/+$/, '')
     .replace(/\/chat\/completions$/i, '')
 }
@@ -174,14 +177,52 @@ function getHeaders(apiKey: string, authMode: AuthMode): Record<string, string> 
   }
 }
 
+const DEFAULT_AZURE_INFERENCE_API_VERSION = '2024-05-01-preview'
+const AZURE_GPT54_API_VERSION_ENV_PRIORITY = ['AZURE_GPT54_API_VERSION', 'AZURE_OPENAI_API_VERSION', 'AZURE_FOUNDRY_API_VERSION'] as const
+
 function getChatCompletionsUrl(baseUrl: string): string {
-  return `${baseUrl}/chat/completions`
+  const url = `${baseUrl}/chat/completions`
+  // The OpenAI v1 surface (.../openai/v1) does NOT accept an api-version param.
+  if (/\/openai\/v1$/i.test(baseUrl)) return url
+  // Azure AI Foundry "Model Inference" endpoints (.../models) and classic Azure
+  // OpenAI deployment paths REQUIRE ?api-version=… — without it they 404.
+  // DeepSeek / serverless models on Foundry typically use the /models endpoint.
+  const explicitApiVersion = readFirstServerEnv([...AZURE_GPT54_API_VERSION_ENV_PRIORITY]).value
+  const looksLikeInferenceEndpoint = /\/models$/i.test(baseUrl) || /\/openai\/deployments\//i.test(baseUrl)
+  if (explicitApiVersion || looksLikeInferenceEndpoint) {
+    return `${url}?api-version=${encodeURIComponent(explicitApiVersion || DEFAULT_AZURE_INFERENCE_API_VERSION)}`
+  }
+  return url
 }
 
-function getCompletionTokenField(model: string, maxTokens: number): { max_tokens?: number; max_completion_tokens?: number } {
-  return /^gpt-5(?:$|[\.-])/i.test(model)
+type CompletionTokenField = 'max_tokens' | 'max_completion_tokens'
+
+function resolveCompletionTokenField(model: string, override?: CompletionTokenField): CompletionTokenField {
+  if (override) return override
+  // GPT-5.x (and o-series) reject `max_tokens` and require `max_completion_tokens`.
+  return /^(?:gpt-5|o[134])(?:$|[\.\-])/i.test(model) ? 'max_completion_tokens' : 'max_tokens'
+}
+
+function getCompletionTokenField(
+  model: string,
+  maxTokens: number,
+  override?: CompletionTokenField
+): { max_tokens?: number; max_completion_tokens?: number } {
+  return resolveCompletionTokenField(model, override) === 'max_completion_tokens'
     ? { max_completion_tokens: maxTokens }
     : { max_tokens: maxTokens }
+}
+
+// Azure returns a 400 mentioning both fields when the wrong one is sent for a
+// given deployment (deployment names are user-chosen, so the model-name regex
+// can miss). Detect that so we can transparently retry with the other field.
+function isWrongCompletionTokenField(payload: { code: string | null; message: string | null }): boolean {
+  const detail = `${payload.code || ''} ${payload.message || ''}`.toLowerCase()
+  return detail.includes('max_tokens') && detail.includes('max_completion_tokens')
+}
+
+function flipCompletionTokenField(field: CompletionTokenField): CompletionTokenField {
+  return field === 'max_completion_tokens' ? 'max_tokens' : 'max_completion_tokens'
 }
 
 function getEndpointMetadata(baseUrl?: string): { endpointHost: string | null; endpointPath: string } {
@@ -394,20 +435,30 @@ export async function getAzureGpt54Diagnostics(force = false): Promise<AzureGpt5
   }
 
   try {
-    const { response, authMode } = await fetchWithAuthFallback(getChatCompletionsUrl(baseUrl), apiKey, {
-      method: 'POST',
-      body: JSON.stringify({
-        model,
-        messages: [{ role: 'user', content: 'hi' }],
-        temperature: 0,
-        ...getCompletionTokenField(model, 8),
-        stream: false,
-      }),
-      signal: AbortSignal.timeout(30_000),
-    })
+    const runProbe = (tokenField?: CompletionTokenField) =>
+      fetchWithAuthFallback(getChatCompletionsUrl(baseUrl), apiKey, {
+        method: 'POST',
+        body: JSON.stringify({
+          model,
+          messages: [{ role: 'user', content: 'hi' }],
+          temperature: 0,
+          ...getCompletionTokenField(model, 8, tokenField),
+          stream: false,
+        }),
+        signal: AbortSignal.timeout(30_000),
+      })
+
+    let { response, authMode } = await runProbe()
+    let probeErrorPayload = response.ok ? null : await readProviderErrorPayload(response)
+    if (response.status === 400 && probeErrorPayload && isWrongCompletionTokenField(probeErrorPayload)) {
+      const flipped = flipCompletionTokenField(resolveCompletionTokenField(model))
+      console.warn('[Azure GPT-5.4] Retrying availability probe with flipped completion token field', { tokenField: flipped })
+      ;({ response, authMode } = await runProbe(flipped))
+      probeErrorPayload = response.ok ? null : await readProviderErrorPayload(response)
+    }
 
     if (!response.ok) {
-      const errorPayload = await readProviderErrorPayload(response)
+      const errorPayload = probeErrorPayload ?? await readProviderErrorPayload(response)
       const providerError = getProviderErrorFromPayload(response.status, errorPayload)
       const diagnostics = {
         configured: true,
@@ -572,7 +623,7 @@ export async function generateAzureGpt54Json(
         model,
         messages,
         temperature,
-        ...getCompletionTokenField(model, maxTokens),
+        ...getCompletionTokenField(model, maxTokens, options.tokenFieldOverride),
         stream: false,
         ...(options.responseFormat === 'json_object'
           ? { response_format: { type: 'json_object' } }
@@ -618,6 +669,25 @@ export async function generateAzureGpt54Json(
       providerErrorCode: errorPayload.code,
       providerErrorMessage: errorPayload.message,
     })
+    if (
+      response.status === 400 &&
+      !options.tokenFieldRetryAttempted &&
+      isWrongCompletionTokenField(errorPayload)
+    ) {
+      const flipped = flipCompletionTokenField(resolveCompletionTokenField(model, options.tokenFieldOverride))
+      console.warn('[Azure GPT-5.4] Retrying JSON request with flipped completion token field', {
+        projectId: options.projectId || null,
+        phase: options.phase || 'json_generation',
+        status: response.status,
+        tokenField: flipped,
+      })
+      return generateAzureGpt54Json(messages, {
+        ...options,
+        tokenFieldOverride: flipped,
+        tokenFieldRetryAttempted: true,
+      })
+    }
+
     if (
       options.responseFormat === 'json_object' &&
       !options.responseFormatRetryAttempted &&
@@ -678,7 +748,8 @@ export async function streamAzureGpt54Response(
   messages: ChatMessage[],
   systemPromptText: string,
   temperature: number = 0.7,
-  maxTokens: number = 4096
+  maxTokens: number = 4096,
+  retryState: { tokenFieldOverride?: CompletionTokenField; tokenFieldRetryAttempted?: boolean } = {}
 ): Promise<ReadableStream> {
   const { apiKey, baseUrl, model, apiKeyConfigured, baseUrlConfigured, modelConfigured, envStatus } = getProviderConfig()
   const endpoint = getEndpointMetadata(baseUrl)
@@ -717,7 +788,7 @@ export async function streamAzureGpt54Response(
         model,
         messages: toAzureChatMessages(messages, systemPromptText),
         temperature,
-        ...getCompletionTokenField(model, Math.min(maxTokens, 16384)),
+        ...getCompletionTokenField(model, Math.min(maxTokens, 16384), retryState.tokenFieldOverride),
         stream: true,
       }),
       signal: controller.signal,
@@ -736,6 +807,22 @@ export async function streamAzureGpt54Response(
         providerErrorMessage: errorPayload.message,
         ...payloadDiagnostics,
       })
+      if (
+        response.status === 400 &&
+        !retryState.tokenFieldRetryAttempted &&
+        isWrongCompletionTokenField(errorPayload)
+      ) {
+        const flipped = flipCompletionTokenField(resolveCompletionTokenField(model, retryState.tokenFieldOverride))
+        console.warn('[Azure GPT-5.4] Retrying stream with flipped completion token field', {
+          status: response.status,
+          tokenField: flipped,
+        })
+        clearTimeout(totalTimeout)
+        return streamAzureGpt54Response(messages, systemPromptText, temperature, maxTokens, {
+          tokenFieldOverride: flipped,
+          tokenFieldRetryAttempted: true,
+        })
+      }
       throw toProviderError(
         getProviderErrorFromPayload(response.status, errorPayload),
         snapshot,

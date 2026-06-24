@@ -58,7 +58,7 @@ export function ModelSelector({ selectedModel, onSelectModel, availableModelIds,
           : model.id === 'claude-opus-4.8'
             ? 'text-[#d97757]'
             : model.id === 'deepseek-v4-pro'
-              ? 'text-violet-300'
+              ? 'text-clay-300'
               : model.id === 'image-generation'
                 ? 'text-pink-300'
                 : 'text-blue-400'
@@ -118,7 +118,7 @@ export function ModelSelector({ selectedModel, onSelectModel, availableModelIds,
                   {model.description && <span className="mt-0.5 block text-[10px] leading-tight text-gray-500">{model.description}</span>}
                 </span>
                 {isConfirmedUnavailable(model) && <span className="text-[10px] text-gray-500">Unavailable</span>}
-                {selectedModel === model.id && <Check className="h-4 w-4 text-violet-300" />}
+                {selectedModel === model.id && <Check className="h-4 w-4 text-clay-300" />}
               </DropdownMenuItem>
             ))}
           </DropdownMenuContent>

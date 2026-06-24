@@ -86,7 +86,7 @@ export function BackfillPanel() {
     <Card className="bg-white/[0.02] border-white/[0.06]">
       <CardHeader className="flex flex-row items-center justify-between">
         <CardTitle className="flex items-center gap-2">
-          <Brain className="h-5 w-5 text-violet-400" />
+          <Brain className="h-5 w-5 text-clay-400" />
           Memory Backfill
         </CardTitle>
         <Button
@@ -138,7 +138,7 @@ export function BackfillPanel() {
                 value={targetUserId}
                 onChange={(e) => setTargetUserId(e.target.value)}
                 placeholder="UUID or empty"
-                className="w-full px-3 py-2 rounded-lg bg-white/[0.03] border border-white/[0.08] text-sm text-white placeholder:text-gray-600 focus:outline-none focus:border-violet-500/50"
+                className="w-full px-3 py-2 rounded-lg bg-white/[0.03] border border-white/[0.08] text-sm text-white placeholder:text-gray-600 focus:outline-none focus:border-clay-500/50"
               />
             </div>
             <div>
@@ -148,7 +148,7 @@ export function BackfillPanel() {
                 value={targetConvId}
                 onChange={(e) => setTargetConvId(e.target.value)}
                 placeholder="UUID or empty"
-                className="w-full px-3 py-2 rounded-lg bg-white/[0.03] border border-white/[0.08] text-sm text-white placeholder:text-gray-600 focus:outline-none focus:border-violet-500/50"
+                className="w-full px-3 py-2 rounded-lg bg-white/[0.03] border border-white/[0.08] text-sm text-white placeholder:text-gray-600 focus:outline-none focus:border-clay-500/50"
               />
             </div>
           </div>
@@ -160,7 +160,7 @@ export function BackfillPanel() {
                 type="number"
                 value={limit}
                 onChange={(e) => setLimit(e.target.value)}
-                className="w-20 px-3 py-2 rounded-lg bg-white/[0.03] border border-white/[0.08] text-sm text-white focus:outline-none focus:border-violet-500/50"
+                className="w-20 px-3 py-2 rounded-lg bg-white/[0.03] border border-white/[0.08] text-sm text-white focus:outline-none focus:border-clay-500/50"
               />
             </div>
 
@@ -188,7 +188,7 @@ export function BackfillPanel() {
           <Button
             onClick={runBackfill}
             disabled={running}
-            className="bg-violet-600 hover:bg-violet-500 text-white"
+            className="bg-clay-600 hover:bg-clay-500 text-white"
           >
             {running ? (
               <>

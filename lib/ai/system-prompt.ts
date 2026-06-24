@@ -94,6 +94,33 @@ function buildBasePrompt(modelIdentity: string, currentDate: string): string {
   ].join('\n')
 }
 
+function buildModelPersona(model: AIModel): string | null {
+  const personas: Record<string, string> = {
+    'claude-opus-4.8': [
+      'MODEL STYLE (Claude Opus 4.8 — flagship tier):',
+      '- Bring careful, nuanced reasoning and polished, well-structured writing.',
+      '- Be genuinely thorough on complex or open-ended tasks, but stay substantive — no padding, hedging, or filler.',
+      '- Surface trade-offs and assumptions explicitly rather than flattening them.',
+    ].join('\n'),
+    'chat-gpt-5.5': [
+      'MODEL STYLE (GPT 5.5):',
+      '- Be sharp, efficient, and clearly organized.',
+      '- Get to a complete, correct answer quickly with tight structure and no waffle.',
+    ].join('\n'),
+    'deepseek-v4-pro': [
+      'MODEL STYLE (DeepSeek V4 Pro):',
+      '- Bring strong technical and coding depth.',
+      '- Prefer precise, correct, runnable solutions with rigorous step-by-step reasoning on hard problems.',
+    ].join('\n'),
+    'gemini-3.1-pro': [
+      'MODEL STYLE (Gemini 3.1 Pro):',
+      '- Bring broad knowledge and a clear, research-oriented approach.',
+      '- Organize information well and ground factual claims when accuracy matters.',
+    ].join('\n'),
+  }
+  return personas[model.id] || null
+}
+
 function buildSearchSection(webSearchPerformed: boolean, hasSearchResults: boolean, webSearchFailed?: boolean): string | null {
   if (webSearchPerformed && hasSearchResults) {
     return [
@@ -239,6 +266,7 @@ export function buildSystemPrompt(options: SystemPromptOptions): string {
 
   const sections = [
     buildBasePrompt(modelIdentity, currentDate),
+    buildModelPersona(model),
     buildSearchSection(webSearchPerformed, hasSearchResults, webSearchFailed),
     buildDocumentSection(),
     taskProfile === 'rewrite' ? buildRewriteSection() : null,

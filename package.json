@@ -9,6 +9,7 @@
     "lint": "next lint",
     "test:unicode": "node scripts/test-db-text-sanitizer.mjs",
     "test:artifacts": "node scripts/verify-artifact-parser.mjs",
+    "test:artifacts-render": "node scripts/verify-artifact-rendering.mjs",
     "test:zip-support": "node scripts/verify-zip-support.mjs"
   },
   "dependencies": {

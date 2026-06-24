@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { streamBedrockResponse, getModelCost } from '@/lib/ai/bedrock'
-import { streamGeminiResponse } from '@/lib/ai/gemini'
+import { streamGeminiResponse, describeImagesForTextModel } from '@/lib/ai/gemini'
 import {
   getAzureGpt54ConfigSnapshot,
   getAzureGpt54Diagnostics,
@@ -548,55 +548,64 @@ export async function POST(request: NextRequest) {
       })))
     }
 
-    if (hasCurrentImageAttachments) {
-      const azureVisionSnapshot = getAzureGpt54ConfigSnapshot()
-      azureGpt54Configured = azureVisionSnapshot.envStatus.apiKey.configured &&
-        azureVisionSnapshot.envStatus.baseUrl.configured &&
-        azureVisionSnapshot.envStatus.model.configured
+    const geminiVisionConfigured = Boolean(process.env.GEMINI_API_KEY)
 
-      if (!azureGpt54Configured) {
-        console.error('[Chat API] Image understanding provider missing configuration', {
-          providerSelected: validationModel.provider,
-          messageHasImages: true,
-          attachmentCount: currentMessageAttachmentsCount,
-          imageCount: currentAttachments.filter((attachment: any) => attachment.type === 'image').length,
-          azureGpt54Configured,
-          endpointHost: azureVisionSnapshot.endpointHost,
-          endpointPath: azureVisionSnapshot.endpointPath,
-          model: azureVisionSnapshot.model,
-        })
-        return NextResponse.json({ error: 'Image understanding provider is not configured.' }, { status: 503 })
+    // When Gemini is configured we read images with Gemini's vision and hand the
+    // description to the selected (text) model to answer — see the image
+    // description step below. The selected model keeps writing the reply.
+    // Only when Gemini is unavailable do we send the raw image to the azure slot
+    // and require that deployment to be vision-capable.
+    if (hasCurrentImageAttachments && !geminiVisionConfigured) {
+      {
+        const azureVisionSnapshot = getAzureGpt54ConfigSnapshot()
+        azureGpt54Configured = azureVisionSnapshot.envStatus.apiKey.configured &&
+          azureVisionSnapshot.envStatus.baseUrl.configured &&
+          azureVisionSnapshot.envStatus.model.configured
+
+        if (!azureGpt54Configured) {
+          console.error('[Chat API] Image understanding provider missing configuration', {
+            providerSelected: validationModel.provider,
+            messageHasImages: true,
+            attachmentCount: currentMessageAttachmentsCount,
+            imageCount: currentAttachments.filter((attachment: any) => attachment.type === 'image').length,
+            azureGpt54Configured,
+            endpointHost: azureVisionSnapshot.endpointHost,
+            endpointPath: azureVisionSnapshot.endpointPath,
+            model: azureVisionSnapshot.model,
+          })
+          return NextResponse.json({ error: 'Image understanding provider is not configured.' }, { status: 503 })
+        }
+
+        const azureVisionDiagnostics = await getAzureGpt54Diagnostics()
+        azureGpt54Configured = azureVisionDiagnostics.configured
+        azureVisionStatusCode = azureVisionDiagnostics.status
+        azureVisionSafeReason = azureVisionDiagnostics.safeReason
+
+        if (!azureVisionDiagnostics.probeOk) {
+          const publicError = mapImageUnderstandingProviderError(
+            new Error(azureVisionDiagnostics.safeReason || CHAT_IMAGE_UNDERSTANDING_NOT_CONFIGURED_ERROR)
+          ).message
+
+          console.error('[Chat API] Image understanding unavailable for current request', {
+            providerSelected: validationModel.provider,
+            providerAttempted: 'azure-gpt54',
+            messageHasImages: true,
+            attachmentCount: currentMessageAttachmentsCount,
+            imageCount: currentAttachments.filter((attachment: any) => attachment.type === 'image').length,
+            azureGpt54Configured: azureVisionDiagnostics.configured,
+            endpointHost: azureVisionDiagnostics.endpointHost,
+            endpointPath: azureVisionDiagnostics.endpointPath,
+            model: azureVisionDiagnostics.model,
+            azureStatusCode: azureVisionDiagnostics.status,
+            safeReason: azureVisionDiagnostics.safeReason,
+          })
+
+          return NextResponse.json({ error: publicError }, { status: 503 })
+        }
+
+        providerForRequest = 'azure-gpt54'
+        visionFallbackUsed = validationModel.provider !== 'azure-gpt54'
       }
-
-      const azureVisionDiagnostics = await getAzureGpt54Diagnostics()
-      azureGpt54Configured = azureVisionDiagnostics.configured
-      azureVisionStatusCode = azureVisionDiagnostics.status
-      azureVisionSafeReason = azureVisionDiagnostics.safeReason
-
-      if (!azureVisionDiagnostics.probeOk) {
-        const publicError = mapImageUnderstandingProviderError(
-          new Error(azureVisionDiagnostics.safeReason || CHAT_IMAGE_UNDERSTANDING_NOT_CONFIGURED_ERROR)
-        ).message
-
-        console.error('[Chat API] Image understanding unavailable for current request', {
-          providerSelected: validationModel.provider,
-          providerAttempted: 'azure-gpt54',
-          messageHasImages: true,
-          attachmentCount: currentMessageAttachmentsCount,
-          imageCount: currentAttachments.filter((attachment: any) => attachment.type === 'image').length,
-          azureGpt54Configured: azureVisionDiagnostics.configured,
-          endpointHost: azureVisionDiagnostics.endpointHost,
-          endpointPath: azureVisionDiagnostics.endpointPath,
-          model: azureVisionDiagnostics.model,
-          azureStatusCode: azureVisionDiagnostics.status,
-          safeReason: azureVisionDiagnostics.safeReason,
-        })
-
-        return NextResponse.json({ error: publicError }, { status: 503 })
-      }
-
-      providerForRequest = 'azure-gpt54'
-      visionFallbackUsed = validationModel.provider !== 'azure-gpt54'
     }
 
     const isLoadingMarker = (content: string) => {
@@ -1105,6 +1114,36 @@ RULES FOR USING THESE RESULTS:
       })
     }
 
+    // "Gemini eyes, DeepSeek brain": when the answering model is text-only, read
+    // the uploaded image(s) with Gemini's vision and fold the description into the
+    // user's message, then drop the raw image so the text model gets usable
+    // context and writes the actual reply. If the user picked Gemini directly it
+    // sees the image natively, so this is skipped. This only mutates the
+    // model-bound copy (messagesForModel) — the saved message keeps the image.
+    if (hasCurrentImageAttachments && geminiVisionConfigured && providerForRequest !== 'google') {
+      const lastModelMessage = messagesForModel[messagesForModel.length - 1]
+      const imagesToRead = (lastModelMessage?.attachments || [])
+        .filter((attachment) => attachment.type === 'image' && attachment.dataUrl)
+        .map((attachment) => ({ dataUrl: attachment.dataUrl, mimeType: attachment.mimeType }))
+
+      if (lastModelMessage && imagesToRead.length > 0) {
+        const imageDescription = await describeImagesForTextModel(imagesToRead, latestUserMessage.content)
+        const imageNoun = imagesToRead.length === 1 ? 'an image' : `${imagesToRead.length} images`
+        // Strip the raw image either way — a text-only model can't use it.
+        lastModelMessage.attachments = (lastModelMessage.attachments || []).filter((attachment) => attachment.type !== 'image')
+        if (imageDescription) {
+          lastModelMessage.content = `${lastModelMessage.content || ''}\n\n[The user attached ${imageNoun}. Here is exactly what it shows, read by the vision system — treat it as if you can see the image:]\n${imageDescription}`.trim()
+          console.log('[Chat API] Image(s) read via Gemini for text model', {
+            imageCount: imagesToRead.length,
+            descriptionChars: imageDescription.length,
+          })
+        } else {
+          lastModelMessage.content = `${lastModelMessage.content || ''}\n\n[The user attached ${imageNoun}, but the vision system could not read ${imagesToRead.length === 1 ? 'it' : 'them'} right now. Tell the user you couldn't read the image and ask them to try again — do NOT guess what it showed.]`.trim()
+          console.warn('[Chat API] Gemini image description unavailable; instructed model not to guess')
+        }
+      }
+    }
+
     // Stage: Save user message BEFORE AI call (idempotent via client_message_id)
     stage = 'save-user-message'
     let userMessageOrderIndex: number | null = null
@@ -1321,7 +1360,11 @@ RULES FOR USING THESE RESULTS:
 
               try {
                 if (attemptedProvider === 'google') {
-                  providerStream = await streamGeminiResponse(validatedModel, inputMessages, systemPrompt, temperature, maxTokens)
+                  // When an image request is routed here from a non-Gemini selection
+                  // (e.g. "Claude Opus 4.8"), that model id has no geminiModelId, so
+                  // fall back to the real vision-capable Gemini model.
+                  const geminiRequestModel = selectedModel.geminiModelId ? validatedModel : 'gemini-3.1-pro'
+                  providerStream = await streamGeminiResponse(geminiRequestModel, inputMessages, systemPrompt, temperature, maxTokens)
                 } else if (attemptedProvider === 'anthropic') {
                   providerStream = await streamBedrockResponse(validatedModel, inputMessages, systemPrompt, temperature, maxTokens)
                 } else if (attemptedProvider === 'azure-gpt54') {

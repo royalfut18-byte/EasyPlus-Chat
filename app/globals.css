@@ -4,26 +4,27 @@
 
 @layer base {
   :root {
-    --background: 240 10% 3.5%;
-    --foreground: 210 20% 98%;
-    --card: 240 10% 5%;
-    --card-foreground: 210 20% 98%;
-    --popover: 240 10% 5%;
-    --popover-foreground: 210 20% 98%;
-    --primary: 263 70% 58%;
-    --primary-foreground: 210 20% 98%;
-    --secondary: 240 10% 10%;
-    --secondary-foreground: 210 20% 98%;
-    --muted: 240 10% 10%;
-    --muted-foreground: 240 5% 55%;
-    --accent: 240 10% 10%;
-    --accent-foreground: 210 20% 98%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 20% 98%;
-    --border: 240 6% 12%;
-    --input: 240 6% 12%;
-    --ring: 263 70% 58%;
-    --radius: 0.75rem;
+    /* Claude-inspired warm dark palette */
+    --background: 30 9% 6%;
+    --foreground: 40 18% 96%;
+    --card: 30 7% 9%;
+    --card-foreground: 40 18% 96%;
+    --popover: 30 7% 9%;
+    --popover-foreground: 40 18% 96%;
+    --primary: 15 63% 59%;
+    --primary-foreground: 40 30% 98%;
+    --secondary: 30 6% 13%;
+    --secondary-foreground: 40 18% 96%;
+    --muted: 30 6% 13%;
+    --muted-foreground: 35 8% 62%;
+    --accent: 30 6% 14%;
+    --accent-foreground: 40 18% 96%;
+    --destructive: 0 62% 40%;
+    --destructive-foreground: 40 18% 98%;
+    --border: 32 7% 16%;
+    --input: 32 7% 16%;
+    --ring: 15 63% 59%;
+    --radius: 0.9rem;
   }
 }
 
@@ -47,11 +48,29 @@
   body {
     min-height: 100dvh;
   }
+
+  /* iOS zooms the page whenever a focused input/textarea has a font smaller
+     than 16px. Force at least 16px on phones so focusing any field never
+     triggers that jarring zoom — desktop keeps its smaller, denser sizing. */
+  @media (max-width: 767px) {
+    input:not([type='checkbox']):not([type='radio']):not([type='range']),
+    textarea,
+    select {
+      font-size: 16px !important;
+    }
+  }
+
+  /* Remove the grey tap-flash on mobile for a cleaner, app-like feel. */
+  button,
+  a,
+  [role='button'] {
+    -webkit-tap-highlight-color: transparent;
+  }
 }
 
 @layer utilities {
   .glass {
-    background: rgba(12, 11, 18, 0.5);
+    background: rgba(22, 19, 16, 0.5);
     backdrop-filter: blur(8px);
     -webkit-backdrop-filter: blur(8px);
     border: 1px solid rgba(255, 255, 255, 0.06);
@@ -65,7 +84,7 @@
   }
 
   .glass-strong {
-    background: rgba(14, 13, 20, 0.8);
+    background: rgba(26, 22, 19, 0.8);
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
     border: 1px solid rgba(255, 255, 255, 0.08);
@@ -79,23 +98,28 @@
   }
 
   .gradient-primary {
-    background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 50%, #5b21b6 100%);
+    background: linear-gradient(135deg, #d97757 0%, #c25f3d 50%, #a8462a 100%);
   }
 
   .gradient-text {
-    background: linear-gradient(135deg, #a78bfa 0%, #8b5cf6 50%, #7c3aed 100%);
+    background: linear-gradient(135deg, #e8b89f 0%, #d97757 55%, #c25f3d 100%);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
   }
 
   .glow-primary {
-    box-shadow: 0 0 20px rgba(139, 92, 246, 0.3);
+    box-shadow: 0 0 24px rgba(217, 119, 87, 0.22);
   }
 
   .glow-border {
-    border: 1px solid rgba(139, 92, 246, 0.2);
-    box-shadow: 0 0 12px rgba(139, 92, 246, 0.1);
+    border: 1px solid rgba(217, 119, 87, 0.2);
+    box-shadow: 0 0 12px rgba(217, 119, 87, 0.1);
+  }
+
+  .font-display {
+    font-family: Georgia, Cambria, "Iowan Old Style", "Times New Roman", serif;
+    letter-spacing: -0.01em;
   }
 }
 
@@ -224,7 +248,7 @@
 }
 
 .prose a {
-  @apply text-violet-400 hover:text-violet-300 underline underline-offset-2 transition-colors;
+  @apply text-clay-300 hover:text-clay-200 underline underline-offset-2 transition-colors;
 }
 
 .prose strong {

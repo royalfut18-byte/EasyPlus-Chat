@@ -154,8 +154,24 @@ export async function streamGeminiResponse(
       },
     })
 
-    // Send the last user message
-    const result = await chat.sendMessage(lastMessage.parts)
+    // Send the last user message, retrying transient overloads. gemini-2.5-flash
+    // intermittently returns 503 "high demand" — since this path also serves
+    // image reading, retry a few times before giving up.
+    let result: Awaited<ReturnType<typeof chat.sendMessage>> | undefined
+    let sendError: any
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        result = await chat.sendMessage(lastMessage.parts)
+        break
+      } catch (err: any) {
+        sendError = err
+        const message = String(err?.message || '')
+        const transient = /\b503\b|UNAVAILABLE|overloaded|high demand|temporarily/i.test(message)
+        if (!transient || attempt === 2) throw err
+        await new Promise((resolve) => setTimeout(resolve, 900 * (attempt + 1)))
+      }
+    }
+    if (!result) throw sendError || new Error('Gemini returned no response')
     const response = result.response
     const text = response.text()
 
@@ -186,7 +202,64 @@ export async function streamGeminiResponse(
       throw new Error('This EasyPlus tier is temporarily unavailable. Try again later or switch tiers.')
     }
 
+    // Handle transient overload (503 "high demand") after retries are exhausted
+    if (error.message?.includes('503') || /UNAVAILABLE|overloaded|high demand/i.test(error.message || '')) {
+      throw new Error('This EasyPlus tier is busy right now. Please try again in a moment.')
+    }
+
     // Generic error message
     throw new Error('This EasyPlus tier could not respond. Try again or switch tiers.')
   }
+}
+
+/**
+ * Use Gemini's vision to read image attachments into a thorough text description,
+ * so a text-only model (e.g. DeepSeek) can answer questions about them. Gemini is
+ * only the "eyes" — the selected model still writes the actual reply. Returns null
+ * if there are no usable images, Gemini isn't configured, or the call fails (the
+ * caller then proceeds without image context rather than crashing).
+ */
+export async function describeImagesForTextModel(
+  images: Array<{ dataUrl?: string; mimeType?: string }>,
+  userQuestion?: string
+): Promise<string | null> {
+  const apiKey = process.env.GEMINI_API_KEY
+  if (!apiKey) return null
+
+  const imageParts: Array<{ inlineData: { mimeType: string; data: string } }> = []
+  for (const image of images) {
+    if (!image.dataUrl) continue
+    const match = image.dataUrl.match(/^data:([^;]+);base64,(.+)$/)
+    if (!match || !match[2]) continue
+    imageParts.push({ inlineData: { mimeType: image.mimeType || match[1], data: match[2] } })
+  }
+  if (imageParts.length === 0) return null
+
+  const instruction = `You are the vision system for another AI assistant that cannot see images. Look at the attached image(s) and write a precise, complete description so that assistant can fully answer the user.
+- Transcribe ALL visible text exactly and verbatim — buttons, labels, menus, errors, code, numbers, tables, captions, and fine print.
+- Describe the layout, UI elements, diagrams, charts (include their values), photos, and anything visually significant.
+- Be objective and thorough. Do NOT answer the user's question yourself; only describe what is in the image.
+The user's question about the image is: "${(userQuestion || '').slice(0, 1000) || '(none given)'}"`
+
+  const genAI = new GoogleGenerativeAI(apiKey)
+  const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' })
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      const result = await model.generateContent({
+        contents: [{ role: 'user', parts: [{ text: instruction }, ...imageParts] as any }],
+        generationConfig: { temperature: 0.2, maxOutputTokens: 2048 },
+      })
+      const text = result.response.text()
+      return text && text.trim() ? text.trim() : null
+    } catch (err: any) {
+      const transient = /\b503\b|UNAVAILABLE|overloaded|high demand|temporarily/i.test(String(err?.message || ''))
+      if (!transient || attempt === 2) {
+        console.error('[Gemini] Image description failed:', err?.message)
+        return null
+      }
+      await new Promise((resolve) => setTimeout(resolve, 900 * (attempt + 1)))
+    }
+  }
+  return null
 }

@@ -13,7 +13,7 @@ interface ReasoningSelectorProps {
 
 const MODE_CONFIG: { mode: ReasoningMode; icon: typeof Zap; activeColor: string }[] = [
   { mode: 'instant', icon: Zap, activeColor: 'text-amber-400' },
-  { mode: 'thinking', icon: Brain, activeColor: 'text-violet-400' },
+  { mode: 'thinking', icon: Brain, activeColor: 'text-clay-400' },
   { mode: 'extended', icon: Rocket, activeColor: 'text-cyan-400' },
 ]
 
@@ -39,7 +39,7 @@ export function ReasoningSelector({ selectedMode, onSelectMode, disabled = false
           >
             {isSelected && (
               <motion.div
-                className="absolute inset-0 rounded-full border border-violet-300/[0.14] bg-violet-400/[0.08]"
+                className="absolute inset-0 rounded-full border border-clay-300/[0.14] bg-clay-400/[0.08]"
                 layoutId="reasoning-pill"
                 transition={{ type: 'spring', stiffness: 400, damping: 28 }}
               />

@@ -128,7 +128,7 @@ export default function MemorySettingsPage() {
 
   const getCategoryColor = (category: string) => {
     switch (category) {
-      case 'preference': return 'text-violet-400 bg-violet-500/10 border-violet-500/20'
+      case 'preference': return 'text-clay-400 bg-clay-500/10 border-clay-500/20'
       case 'project': return 'text-blue-400 bg-blue-500/10 border-blue-500/30'
       case 'personal': return 'text-green-400 bg-green-500/10 border-green-500/30'
       case 'workflow': return 'text-orange-400 bg-orange-500/10 border-orange-500/30'
@@ -137,7 +137,7 @@ export default function MemorySettingsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0f0f0f] p-4 md:p-8">
+    <div className="min-h-screen bg-[#12100e] p-4 md:p-8">
       <div className="max-w-3xl mx-auto space-y-6">
         {/* Header */}
         <div className="flex items-center gap-4">
@@ -148,8 +148,8 @@ export default function MemorySettingsPage() {
             <ArrowLeft className="h-5 w-5 text-gray-400" />
           </button>
           <div className="flex items-center gap-3">
-            <div className="p-2.5 rounded-xl bg-violet-500/10 border border-violet-500/20">
-              <Brain className="h-6 w-6 text-violet-400" />
+            <div className="p-2.5 rounded-xl bg-clay-500/10 border border-clay-500/20">
+              <Brain className="h-6 w-6 text-clay-400" />
             </div>
             <div>
               <h1 className="text-2xl font-bold text-white">Memory</h1>
@@ -239,7 +239,7 @@ export default function MemorySettingsPage() {
                       <textarea
                         value={editText}
                         onChange={e => setEditText(e.target.value)}
-                        className="w-full bg-black/30 border border-white/20 rounded-lg p-3 text-sm text-white resize-none focus:outline-none focus:border-violet-500/40"
+                        className="w-full bg-black/30 border border-white/20 rounded-lg p-3 text-sm text-white resize-none focus:outline-none focus:border-clay-500/40"
                         rows={3}
                         autoFocus
                       />

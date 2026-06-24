@@ -87,10 +87,10 @@ export function ImageGenerationPanel({
       <motion.section
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
-        className="overflow-hidden rounded-[28px] border border-white/[0.08] bg-[#191919] shadow-2xl shadow-black/20"
+        className="overflow-hidden rounded-[28px] border border-white/[0.08] bg-[#1c1714] shadow-2xl shadow-black/20"
       >
         <div className="relative border-b border-white/[0.06] p-4 sm:p-6">
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(236,72,153,0.16),transparent_38%),radial-gradient(circle_at_top_right,rgba(139,92,246,0.12),transparent_34%)]" />
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(236,72,153,0.16),transparent_38%),radial-gradient(circle_at_top_right,rgba(217,119,87,0.12),transparent_34%)]" />
           <div className="relative flex flex-col gap-3">
             <div className="inline-flex w-fit items-center gap-2 rounded-full border border-pink-300/15 bg-pink-500/10 px-3 py-1 text-xs font-medium text-pink-100">
               <Sparkles className="h-3.5 w-3.5" />
@@ -108,7 +108,7 @@ export function ImageGenerationPanel({
         </div>
 
         <div className="space-y-5 p-4 sm:p-6">
-          <div className="rounded-3xl border border-white/[0.08] bg-[#101010] p-3 focus-within:border-pink-300/25 sm:p-4">
+          <div className="rounded-3xl border border-white/[0.08] bg-[#13110f] p-3 focus-within:border-pink-300/25 sm:p-4">
             <textarea
               value={prompt}
               onChange={(event) => setPrompt(event.target.value)}
@@ -225,7 +225,7 @@ export function ImageGenerationPanel({
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -8 }}
-              className="rounded-[28px] border border-white/[0.08] bg-[#191919] p-4 sm:p-5"
+              className="rounded-[28px] border border-white/[0.08] bg-[#1c1714] p-4 sm:p-5"
             >
               <div className="grid gap-4 md:grid-cols-[minmax(0,360px)_1fr]">
                 <div className="aspect-square overflow-hidden rounded-3xl border border-white/[0.08] bg-[#111]">
@@ -259,7 +259,7 @@ export function ImageGenerationPanel({
               key={image.id}
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
-              className="overflow-hidden rounded-[28px] border border-white/[0.08] bg-[#191919]"
+              className="overflow-hidden rounded-[28px] border border-white/[0.08] bg-[#1c1714]"
             >
               <div className="grid gap-0 lg:grid-cols-[minmax(0,520px)_1fr]">
                 <a
