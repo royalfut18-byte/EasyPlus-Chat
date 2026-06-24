@@ -154,8 +154,24 @@ export async function streamGeminiResponse(
       },
     })
 
-    // Send the last user message
-    const result = await chat.sendMessage(lastMessage.parts)
+    // Send the last user message, retrying transient overloads. gemini-2.5-flash
+    // intermittently returns 503 "high demand" — since this path also serves
+    // image reading, retry a few times before giving up.
+    let result: Awaited<ReturnType<typeof chat.sendMessage>> | undefined
+    let sendError: any
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        result = await chat.sendMessage(lastMessage.parts)
+        break
+      } catch (err: any) {
+        sendError = err
+        const message = String(err?.message || '')
+        const transient = /\b503\b|UNAVAILABLE|overloaded|high demand|temporarily/i.test(message)
+        if (!transient || attempt === 2) throw err
+        await new Promise((resolve) => setTimeout(resolve, 900 * (attempt + 1)))
+      }
+    }
+    if (!result) throw sendError || new Error('Gemini returned no response')
     const response = result.response
     const text = response.text()
 
@@ -184,6 +200,11 @@ export async function streamGeminiResponse(
     // Handle resource exhausted
     if (error.message?.includes('RESOURCE_EXHAUSTED') || error.message?.includes('Resource has been exhausted')) {
       throw new Error('This EasyPlus tier is temporarily unavailable. Try again later or switch tiers.')
+    }
+
+    // Handle transient overload (503 "high demand") after retries are exhausted
+    if (error.message?.includes('503') || /UNAVAILABLE|overloaded|high demand/i.test(error.message || '')) {
+      throw new Error('This EasyPlus tier is busy right now. Please try again in a moment.')
     }
 
     // Generic error message

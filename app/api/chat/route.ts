@@ -548,55 +548,66 @@ export async function POST(request: NextRequest) {
       })))
     }
 
+    const geminiVisionConfigured = Boolean(process.env.GEMINI_API_KEY)
+
     if (hasCurrentImageAttachments) {
-      const azureVisionSnapshot = getAzureGpt54ConfigSnapshot()
-      azureGpt54Configured = azureVisionSnapshot.envStatus.apiKey.configured &&
-        azureVisionSnapshot.envStatus.baseUrl.configured &&
-        azureVisionSnapshot.envStatus.model.configured
+      if (geminiVisionConfigured) {
+        // Gemini is genuinely vision-capable, so use it to actually read images
+        // regardless of what the azure-gpt54 slot points at. Many deployments in
+        // that slot (e.g. a text-only DeepSeek model) silently ignore image input
+        // and then hallucinate a description — this guarantees real image reading.
+        providerForRequest = 'google'
+        visionFallbackUsed = validationModel.provider !== 'google'
+      } else {
+        const azureVisionSnapshot = getAzureGpt54ConfigSnapshot()
+        azureGpt54Configured = azureVisionSnapshot.envStatus.apiKey.configured &&
+          azureVisionSnapshot.envStatus.baseUrl.configured &&
+          azureVisionSnapshot.envStatus.model.configured
 
-      if (!azureGpt54Configured) {
-        console.error('[Chat API] Image understanding provider missing configuration', {
-          providerSelected: validationModel.provider,
-          messageHasImages: true,
-          attachmentCount: currentMessageAttachmentsCount,
-          imageCount: currentAttachments.filter((attachment: any) => attachment.type === 'image').length,
-          azureGpt54Configured,
-          endpointHost: azureVisionSnapshot.endpointHost,
-          endpointPath: azureVisionSnapshot.endpointPath,
-          model: azureVisionSnapshot.model,
-        })
-        return NextResponse.json({ error: 'Image understanding provider is not configured.' }, { status: 503 })
+        if (!azureGpt54Configured) {
+          console.error('[Chat API] Image understanding provider missing configuration', {
+            providerSelected: validationModel.provider,
+            messageHasImages: true,
+            attachmentCount: currentMessageAttachmentsCount,
+            imageCount: currentAttachments.filter((attachment: any) => attachment.type === 'image').length,
+            azureGpt54Configured,
+            endpointHost: azureVisionSnapshot.endpointHost,
+            endpointPath: azureVisionSnapshot.endpointPath,
+            model: azureVisionSnapshot.model,
+          })
+          return NextResponse.json({ error: 'Image understanding provider is not configured.' }, { status: 503 })
+        }
+
+        const azureVisionDiagnostics = await getAzureGpt54Diagnostics()
+        azureGpt54Configured = azureVisionDiagnostics.configured
+        azureVisionStatusCode = azureVisionDiagnostics.status
+        azureVisionSafeReason = azureVisionDiagnostics.safeReason
+
+        if (!azureVisionDiagnostics.probeOk) {
+          const publicError = mapImageUnderstandingProviderError(
+            new Error(azureVisionDiagnostics.safeReason || CHAT_IMAGE_UNDERSTANDING_NOT_CONFIGURED_ERROR)
+          ).message
+
+          console.error('[Chat API] Image understanding unavailable for current request', {
+            providerSelected: validationModel.provider,
+            providerAttempted: 'azure-gpt54',
+            messageHasImages: true,
+            attachmentCount: currentMessageAttachmentsCount,
+            imageCount: currentAttachments.filter((attachment: any) => attachment.type === 'image').length,
+            azureGpt54Configured: azureVisionDiagnostics.configured,
+            endpointHost: azureVisionDiagnostics.endpointHost,
+            endpointPath: azureVisionDiagnostics.endpointPath,
+            model: azureVisionDiagnostics.model,
+            azureStatusCode: azureVisionDiagnostics.status,
+            safeReason: azureVisionDiagnostics.safeReason,
+          })
+
+          return NextResponse.json({ error: publicError }, { status: 503 })
+        }
+
+        providerForRequest = 'azure-gpt54'
+        visionFallbackUsed = validationModel.provider !== 'azure-gpt54'
       }
-
-      const azureVisionDiagnostics = await getAzureGpt54Diagnostics()
-      azureGpt54Configured = azureVisionDiagnostics.configured
-      azureVisionStatusCode = azureVisionDiagnostics.status
-      azureVisionSafeReason = azureVisionDiagnostics.safeReason
-
-      if (!azureVisionDiagnostics.probeOk) {
-        const publicError = mapImageUnderstandingProviderError(
-          new Error(azureVisionDiagnostics.safeReason || CHAT_IMAGE_UNDERSTANDING_NOT_CONFIGURED_ERROR)
-        ).message
-
-        console.error('[Chat API] Image understanding unavailable for current request', {
-          providerSelected: validationModel.provider,
-          providerAttempted: 'azure-gpt54',
-          messageHasImages: true,
-          attachmentCount: currentMessageAttachmentsCount,
-          imageCount: currentAttachments.filter((attachment: any) => attachment.type === 'image').length,
-          azureGpt54Configured: azureVisionDiagnostics.configured,
-          endpointHost: azureVisionDiagnostics.endpointHost,
-          endpointPath: azureVisionDiagnostics.endpointPath,
-          model: azureVisionDiagnostics.model,
-          azureStatusCode: azureVisionDiagnostics.status,
-          safeReason: azureVisionDiagnostics.safeReason,
-        })
-
-        return NextResponse.json({ error: publicError }, { status: 503 })
-      }
-
-      providerForRequest = 'azure-gpt54'
-      visionFallbackUsed = validationModel.provider !== 'azure-gpt54'
     }
 
     const isLoadingMarker = (content: string) => {
@@ -977,8 +988,10 @@ RULES FOR USING THESE RESULTS:
     // Stage: Route to provider
     stage = 'provider-routing'
     const selectedModel = validationModel
-    const providerAttemptOrder = hasCurrentImageAttachments && providerForRequest === 'azure-gpt54'
-      ? (['azure-gpt54'] as ChatProviderName[])
+    const providerAttemptOrder = hasCurrentImageAttachments
+      ? (providerForRequest === 'google'
+          ? (['google', 'azure-gpt54'] as ChatProviderName[])
+          : (['azure-gpt54'] as ChatProviderName[]))
       : buildTextProviderAttemptOrder(selectedModel.provider)
 
     if (!selectedModel) {
@@ -1321,7 +1334,11 @@ RULES FOR USING THESE RESULTS:
 
               try {
                 if (attemptedProvider === 'google') {
-                  providerStream = await streamGeminiResponse(validatedModel, inputMessages, systemPrompt, temperature, maxTokens)
+                  // When an image request is routed here from a non-Gemini selection
+                  // (e.g. "Claude Opus 4.8"), that model id has no geminiModelId, so
+                  // fall back to the real vision-capable Gemini model.
+                  const geminiRequestModel = selectedModel.geminiModelId ? validatedModel : 'gemini-3.1-pro'
+                  providerStream = await streamGeminiResponse(geminiRequestModel, inputMessages, systemPrompt, temperature, maxTokens)
                 } else if (attemptedProvider === 'anthropic') {
                   providerStream = await streamBedrockResponse(validatedModel, inputMessages, systemPrompt, temperature, maxTokens)
                 } else if (attemptedProvider === 'azure-gpt54') {
