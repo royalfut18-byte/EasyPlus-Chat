@@ -68,6 +68,7 @@ let availabilityCache: { checkedAt: number; diagnostics: AzureGpt54Diagnostics }
 function normalizeBaseUrl(baseUrl: string): string {
   return baseUrl
     .trim()
+    .replace(/[?#].*$/, '') // drop any query/hash (e.g. a pasted ?api-version=…)
     .replace(/\/+$/, '')
     .replace(/\/chat\/completions$/i, '')
 }
@@ -176,8 +177,22 @@ function getHeaders(apiKey: string, authMode: AuthMode): Record<string, string> 
   }
 }
 
+const DEFAULT_AZURE_INFERENCE_API_VERSION = '2024-05-01-preview'
+const AZURE_GPT54_API_VERSION_ENV_PRIORITY = ['AZURE_GPT54_API_VERSION', 'AZURE_OPENAI_API_VERSION', 'AZURE_FOUNDRY_API_VERSION'] as const
+
 function getChatCompletionsUrl(baseUrl: string): string {
-  return `${baseUrl}/chat/completions`
+  const url = `${baseUrl}/chat/completions`
+  // The OpenAI v1 surface (.../openai/v1) does NOT accept an api-version param.
+  if (/\/openai\/v1$/i.test(baseUrl)) return url
+  // Azure AI Foundry "Model Inference" endpoints (.../models) and classic Azure
+  // OpenAI deployment paths REQUIRE ?api-version=… — without it they 404.
+  // DeepSeek / serverless models on Foundry typically use the /models endpoint.
+  const explicitApiVersion = readFirstServerEnv([...AZURE_GPT54_API_VERSION_ENV_PRIORITY]).value
+  const looksLikeInferenceEndpoint = /\/models$/i.test(baseUrl) || /\/openai\/deployments\//i.test(baseUrl)
+  if (explicitApiVersion || looksLikeInferenceEndpoint) {
+    return `${url}?api-version=${encodeURIComponent(explicitApiVersion || DEFAULT_AZURE_INFERENCE_API_VERSION)}`
+  }
+  return url
 }
 
 type CompletionTokenField = 'max_tokens' | 'max_completion_tokens'
