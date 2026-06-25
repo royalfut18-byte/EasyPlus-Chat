@@ -870,12 +870,21 @@ export default function ChatPage() {
 
         if (!active) return
 
-        if (userError || !user) {
+        let authedUser = user
+        if (userError || !authedUser) {
+          // A transient getUser() failure (network blip / token-refresh race)
+          // shouldn't bounce the user to /login and feel like a random reload.
+          // Fall back to the local session and only redirect if there is none.
+          const { data: { session } } = await supabase.auth.getSession()
+          if (!active) return
+          authedUser = session?.user ?? null
+        }
+        if (!authedUser) {
           window.location.assign('/login')
           return
         }
 
-        const profile = await ensureProfile(supabase, user.id)
+        const profile = await ensureProfile(supabase, authedUser.id)
         if (!active) return
         setUserProfile(profile)
         setSessionLoadError(false)
@@ -1077,12 +1086,19 @@ export default function ChatPage() {
         error: userError,
       } = await supabase.auth.getUser()
 
-      if (userError || !user) {
+      let authedUser = user
+      if (userError || !authedUser) {
+        // Tolerate a transient getUser() failure: fall back to the local session
+        // and only redirect when there is genuinely no session.
+        const { data: { session } } = await supabase.auth.getSession()
+        authedUser = session?.user ?? null
+      }
+      if (!authedUser) {
         window.location.assign('/login')
         return
       }
 
-      const profile = await ensureProfile(supabase, user.id)
+      const profile = await ensureProfile(supabase, authedUser.id)
       setUserProfile(profile)
       setSessionLoadError(false)
     } catch (error) {
