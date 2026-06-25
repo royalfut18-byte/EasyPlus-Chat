@@ -3943,7 +3943,14 @@ Requirements:
 }
 
 function extractJson(text: string): string {
-  const trimmed = text.trim()
+  // DeepSeek-style reasoning models can prefix a <think>…</think> block; the
+  // brace-matching below would otherwise grab braces from inside it. Strip the
+  // reasoning (closed or unclosed) so the real JSON object / fence is found.
+  const withoutThink = String(text || '')
+    .replace(/<think>[\s\S]*?<\/think>/gi, '')
+    .replace(/^[\s\S]*?<\/think>/i, '')
+    .trim()
+  const trimmed = (withoutThink || String(text || '')).trim()
   if (trimmed.startsWith('{') && trimmed.endsWith('}')) return trimmed
   const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1]
   if (fenced) return fenced.trim()

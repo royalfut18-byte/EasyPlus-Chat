@@ -61,5 +61,9 @@ export async function updateSession(request: NextRequest) {
     return finalizeResponse(NextResponse.redirect(url))
   }
 
-  return finalizeResponse(supabaseResponse)
+  // Normal (non-redirect) navigations: the refreshed auth cookies are already
+  // on supabaseResponse. Return it WITHOUT the no-store header so the Next.js
+  // client Router Cache can keep visited pages and make navigation feel instant.
+  // The middleware still runs on every real navigation, so auth stays enforced.
+  return supabaseResponse
 }
