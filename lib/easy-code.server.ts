@@ -29,8 +29,11 @@ export const EASY_CODE_MAX_ZIP_BYTES = 12 * 1024 * 1024
 const EASY_CODE_CREATE_TIMEOUT_MS = 90_000
 const EASY_CODE_EDIT_TIMEOUT_MS = 90_000
 const EASY_CODE_REPAIR_TIMEOUT_MS = 45_000
-const EASY_CODE_STATIC_CREATE_MAX_TOKENS = 6000
-const EASY_CODE_STATIC_REPAIR_MAX_TOKENS = 5200
+// Generous ceilings: a full landing page (hero, services, pricing, testimonials,
+// FAQ) across index.html + styles.css + script.js easily exceeds 6k tokens, and a
+// truncated JSON response used to fail validation and ship the generic fallback.
+const EASY_CODE_STATIC_CREATE_MAX_TOKENS = 10000
+const EASY_CODE_STATIC_REPAIR_MAX_TOKENS = 8000
 const EASY_CODE_STATIC_FILES = ['index.html', 'styles.css', 'script.js', 'README.md'] as const
 
 type EasyCodeAiProvider = 'azure-gpt54' | 'azure-deepseek' | 'google' | 'fallback'
@@ -1248,7 +1251,22 @@ function normalizeMeaningfulStaticAiOutput(input: {
       .filter((file) => file.operation !== 'delete')
       .map((file) => [(file.newPath || file.path).toLowerCase(), { ...file } as EasyCodeAiFile])
   )
-  const indexFile = fileMap.get('index.html')
+  let indexFile = fileMap.get('index.html')
+  if (!indexFile?.content?.trim()) {
+    // Tolerate models that nest or rename the entry page (public/index.html,
+    // home.html, a single *.html file): adopt it as index.html rather than
+    // declaring the whole AI output unusable.
+    const htmlEntries = Array.from(fileMap.entries()).filter(([path, file]) =>
+      path.endsWith('.html') && !!file.content?.trim()
+    )
+    const adopted = htmlEntries.find(([path]) => path.endsWith('/index.html')) ||
+      (htmlEntries.length === 1 ? htmlEntries[0] : undefined)
+    if (adopted) {
+      fileMap.delete(adopted[0])
+      indexFile = { ...adopted[1], path: 'index.html', newPath: undefined, operation: 'create' }
+      fileMap.set('index.html', indexFile)
+    }
+  }
   if (!indexFile?.content?.trim()) {
     return {
       aiResult: input.aiResult,
@@ -3688,15 +3706,22 @@ function getStaticPreviewIntegrity(files: Array<Pick<EasyCodeAiFile, 'path' | 'c
   const looksLikePlainTextDump =
     !/<(html|body|main|section|header|div|nav|footer)\b/i.test(html) &&
     /\b(services|benefits|pricing|testimonials|contact|booking|faq)\b/i.test(html)
+  // Inline styling/behaviour is just as renderable as linked files — the
+  // preview serves index.html directly (inlining linked assets when present).
+  const inlineStyleNonEmpty = /<style\b[^>]*>[\s\S]*?[{:;][\s\S]*?<\/style>/i.test(html)
+  const inlineScriptNonEmpty = /<script\b(?![^>]*\bsrc\s*=)[^>]*>[\s\S]*?[;{}()=][\s\S]*?<\/script>/i.test(html)
+  const hasStyling = cssNonEmpty || inlineStyleNonEmpty
+  // Permissive by design: a valid, unescaped HTML document with real styling is
+  // renderable. Do NOT require the exact styles.css/script.js link structure or
+  // non-empty JS — those checks rejected working AI-generated sites (e.g. a
+  // single-file landing page with inline CSS/JS) and forced the generic
+  // fallback template, which read as "Easy Code doesn't work".
   const previewSafe =
     validHtmlDocument &&
     !hasLiteralEscapedNewlines &&
     !hasEntityEscapedHtml &&
     !looksLikePlainTextDump &&
-    hasCssLink &&
-    hasScriptLink &&
-    cssNonEmpty &&
-    jsNonEmpty
+    hasStyling
 
   return {
     validHtmlDocument,
@@ -4982,7 +5007,7 @@ ${fileContext || 'None'}`
   const raw = await callEasyCodeJsonProvider([
     { role: 'system', content: system },
     { role: 'user', content: user },
-  ], staticLandingPage ? EASY_CODE_STATIC_CREATE_MAX_TOKENS : input.mode === 'create' ? 8000 : 7000, {
+  ], staticLandingPage ? EASY_CODE_STATIC_CREATE_MAX_TOKENS : input.mode === 'create' ? 10000 : 9000, {
     timeoutMs: staticLandingPage ? EASY_CODE_CREATE_TIMEOUT_MS : input.mode === 'edit' ? EASY_CODE_EDIT_TIMEOUT_MS : EASY_CODE_CREATE_TIMEOUT_MS,
     phase: getEasyCodePhase(input.mode),
     projectId: input.projectId,
