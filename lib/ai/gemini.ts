@@ -28,7 +28,6 @@ export async function streamGeminiResponse(
 
   // Initialize Gemini
   const genAI = new GoogleGenerativeAI(apiKey)
-  const geminiModel = genAI.getGenerativeModel({ model: model.geminiModelId })
 
   if (process.env.NODE_ENV !== 'production') {
     console.log('[Gemini] Received messages count:', messages.length)
@@ -137,38 +136,51 @@ export async function streamGeminiResponse(
 
     const finalSystemPrompt = systemPromptText || `You are ${model.name}. You are a helpful assistant.`
 
-    // Start chat with history and system instruction
-    const chat = geminiModel.startChat({
-      history,
-      systemInstruction: {
-        role: 'user',
-        parts: [
-          {
-            text: finalSystemPrompt,
-          },
-        ],
-      },
-      generationConfig: {
-        maxOutputTokens: maxTokens,
-        temperature,
-      },
-    })
+    // Send the last user message with a model fallback chain. Free-tier Gemini
+    // keys hit per-model quota (429) and overload (503) blips; retry transient
+    // failures on the primary model, then fall through to the lighter model
+    // instead of failing the whole chat.
+    const sendWithModel = (modelId: string) => genAI
+      .getGenerativeModel({ model: modelId })
+      .startChat({
+        history,
+        systemInstruction: {
+          role: 'user',
+          parts: [{ text: finalSystemPrompt }],
+        },
+        generationConfig: {
+          maxOutputTokens: maxTokens,
+          temperature,
+        },
+      })
+      .sendMessage(lastMessage.parts)
 
-    // Send the last user message, retrying transient overloads. gemini-2.5-flash
-    // intermittently returns 503 "high demand" — since this path also serves
-    // image reading, retry a few times before giving up.
-    let result: Awaited<ReturnType<typeof chat.sendMessage>> | undefined
+    const modelChain = [model.geminiModelId, 'gemini-2.5-flash-lite']
+      .filter((id, index, all): id is string => Boolean(id) && all.indexOf(id) === index)
+
+    let result: Awaited<ReturnType<typeof sendWithModel>> | undefined
     let sendError: any
-    for (let attempt = 0; attempt < 3; attempt += 1) {
-      try {
-        result = await chat.sendMessage(lastMessage.parts)
-        break
-      } catch (err: any) {
-        sendError = err
-        const message = String(err?.message || '')
-        const transient = /\b503\b|UNAVAILABLE|overloaded|high demand|temporarily/i.test(message)
-        if (!transient || attempt === 2) throw err
-        await new Promise((resolve) => setTimeout(resolve, 900 * (attempt + 1)))
+    chain: for (const chainModelId of modelChain) {
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        try {
+          result = await sendWithModel(chainModelId)
+          if (chainModelId !== modelChain[0]) {
+            console.info('[Gemini] Chat fallback model succeeded', { modelId: chainModelId })
+          }
+          break chain
+        } catch (err: any) {
+          sendError = err
+          const message = String(err?.message || '')
+          console.error('[Gemini] sendMessage attempt failed', {
+            modelId: chainModelId,
+            attempt,
+            message: message.slice(0, 200),
+          })
+          // Hard errors (bad request, safety block) won't improve on retry or
+          // on a smaller model — surface them to the friendly-error mapping.
+          if (!isTransientGeminiError(message)) throw err
+          if (attempt === 0) await new Promise((resolve) => setTimeout(resolve, 1100))
+        }
       }
     }
     if (!result) throw sendError || new Error('Gemini returned no response')
@@ -219,6 +231,16 @@ export async function streamGeminiResponse(
  * if there are no usable images, Gemini isn't configured, or the call fails (the
  * caller then proceeds without image context rather than crashing).
  */
+// Vision model fallback chain. Both IDs verified vision-capable on the
+// project's key; free-tier Gemini keys hit per-model quota (429) and overload
+// (503) blips, so a single-model, single-attempt read regularly failed and the
+// chat had to tell the user "couldn't read the image".
+const GEMINI_VISION_MODEL_CHAIN = ['gemini-2.5-flash', 'gemini-2.5-flash-lite']
+
+function isTransientGeminiError(message: string): boolean {
+  return /\b(429|503)\b|RESOURCE_EXHAUSTED|quota|UNAVAILABLE|overloaded|high demand|temporarily|fetch failed|network|ETIMEDOUT|ECONNRESET/i.test(message)
+}
+
 export async function describeImagesForTextModel(
   images: Array<{ dataUrl?: string; mimeType?: string }>,
   userQuestion?: string
@@ -242,23 +264,36 @@ export async function describeImagesForTextModel(
 The user's question about the image is: "${(userQuestion || '').slice(0, 1000) || '(none given)'}"`
 
   const genAI = new GoogleGenerativeAI(apiKey)
-  const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' })
+  const modelChain = [process.env.GEMINI_VISION_MODEL, ...GEMINI_VISION_MODEL_CHAIN]
+    .filter((id, index, all): id is string => Boolean(id) && all.indexOf(id) === index)
 
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    try {
-      const result = await model.generateContent({
-        contents: [{ role: 'user', parts: [{ text: instruction }, ...imageParts] as any }],
-        generationConfig: { temperature: 0.2, maxOutputTokens: 2048 },
-      })
-      const text = result.response.text()
-      return text && text.trim() ? text.trim() : null
-    } catch (err: any) {
-      const transient = /\b503\b|UNAVAILABLE|overloaded|high demand|temporarily/i.test(String(err?.message || ''))
-      if (!transient || attempt === 2) {
-        console.error('[Gemini] Image description failed:', err?.message)
-        return null
+  for (const modelId of modelChain) {
+    const model = genAI.getGenerativeModel({ model: modelId })
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        const result = await model.generateContent({
+          contents: [{ role: 'user', parts: [{ text: instruction }, ...imageParts] as any }],
+          generationConfig: { temperature: 0.2, maxOutputTokens: 2048 },
+        })
+        const text = result.response.text()
+        if (text && text.trim()) {
+          if (modelId !== modelChain[0]) {
+            console.info('[Gemini] Vision fallback model succeeded', { modelId })
+          }
+          return text.trim()
+        }
+        break // empty response: retrying the same model rarely helps, move on
+      } catch (err: any) {
+        const message = String(err?.message || '')
+        console.error('[Gemini] Vision describe attempt failed', {
+          modelId,
+          attempt,
+          message: message.slice(0, 200),
+        })
+        if (!isTransientGeminiError(message)) break // hard error: next model
+        if (attempt === 0) await new Promise((resolve) => setTimeout(resolve, 1200))
+        // after the retry, fall through to the next model in the chain
       }
-      await new Promise((resolve) => setTimeout(resolve, 900 * (attempt + 1)))
     }
   }
   return null
