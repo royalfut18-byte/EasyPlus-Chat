@@ -32,8 +32,12 @@ const INTERNAL_AI_MODELS: InternalAIModel[] = [
     provider: 'azure-gpt54',
   },
   {
+    // "Gemini 3.1 Pro" now routes to the Azure GPT slot like the other text
+    // tiers (all chat tiers serve the same deployment, e.g. gpt-5.6-sol).
+    // geminiModelId is kept because Easy Code's provider chain and the vision
+    // fallback still dispatch real Gemini calls through this entry.
     ...AI_MODELS[2],
-    provider: 'google',
+    provider: 'azure-gpt54',
     geminiModelId: 'gemini-2.5-flash',
   },
   {

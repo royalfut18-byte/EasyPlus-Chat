@@ -37,6 +37,7 @@ import { createGeneratedFileAttachment } from '@/lib/generated-file-client'
 import { detectGeneratedFileIntent, getGeneratedFileLabel, getGeneratedFileMimeType, isGeneratedFileArtifactLanguage, type GeneratedFileIntent } from '@/lib/generated-files'
 import {
   getAcceptedChatAttachmentExtensions,
+  getUnsupportedChatAttachmentError,
   inferChatAttachmentMimeType,
   isSupportedChatAttachment,
   MAX_CHAT_ATTACHMENTS,
@@ -2900,7 +2901,7 @@ export default function ChatPage() {
     const sourceFile = file.type === mime ? file : new File([file], file.name, { type: mime, lastModified: file.lastModified })
 
     if (!isSupportedChatAttachment({ filename: file.name, mimeType: mime })) {
-      toast({ title: 'Unsupported file type', description: `Supported: ${HERO_ALLOWED_EXTENSIONS.join(', ')}`, variant: 'destructive' })
+      toast({ title: 'Unsupported file type', description: getUnsupportedChatAttachmentError(file.name), variant: 'destructive' })
       return
     }
     if (file.size > HERO_MAX_FILE_SIZE) {
@@ -3406,7 +3407,7 @@ export default function ChatPage() {
                             <input
                               ref={heroFileInputRef}
                               type="file"
-                              accept=".pdf,.txt,.md,.csv,.json,.docx,.xlsx,.pptx,.png,.jpg,.jpeg,.webp,.gif,.mp4,.webm,.mp3,.wav,.zip,.tar,.gz"
+                              accept={HERO_ALLOWED_EXTENSIONS.join(',')}
                               multiple
                               onChange={(e) => {
                                 handleHeroFileSelect(e.target.files)

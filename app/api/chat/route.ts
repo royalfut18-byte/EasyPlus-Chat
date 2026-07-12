@@ -550,12 +550,26 @@ export async function POST(request: NextRequest) {
 
     const geminiVisionConfigured = Boolean(process.env.GEMINI_API_KEY)
 
-    // When Gemini is configured we read images with Gemini's vision and hand the
-    // description to the selected (text) model to answer — see the image
-    // description step below. The selected model keeps writing the reply.
-    // Only when Gemini is unavailable do we send the raw image to the azure slot
-    // and require that deployment to be vision-capable.
-    if (hasCurrentImageAttachments && !geminiVisionConfigured) {
+    // Native vision: when the azure slot points at a vision-capable GPT
+    // deployment (model name contains "gpt", or AZURE_GPT54_VISION=true/false
+    // to override), send images straight to it — the answering model sees the
+    // real pixels, no third-party description step. The Gemini describe→strip
+    // flow below remains the fallback for text-only deployments (e.g. DeepSeek).
+    const azureVisionSnapshotForRouting = getAzureGpt54ConfigSnapshot()
+    const azureSlotConfigured = azureVisionSnapshotForRouting.envStatus.apiKey.configured &&
+      azureVisionSnapshotForRouting.envStatus.baseUrl.configured &&
+      azureVisionSnapshotForRouting.envStatus.model.configured
+    const azureVisionEnv = (process.env.AZURE_GPT54_VISION || '').trim().toLowerCase()
+    const azureVisionNative = azureSlotConfigured && (
+      azureVisionEnv
+        ? ['1', 'true', 'yes', 'on'].includes(azureVisionEnv)
+        : /gpt/i.test(azureVisionSnapshotForRouting.model || '')
+    )
+
+    if (hasCurrentImageAttachments && azureVisionNative) {
+      providerForRequest = 'azure-gpt54'
+      visionFallbackUsed = validationModel.provider !== 'azure-gpt54'
+    } else if (hasCurrentImageAttachments && !geminiVisionConfigured) {
       {
         const azureVisionSnapshot = getAzureGpt54ConfigSnapshot()
         azureGpt54Configured = azureVisionSnapshot.envStatus.apiKey.configured &&
@@ -1120,7 +1134,7 @@ RULES FOR USING THESE RESULTS:
     // context and writes the actual reply. If the user picked Gemini directly it
     // sees the image natively, so this is skipped. This only mutates the
     // model-bound copy (messagesForModel) — the saved message keeps the image.
-    if (hasCurrentImageAttachments && geminiVisionConfigured && providerForRequest !== 'google') {
+    if (hasCurrentImageAttachments && !azureVisionNative && geminiVisionConfigured && providerForRequest !== 'google') {
       const lastModelMessage = messagesForModel[messagesForModel.length - 1]
       const imagesToRead = (lastModelMessage?.attachments || [])
         .filter((attachment) => attachment.type === 'image' && attachment.dataUrl)

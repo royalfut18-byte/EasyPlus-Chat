@@ -10,7 +10,7 @@ import { useR2Upload } from '@/hooks/use-r2-upload'
 import { ReasoningSelector } from '@/components/chat/reasoning-selector'
 import {
   CHAT_ATTACHMENT_TOO_MANY_ERROR,
-  CHAT_ATTACHMENT_UNSUPPORTED_ERROR,
+  getUnsupportedChatAttachmentError,
   MAX_CHAT_ATTACHMENTS,
   SUPPORTED_CHAT_ATTACHMENT_EXTENSIONS,
 } from '@/lib/chat-attachments'
@@ -163,7 +163,7 @@ export function ChatInput({ onSend, disabled, isLoading, conversationId, reasoni
     if (!ALLOWED_EXTENSIONS.includes(ext)) {
       toast({
         title: 'Unsupported file type',
-        description: CHAT_ATTACHMENT_UNSUPPORTED_ERROR,
+        description: getUnsupportedChatAttachmentError(file.name),
         variant: 'destructive',
       })
       return
@@ -515,7 +515,7 @@ export function ChatInput({ onSend, disabled, isLoading, conversationId, reasoni
             <input
               ref={fileInputRef}
               type="file"
-              accept=".pdf,.txt,.md,.csv,.json,.docx,.xlsx,.pptx,.png,.jpg,.jpeg,.webp,.gif,.mp4,.webm,.mp3,.wav,.zip,.tar,.gz"
+              accept={ALLOWED_EXTENSIONS.join(',')}
               multiple
               onChange={(e) => {
                 handleFileSelect(e.target.files)

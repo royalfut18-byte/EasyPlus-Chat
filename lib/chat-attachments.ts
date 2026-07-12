@@ -4,7 +4,33 @@ export const MAX_CHAT_EXTRACTED_TEXT_CHARS_PER_FILE = 40000
 export const MAX_CHAT_TOTAL_EXTRACTED_TEXT_CHARS = 120000
 
 export const CHAT_ATTACHMENT_UNSUPPORTED_ERROR =
-  'Unsupported file type. Please upload an image, PDF, Office document, ZIP, or a common text/code/config file.'
+  'Unsupported file type. Please upload an image, PDF, Office document, ZIP, a text-based 3D model (OBJ, GLTF, STL, PLY), or a common text/code/config file.'
+
+// Binary 3D/CAD formats we cannot parse into text. Rejected with a specific,
+// actionable message instead of the generic "unsupported file" error.
+export const BINARY_3D_MODEL_EXTENSIONS = [
+  '.glb',
+  '.fbx',
+  '.blend',
+  '.usdz',
+  '.3ds',
+  '.max',
+  '.c4d',
+  '.skp',
+  '.step',
+  '.stp',
+  '.iges',
+  '.igs',
+] as const
+
+export function getUnsupportedChatAttachmentError(filename?: string | null): string {
+  const ext = getChatAttachmentExtension(filename)
+  if ((BINARY_3D_MODEL_EXTENSIONS as readonly string[]).includes(ext)) {
+    const shortName = (filename || 'file').split(/[\\/]/).pop()
+    return `"${shortName}" is a binary 3D format (${ext}) that can't be read directly. Export it as OBJ, GLTF, ASCII STL, or PLY from your 3D tool and upload that instead — those can be analyzed.`
+  }
+  return CHAT_ATTACHMENT_UNSUPPORTED_ERROR
+}
 
 export const CHAT_TEXT_ATTACHMENT_EXTENSION_TO_MIME: Record<string, string> = {
   '.txt': 'text/plain',
@@ -66,6 +92,18 @@ export const CHAT_TEXT_ATTACHMENT_EXTENSION_TO_MIME: Record<string, string> = {
   '.ipynb': 'application/json',
   '.dockerignore': 'text/plain',
   '.gitignore': 'text/plain',
+  // Text-based 3D model formats — plain text (OBJ/MTL/STL/PLY/USDA), JSON
+  // (GLTF), or XML (DAE/X3D). A text model can genuinely analyze these:
+  // count vertices, describe geometry/materials, convert between formats.
+  '.obj': 'text/plain',
+  '.mtl': 'text/plain',
+  '.stl': 'text/plain',
+  '.ply': 'text/plain',
+  '.usda': 'text/plain',
+  '.gltf': 'application/json',
+  '.dae': 'application/xml',
+  '.x3d': 'application/xml',
+  '.svg': 'application/xml',
 }
 
 export const CHAT_TEXT_ATTACHMENT_BASENAME_TO_MIME: Record<string, string> = {
@@ -154,6 +192,15 @@ export const SUPPORTED_CHAT_ATTACHMENT_EXTENSIONS = [
   '.ipynb',
   '.dockerignore',
   '.gitignore',
+  '.obj',
+  '.mtl',
+  '.stl',
+  '.ply',
+  '.usda',
+  '.gltf',
+  '.dae',
+  '.x3d',
+  '.svg',
   '.docx',
   '.xlsx',
   '.pptx',
@@ -235,6 +282,14 @@ export function normalizeChatAttachmentMimeType(mimeType?: string | null): strin
   if (normalized === 'text/x-c++') return 'text/x-c++src'
   if (normalized === 'text/x-script.python') return 'text/x-python'
   if (normalized === 'application/x-yml') return 'application/yaml'
+  // SVG is markup: treat it as a readable text document rather than a raster
+  // image (the vision pipeline only accepts PNG/JPEG/WebP).
+  if (normalized === 'image/svg+xml') return 'application/xml'
+  // Browser-supplied mimes for text-based 3D formats.
+  if (normalized === 'model/gltf+json') return 'application/json'
+  if (normalized === 'model/vnd.collada+xml') return 'application/xml'
+  if (normalized === 'model/obj' || normalized === 'model/mtl') return 'text/plain'
+  if (normalized === 'model/stl' || normalized === 'model/x.stl-ascii' || normalized === 'application/sla') return 'text/plain'
   return normalized
 }
 

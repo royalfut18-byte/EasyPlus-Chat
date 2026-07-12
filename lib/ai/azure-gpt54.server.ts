@@ -61,6 +61,8 @@ export interface AzureGpt54JsonOptions {
   responseFormatRetryAttempted?: boolean
   tokenFieldOverride?: CompletionTokenField
   tokenFieldRetryAttempted?: boolean
+  omitTemperature?: boolean
+  temperatureRetryAttempted?: boolean
 }
 
 let availabilityCache: { checkedAt: number; diagnostics: AzureGpt54Diagnostics } | null = null
@@ -295,6 +297,14 @@ function isUnsupportedJsonResponseFormat(payload: { code: string | null; message
   return detail.includes('response_format') || detail.includes('json_object')
 }
 
+// Some GPT-5.x deployments (e.g. gpt-5.6-sol) only accept the default
+// temperature and 400 any custom value. Detect that so we can transparently
+// retry the request with the temperature field omitted.
+function isUnsupportedTemperature(payload: { code: string | null; message: string | null }): boolean {
+  const detail = `${payload.code || ''} ${payload.message || ''}`.toLowerCase()
+  return detail.includes('temperature') && (detail.includes('unsupported') || detail.includes('does not support'))
+}
+
 function toProviderError(
   error: Error,
   snapshot: AzureTextProviderConfigSnapshot,
@@ -440,9 +450,12 @@ export async function getAzureGpt54Diagnostics(force = false): Promise<AzureGpt5
         method: 'POST',
         body: JSON.stringify({
           model,
+          // No temperature: some GPT-5.x deployments reject any non-default
+          // value, and the probe only needs to confirm reachability.
           messages: [{ role: 'user', content: 'hi' }],
-          temperature: 0,
-          ...getCompletionTokenField(model, 8, tokenField),
+          // Generous cap: reasoning models spend completion tokens thinking
+          // before emitting text; 8 tokens made healthy deployments look empty.
+          ...getCompletionTokenField(model, 256, tokenField),
           stream: false,
         }),
         signal: AbortSignal.timeout(30_000),
@@ -622,7 +635,7 @@ export async function generateAzureGpt54Json(
       body: JSON.stringify({
         model,
         messages,
-        temperature,
+        ...(options.omitTemperature ? {} : { temperature }),
         ...getCompletionTokenField(model, maxTokens, options.tokenFieldOverride),
         stream: false,
         ...(options.responseFormat === 'json_object'
@@ -669,6 +682,23 @@ export async function generateAzureGpt54Json(
       providerErrorCode: errorPayload.code,
       providerErrorMessage: errorPayload.message,
     })
+    if (
+      response.status === 400 &&
+      !options.temperatureRetryAttempted &&
+      isUnsupportedTemperature(errorPayload)
+    ) {
+      console.warn('[Azure GPT-5.4] Retrying JSON request without temperature', {
+        projectId: options.projectId || null,
+        phase: options.phase || 'json_generation',
+        status: response.status,
+      })
+      return generateAzureGpt54Json(messages, {
+        ...options,
+        omitTemperature: true,
+        temperatureRetryAttempted: true,
+      })
+    }
+
     if (
       response.status === 400 &&
       !options.tokenFieldRetryAttempted &&
@@ -749,7 +779,12 @@ export async function streamAzureGpt54Response(
   systemPromptText: string,
   temperature: number = 0.7,
   maxTokens: number = 4096,
-  retryState: { tokenFieldOverride?: CompletionTokenField; tokenFieldRetryAttempted?: boolean } = {}
+  retryState: {
+    tokenFieldOverride?: CompletionTokenField
+    tokenFieldRetryAttempted?: boolean
+    omitTemperature?: boolean
+    temperatureRetryAttempted?: boolean
+  } = {}
 ): Promise<ReadableStream> {
   const { apiKey, baseUrl, model, apiKeyConfigured, baseUrlConfigured, modelConfigured, envStatus } = getProviderConfig()
   const endpoint = getEndpointMetadata(baseUrl)
@@ -787,7 +822,7 @@ export async function streamAzureGpt54Response(
       body: JSON.stringify({
         model,
         messages: toAzureChatMessages(messages, systemPromptText),
-        temperature,
+        ...(retryState.omitTemperature ? {} : { temperature }),
         ...getCompletionTokenField(model, Math.min(maxTokens, 16384), retryState.tokenFieldOverride),
         stream: true,
       }),
@@ -809,6 +844,21 @@ export async function streamAzureGpt54Response(
       })
       if (
         response.status === 400 &&
+        !retryState.temperatureRetryAttempted &&
+        isUnsupportedTemperature(errorPayload)
+      ) {
+        console.warn('[Azure GPT-5.4] Retrying stream without temperature', {
+          status: response.status,
+        })
+        clearTimeout(totalTimeout)
+        return streamAzureGpt54Response(messages, systemPromptText, temperature, maxTokens, {
+          ...retryState,
+          omitTemperature: true,
+          temperatureRetryAttempted: true,
+        })
+      }
+      if (
+        response.status === 400 &&
         !retryState.tokenFieldRetryAttempted &&
         isWrongCompletionTokenField(errorPayload)
       ) {
@@ -819,6 +869,7 @@ export async function streamAzureGpt54Response(
         })
         clearTimeout(totalTimeout)
         return streamAzureGpt54Response(messages, systemPromptText, temperature, maxTokens, {
+          ...retryState,
           tokenFieldOverride: flipped,
           tokenFieldRetryAttempted: true,
         })
