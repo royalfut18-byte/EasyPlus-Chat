@@ -28,7 +28,7 @@ export function ModelSelector({ selectedModel, onSelectModel, availableModelIds,
 
   const getSelectedGlow = (model: AIModel) => {
     if (selectedModel !== model.id) return undefined
-    const color = model.id === 'chat-gpt-5.5'
+    const color = model.id === 'chat-gpt-5.6'
       ? '16, 163, 127'
       : model.id === 'claude-opus-4.8'
         ? '217, 119, 87'
@@ -43,7 +43,7 @@ export function ModelSelector({ selectedModel, onSelectModel, availableModelIds,
   const getShortName = (name: string) => {
     return name
       .replace('Claude Opus', 'Claude')
-      .replace('Chat GPT 5.5', 'GPT 5.5')
+      .replace('Chat GPT 5.6', 'GPT 5.6')
       .replace('Gemini 3.1 Pro', 'Gemini 3.1')
       .replace('DeepSeek V4 Pro', 'DeepSeek V4')
       .replace('Image Generation', 'Image Gen')
@@ -53,7 +53,7 @@ export function ModelSelector({ selectedModel, onSelectModel, availableModelIds,
     const iconClassName = cn(
       'h-3 w-3 transition-colors md:h-3.5 md:w-3.5',
       selectedModel === model.id
-        ? model.id === 'chat-gpt-5.5'
+        ? model.id === 'chat-gpt-5.6'
           ? 'text-[#10a37f]'
           : model.id === 'claude-opus-4.8'
             ? 'text-[#d97757]'
@@ -70,7 +70,7 @@ export function ModelSelector({ selectedModel, onSelectModel, availableModelIds,
         'flex h-5 w-5 items-center justify-center rounded-md transition-colors',
         selectedModel === model.id ? 'bg-white/[0.08]' : 'bg-transparent'
       )}>
-        {model.id === 'chat-gpt-5.5' ? (
+        {model.id === 'chat-gpt-5.6' ? (
           <ChatGPTIcon className={iconClassName} />
         ) : model.id === 'claude-opus-4.8' ? (
           <AnthropicIcon className={iconClassName} />

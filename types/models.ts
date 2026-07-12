@@ -16,8 +16,8 @@ export const AI_MODELS: AIModel[] = [
     color: '#d97757',
   },
   {
-    id: 'chat-gpt-5.5',
-    name: 'Chat GPT 5.5',
+    id: 'chat-gpt-5.6',
+    name: 'Chat GPT 5.6',
     tier: 'fast',
     costPerMessage: 15,
     color: '#10b981',
@@ -52,7 +52,7 @@ export const DEFAULT_CHAT_MODEL_ID = 'deepseek-v4-pro'
 export const UI_MODEL_ORDER = [
   'deepseek-v4-pro',
   'claude-opus-4.8',
-  'chat-gpt-5.5',
+  'chat-gpt-5.6',
   'gemini-3.1-pro',
   'image-generation',
 ] as const
@@ -75,7 +75,7 @@ export const PUBLIC_MODEL_CAPABILITIES = {
     zipReading: true,
     downloads: true,
   },
-  'chat-gpt-5.5': {
+  'chat-gpt-5.6': {
     artifacts: true,
     interactiveArtifacts: true,
     documents: true,

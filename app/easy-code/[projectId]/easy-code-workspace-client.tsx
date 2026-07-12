@@ -27,7 +27,7 @@ interface EasyCodeProject {
 }
 
 const PROVIDER_LABELS: Record<string, string> = {
-  'azure-gpt54': 'GPT 5.5',
+  'azure-gpt54': 'GPT 5.6',
   'azure-deepseek': 'DeepSeek V4 Pro',
   google: 'Gemini 3.1 Pro',
   fallback: 'offline template',

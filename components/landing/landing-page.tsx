@@ -83,7 +83,7 @@ const landingModels = UI_MODELS.map((model) => ({
   badge:
     model.id === 'claude-opus-4.8'
       ? 'Max'
-      : model.id === 'chat-gpt-5.5'
+      : model.id === 'chat-gpt-5.6'
         ? 'Fast'
         : model.id === 'gemini-3.1-pro'
           ? 'Research'

@@ -53,14 +53,16 @@ const INTERNAL_AI_MODELS: InternalAIModel[] = [
 const LEGACY_MODEL_IDS: Record<string, string> = {
   'claude-opus-4.6': 'claude-opus-4.8',
   'claude-opus-4.7': 'claude-opus-4.8',
-  'claude-haiku-4.5': 'chat-gpt-5.5',
+  'claude-haiku-4.5': 'chat-gpt-5.6',
+  // Old conversations saved before the GPT 5.5 -> 5.6 rename.
+  'chat-gpt-5.5': 'chat-gpt-5.6',
   'gemini-2.5-flash': 'gemini-3.1-pro',
   'deepseek-ai/deepseek-v4-pro': 'deepseek-v4-pro',
   'easyplus-max': 'claude-opus-4.8',
-  'easyplus-fast': 'chat-gpt-5.5',
+  'easyplus-fast': 'chat-gpt-5.6',
   'easyplus-pro': 'gemini-3.1-pro',
   'epm-7f3a9c': 'claude-opus-4.8',
-  'epm-b1d4e8': 'chat-gpt-5.5',
+  'epm-b1d4e8': 'chat-gpt-5.6',
   'epm-c6a275': 'gemini-3.1-pro',
 }
 
