@@ -102,8 +102,8 @@ function buildModelPersona(model: AIModel): string | null {
       '- Be genuinely thorough on complex or open-ended tasks, but stay substantive — no padding, hedging, or filler.',
       '- Surface trade-offs and assumptions explicitly rather than flattening them.',
     ].join('\n'),
-    'chat-gpt-5.5': [
-      'MODEL STYLE (GPT 5.5):',
+    'chat-gpt-5.6': [
+      'MODEL STYLE (GPT 5.6):',
       '- Be sharp, efficient, and clearly organized.',
       '- Get to a complete, correct answer quickly with tight structure and no waffle.',
     ].join('\n'),
