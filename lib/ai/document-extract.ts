@@ -48,7 +48,22 @@ function extractTextFromMarkdown(dataUrl: string): string {
 }
 
 function extractPlainTextBuffer(buffer: Buffer): string {
-  return buffer.toString('utf-8')
+  const text = buffer.toString('utf-8')
+  // Guard against binary payloads with a text-friendly extension (e.g. a binary
+  // STL uploaded as .stl): if a meaningful share of the decode is replacement
+  // or control characters, don't feed mojibake to the model.
+  const sample = text.slice(0, 4000)
+  if (sample.length > 0) {
+    let badChars = 0
+    for (const char of sample) {
+      const code = char.codePointAt(0) || 0
+      if (code === 0xfffd || (code < 32 && code !== 9 && code !== 10 && code !== 13)) badChars += 1
+    }
+    if (badChars / sample.length > 0.05) {
+      return '[This file contains binary (non-text) data and its contents could not be extracted as text. If it is a 3D model, an ASCII/text export (OBJ, GLTF, ASCII STL, PLY) can be read instead.]'
+    }
+  }
+  return text
 }
 
 function isTextLikeAttachment(mimeType: string, name: string): boolean {

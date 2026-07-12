@@ -17,6 +17,7 @@ import {
   CHAT_ATTACHMENT_TOO_MANY_ERROR,
   CHAT_ATTACHMENT_TOO_MANY_IMAGES_ERROR,
   CHAT_ATTACHMENT_UNSUPPORTED_ERROR,
+  getUnsupportedChatAttachmentError,
   MAX_CHAT_ATTACHMENTS,
   MAX_CHAT_IMAGE_ATTACHMENTS,
   MAX_CHAT_TOTAL_EXTRACTED_TEXT_CHARS,
@@ -470,7 +471,7 @@ export function validateCurrentMessageAttachments(attachments?: ChatAttachment[]
 
   for (const attachment of attachments) {
     if (!isSupportedChatAttachment({ filename: attachment.name, mimeType: attachment.mimeType })) {
-      throw new Error(CHAT_ATTACHMENT_UNSUPPORTED_ERROR)
+      throw new Error(getUnsupportedChatAttachmentError(attachment.name))
     }
 
     if (attachment.type === 'image' && !isSupportedChatImageMimeType(attachment.mimeType)) {
