@@ -14,7 +14,6 @@ import {
   Shield,
   Brain,
   FolderOpen,
-  Code2,
   ChevronDown,
   ChevronRight,
 } from 'lucide-react'
@@ -136,10 +135,6 @@ export function Sidebar({
               <Button onClick={() => { closeDrawer(); onNewChat() }} className="mt-3 h-9 w-full justify-start rounded-lg border border-white/[0.07] bg-white/[0.02] px-3 text-sm text-gray-200 hover:bg-white/[0.06] hover:text-white">
                 <Plus className="mr-2 h-4 w-4 text-clay-400" />
                 New Chat
-              </Button>
-              <Button onClick={() => navigateFromDrawer('/easy-code')} className="mt-2 h-9 w-full justify-start rounded-lg border border-clay-300/[0.12] bg-clay-500/[0.06] px-3 text-sm text-clay-100 hover:bg-clay-500/[0.12] hover:text-white">
-                <Code2 className="mr-2 h-4 w-4 text-clay-300" />
-                Easy Code
               </Button>
             </div>
 
