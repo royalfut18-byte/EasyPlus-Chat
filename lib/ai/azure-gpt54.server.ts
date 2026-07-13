@@ -305,6 +305,25 @@ function isUnsupportedTemperature(payload: { code: string | null; message: strin
   return detail.includes('temperature') && (detail.includes('unsupported') || detail.includes('does not support'))
 }
 
+export type AzureReasoningEffort = 'minimal' | 'low' | 'medium' | 'high'
+
+// Once a deployment rejects a parameter (e.g. gpt-5.6-sol rejects any custom
+// temperature), remember it for the lifetime of this server instance so later
+// requests skip the doomed first attempt instead of paying a wasted provider
+// round-trip (~0.5s) on every message before the auto-retry.
+const unsupportedParamCache = new Set<string>()
+
+function paramCacheKey(baseUrl: string | undefined, model: string, param: string): string {
+  return `${baseUrl || ''}|${model}|${param}`
+}
+
+// Same transparent-retry treatment for reasoning_effort: deployments that
+// don't support it (or a specific level) 400 with the param name in the error.
+function isUnsupportedReasoningEffort(payload: { code: string | null; message: string | null }): boolean {
+  const detail = `${payload.code || ''} ${payload.message || ''}`.toLowerCase()
+  return detail.includes('reasoning_effort') || (detail.includes('reasoning') && (detail.includes('unsupported') || detail.includes('does not support')))
+}
+
 function toProviderError(
   error: Error,
   snapshot: AzureTextProviderConfigSnapshot,
@@ -635,7 +654,9 @@ export async function generateAzureGpt54Json(
       body: JSON.stringify({
         model,
         messages,
-        ...(options.omitTemperature ? {} : { temperature }),
+        ...(options.omitTemperature || unsupportedParamCache.has(paramCacheKey(baseUrl, model, 'temperature'))
+          ? {}
+          : { temperature }),
         ...getCompletionTokenField(model, maxTokens, options.tokenFieldOverride),
         stream: false,
         ...(options.responseFormat === 'json_object'
@@ -692,6 +713,7 @@ export async function generateAzureGpt54Json(
         phase: options.phase || 'json_generation',
         status: response.status,
       })
+      unsupportedParamCache.add(paramCacheKey(baseUrl, model, 'temperature'))
       return generateAzureGpt54Json(messages, {
         ...options,
         omitTemperature: true,
@@ -784,6 +806,9 @@ export async function streamAzureGpt54Response(
     tokenFieldRetryAttempted?: boolean
     omitTemperature?: boolean
     temperatureRetryAttempted?: boolean
+    reasoningEffort?: AzureReasoningEffort
+    omitReasoningEffort?: boolean
+    reasoningEffortRetryAttempted?: boolean
   } = {}
 ): Promise<ReadableStream> {
   const { apiKey, baseUrl, model, apiKeyConfigured, baseUrlConfigured, modelConfigured, envStatus } = getProviderConfig()
@@ -822,7 +847,14 @@ export async function streamAzureGpt54Response(
       body: JSON.stringify({
         model,
         messages: toAzureChatMessages(messages, systemPromptText),
-        ...(retryState.omitTemperature ? {} : { temperature }),
+        ...(retryState.omitTemperature || unsupportedParamCache.has(paramCacheKey(baseUrl, model, 'temperature'))
+          ? {}
+          : { temperature }),
+        ...(retryState.reasoningEffort &&
+          !retryState.omitReasoningEffort &&
+          !unsupportedParamCache.has(paramCacheKey(baseUrl, model, 'reasoning_effort'))
+          ? { reasoning_effort: retryState.reasoningEffort }
+          : {}),
         ...getCompletionTokenField(model, Math.min(maxTokens, 16384), retryState.tokenFieldOverride),
         stream: true,
       }),
@@ -850,11 +882,30 @@ export async function streamAzureGpt54Response(
         console.warn('[Azure GPT-5.4] Retrying stream without temperature', {
           status: response.status,
         })
+        unsupportedParamCache.add(paramCacheKey(baseUrl, model, 'temperature'))
         clearTimeout(totalTimeout)
         return streamAzureGpt54Response(messages, systemPromptText, temperature, maxTokens, {
           ...retryState,
           omitTemperature: true,
           temperatureRetryAttempted: true,
+        })
+      }
+      if (
+        response.status === 400 &&
+        retryState.reasoningEffort &&
+        !retryState.reasoningEffortRetryAttempted &&
+        isUnsupportedReasoningEffort(errorPayload)
+      ) {
+        console.warn('[Azure GPT-5.4] Retrying stream without reasoning_effort', {
+          status: response.status,
+          reasoningEffort: retryState.reasoningEffort,
+        })
+        unsupportedParamCache.add(paramCacheKey(baseUrl, model, 'reasoning_effort'))
+        clearTimeout(totalTimeout)
+        return streamAzureGpt54Response(messages, systemPromptText, temperature, maxTokens, {
+          ...retryState,
+          omitReasoningEffort: true,
+          reasoningEffortRetryAttempted: true,
         })
       }
       if (
