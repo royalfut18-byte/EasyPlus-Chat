@@ -44,11 +44,6 @@ const ZIP_READ_ONLY_PATTERNS = [
   /\bzip\b.*\b(read|analyse|analyze|explain|inspect|review|summari[sz]e|understand|look at|what(?:'s| is) in|open|check)\b/i,
 ]
 
-const EASY_CODE_PATTERNS = [
-  /\beasy code\b/i,
-  /\beasy code project\b/i,
-]
-
 export function detectZipProjectIntent(message: string): boolean {
   const text = String(message || '').trim()
   if (!text) return false
@@ -76,7 +71,6 @@ export function detectArtifactIntent(message: string, currentArtifact?: Artifact
 
   if (detectGeneratedFileIntent(text)) return false
   if (detectZipProjectIntent(text)) return false
-  if (EASY_CODE_PATTERNS.some((pattern) => pattern.test(text))) return false
 
   if (detectArtifactRefinementIntent(text, currentArtifact)) {
     return true

@@ -3,7 +3,6 @@
 import { motion } from 'framer-motion'
 import {
   Box,
-  Code2,
   FolderOpen,
   Globe,
   MessageSquare,
@@ -42,10 +41,6 @@ export function WorkspacePreview() {
               <button className="mt-3 flex h-9 w-full items-center justify-start rounded-lg border border-white/[0.07] bg-white/[0.02] px-3 text-sm text-gray-200">
                 <Plus className="mr-2 h-4 w-4 text-clay-400" />
                 New Chat
-              </button>
-              <button className="mt-2 flex h-9 w-full items-center justify-start rounded-lg border border-clay-300/[0.12] bg-clay-500/[0.06] px-3 text-sm text-clay-100">
-                <Code2 className="mr-2 h-4 w-4 text-clay-300" />
-                Easy Code
               </button>
             </div>
 
@@ -95,7 +90,7 @@ export function WorkspacePreview() {
               <div className="rounded-xl border border-white/[0.07] bg-white/[0.03] p-3">
                 <p className="text-sm font-medium text-white">EasyPlus workspace</p>
                 <p className="mt-1 text-xs leading-5 text-gray-500">
-                  Models, files, search, artifacts, and Easy Code in one chat interface.
+                  Models, files, search, and artifacts in one chat interface.
                 </p>
               </div>
             </div>
