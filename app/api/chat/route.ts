@@ -1038,6 +1038,17 @@ RULES FOR USING THESE RESULTS:
     const baseTemp = queryType === 'creative' ? 0.7 : queryType === 'factual' ? 0.3 : 0.4
     const temperature = reasoningMode === 'instant' ? Math.min(baseTemp + 0.1, 0.8) : reasoningMode === 'extended' ? Math.max(baseTemp - 0.1, 0.2) : baseTemp
 
+    // Reasoning models (gpt-5.6-style) silently "think" before the first
+    // visible token. Instant mode requests low reasoning effort so replies
+    // start fast; Extended requests high to match its depth promise; Thinking
+    // keeps the deployment default. Unsupported deployments auto-retry
+    // without the parameter.
+    const azureReasoningEffort = reasoningMode === 'instant'
+      ? ('low' as const)
+      : reasoningMode === 'extended'
+        ? ('high' as const)
+        : undefined
+
     // Add reasoning mode addendum to system prompt
     systemPrompt += getReasoningSystemAddendum(reasoningMode)
 
@@ -1382,7 +1393,9 @@ RULES FOR USING THESE RESULTS:
                 } else if (attemptedProvider === 'anthropic') {
                   providerStream = await streamBedrockResponse(validatedModel, inputMessages, systemPrompt, temperature, maxTokens)
                 } else if (attemptedProvider === 'azure-gpt54') {
-                  providerStream = await streamAzureGpt54Response(inputMessages, systemPrompt, temperature, maxTokens)
+                  providerStream = await streamAzureGpt54Response(inputMessages, systemPrompt, temperature, maxTokens, {
+                    reasoningEffort: azureReasoningEffort,
+                  })
                 } else {
                   providerStream = await streamAzureDeepSeekResponse(inputMessages, systemPrompt, temperature, maxTokens)
                 }
