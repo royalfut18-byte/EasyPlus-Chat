@@ -155,8 +155,12 @@ export async function streamGeminiResponse(
       })
       .sendMessage(lastMessage.parts)
 
-    const modelChain = [model.geminiModelId, 'gemini-2.5-flash-lite']
+    const fullChain = [model.geminiModelId, ...GEMINI_CHAT_FALLBACK_CHAIN]
       .filter((id, index, all): id is string => Boolean(id) && all.indexOf(id) === index)
+    // Skip models known to be out of quota; if everything is marked dead, still
+    // try the most conservative model rather than failing without a request.
+    const modelChain = fullChain.filter((id) => !isGeminiQuotaDead(id))
+    if (modelChain.length === 0) modelChain.push(fullChain[fullChain.length - 1])
 
     let result: Awaited<ReturnType<typeof sendWithModel>> | undefined
     let sendError: any
@@ -164,7 +168,7 @@ export async function streamGeminiResponse(
       for (let attempt = 0; attempt < 2; attempt += 1) {
         try {
           result = await sendWithModel(chainModelId)
-          if (chainModelId !== modelChain[0]) {
+          if (chainModelId !== fullChain[0]) {
             console.info('[Gemini] Chat fallback model succeeded', { modelId: chainModelId })
           }
           break chain
@@ -176,6 +180,12 @@ export async function streamGeminiResponse(
             attempt,
             message: message.slice(0, 200),
           })
+          // Out of quota: remember it and move straight to the next model —
+          // a retry in one second cannot succeed.
+          if (isGeminiQuotaExhausted(message)) {
+            markGeminiQuotaDead(chainModelId)
+            break
+          }
           // Hard errors (bad request, safety block) won't improve on retry or
           // on a smaller model — surface them to the friendly-error mapping.
           if (!isTransientGeminiError(message)) throw err
@@ -237,6 +247,29 @@ export async function streamGeminiResponse(
 // chat had to tell the user "couldn't read the image".
 const GEMINI_VISION_MODEL_CHAIN = ['gemini-2.5-flash', 'gemini-2.5-flash-lite']
 
+// Chat fallback order when a tier's primary Gemini model fails or is out of
+// quota: newest fast model first, then the stable flash generations.
+const GEMINI_CHAT_FALLBACK_CHAIN = ['gemini-3.1-flash-lite', 'gemini-2.5-flash', 'gemini-2.5-flash-lite']
+
+// Free-tier Gemini keys exhaust per-model daily quotas (429 RESOURCE_EXHAUSTED).
+// Remember exhausted models for a while so requests skip them instantly instead
+// of paying a doomed round-trip each message; retry after the TTL in case the
+// quota window has reset.
+const GEMINI_QUOTA_DEAD_MS = 10 * 60_000
+const geminiQuotaDeadUntil = new Map<string, number>()
+
+function isGeminiQuotaExhausted(message: string): boolean {
+  return /\b429\b|RESOURCE_EXHAUSTED|exceeded your current quota/i.test(message)
+}
+
+function markGeminiQuotaDead(modelId: string) {
+  geminiQuotaDeadUntil.set(modelId, Date.now() + GEMINI_QUOTA_DEAD_MS)
+}
+
+function isGeminiQuotaDead(modelId: string): boolean {
+  return (geminiQuotaDeadUntil.get(modelId) || 0) > Date.now()
+}
+
 function isTransientGeminiError(message: string): boolean {
   return /\b(429|503)\b|RESOURCE_EXHAUSTED|quota|UNAVAILABLE|overloaded|high demand|temporarily|fetch failed|network|ETIMEDOUT|ECONNRESET/i.test(message)
 }
@@ -264,8 +297,10 @@ export async function describeImagesForTextModel(
 The user's question about the image is: "${(userQuestion || '').slice(0, 1000) || '(none given)'}"`
 
   const genAI = new GoogleGenerativeAI(apiKey)
-  const modelChain = [process.env.GEMINI_VISION_MODEL, ...GEMINI_VISION_MODEL_CHAIN]
+  const fullVisionChain = [process.env.GEMINI_VISION_MODEL, ...GEMINI_VISION_MODEL_CHAIN]
     .filter((id, index, all): id is string => Boolean(id) && all.indexOf(id) === index)
+  const modelChain = fullVisionChain.filter((id) => !isGeminiQuotaDead(id))
+  if (modelChain.length === 0) modelChain.push(fullVisionChain[fullVisionChain.length - 1])
 
   for (const modelId of modelChain) {
     const model = genAI.getGenerativeModel({ model: modelId })
@@ -290,6 +325,10 @@ The user's question about the image is: "${(userQuestion || '').slice(0, 1000) |
           attempt,
           message: message.slice(0, 200),
         })
+        if (isGeminiQuotaExhausted(message)) {
+          markGeminiQuotaDead(modelId)
+          break // quota won't recover in a second — next model immediately
+        }
         if (!isTransientGeminiError(message)) break // hard error: next model
         if (attempt === 0) await new Promise((resolve) => setTimeout(resolve, 1200))
         // after the retry, fall through to the next model in the chain
