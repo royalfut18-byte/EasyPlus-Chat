@@ -560,7 +560,10 @@ export async function POST(request: NextRequest) {
       azureVisionSnapshotForRouting.envStatus.baseUrl.configured &&
       azureVisionSnapshotForRouting.envStatus.model.configured
     const azureVisionEnv = (process.env.AZURE_GPT54_VISION || '').trim().toLowerCase()
-    const azureVisionNative = azureSlotConfigured && (
+    // Only relevant when the selected tier actually routes to the azure slot.
+    // Gemini-routed tiers (e.g. CHAT_PROVIDER_OVERRIDE=google) are natively
+    // multimodal — images flow straight to Gemini with the message.
+    const azureVisionNative = validationModel.provider !== 'google' && azureSlotConfigured && (
       azureVisionEnv
         ? ['1', 'true', 'yes', 'on'].includes(azureVisionEnv)
         : /gpt/i.test(azureVisionSnapshotForRouting.model || '')

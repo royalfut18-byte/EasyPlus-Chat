@@ -22,33 +22,49 @@ export interface ResolvedInternalAIModel extends InternalAIModel {
   publicError?: string
 }
 
+// Every text tier carries a geminiModelId so the whole app can run on the
+// Gemini key alone when CHAT_PROVIDER_OVERRIDE=google is set (e.g. while the
+// Azure account is unavailable). Top tiers point at the strongest model on the
+// key (pro preview); the fast/default tiers use the newest flash. Quota blips
+// fall through the resilience chain in lib/ai/gemini.ts automatically.
 const INTERNAL_AI_MODELS: InternalAIModel[] = [
   {
     ...AI_MODELS[0],
     provider: 'azure-gpt54',
+    geminiModelId: 'gemini-3.1-pro-preview',
   },
   {
     ...AI_MODELS[1],
     provider: 'azure-gpt54',
+    geminiModelId: 'gemini-3.1-flash-lite',
   },
   {
-    // "Gemini 3.1 Pro" now routes to the Azure GPT slot like the other text
-    // tiers (all chat tiers serve the same deployment, e.g. gpt-5.6-sol).
-    // geminiModelId is kept because the vision fallback still dispatches real
-    // Gemini calls through this entry.
     ...AI_MODELS[2],
     provider: 'azure-gpt54',
-    geminiModelId: 'gemini-2.5-flash',
+    geminiModelId: 'gemini-3.1-pro-preview',
   },
   {
     ...AI_MODELS[3],
     provider: 'azure-gpt54',
+    geminiModelId: 'gemini-3.1-flash-lite',
   },
   {
     ...AI_MODELS[4],
     provider: 'image',
   },
 ]
+
+// Temporary provider switch: CHAT_PROVIDER_OVERRIDE=google routes every text
+// tier to Gemini (delete the env var and redeploy to return to Azure).
+function applyProviderOverride(model: InternalAIModel): InternalAIModel {
+  if (
+    (process.env.CHAT_PROVIDER_OVERRIDE || '').trim().toLowerCase() === 'google' &&
+    model.provider === 'azure-gpt54'
+  ) {
+    return { ...model, provider: 'google' }
+  }
+  return model
+}
 
 const LEGACY_MODEL_IDS: Record<string, string> = {
   'claude-opus-4.6': 'claude-opus-4.8',
@@ -130,7 +146,8 @@ export function toPublicModelId(modelId: unknown): string {
 
 export function getInternalModel(modelId: string): InternalAIModel | undefined {
   const publicId = toPublicModelId(modelId)
-  return INTERNAL_AI_MODELS.find((model) => model.id === publicId)
+  const model = INTERNAL_AI_MODELS.find((entry) => entry.id === publicId)
+  return model ? applyProviderOverride(model) : undefined
 }
 
 export async function getResolvedInternalModel(modelId: string): Promise<ResolvedInternalAIModel | undefined> {
